@@ -1,73 +1,52 @@
-# React + TypeScript + Vite
+# AeroBuilder
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**AeroBuilder** is an interactive, web-based application tailored for aeromodelling enthusiasts. It allows you to design RC monoplane aircraft by inputting dimensions, verifying aerodynamic stability in real-time, and generating 1:1 scale templates ready for physical construction (using materials like Depron or Balsa wood).
 
-Currently, two official plugins are available:
+## 🚀 Live Demo
+[Check out the live demo here!](#) *(Replace with actual Netlify link after deployment)*
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## ✨ Features
+- **Real-Time 2D Visualization:** Instantly see your design changes reflected on a dynamically rendered top and side view, including an accurate Center of Gravity (CG) marker.
+- **Flight Assistant (Aerodynamic Consultant):** Automatically calculates key metrics (MAC, CG, Neutral Point, Static Margin, Aspect Ratio) and warns you about potentially unstable or unflyable designs based on proven aerodynamic rules.
+- **1:1 PDF Template Export:** Tiling logic that seamlessly splits your aircraft design across multiple standard A4 pages with alignment crosshairs for easy printing, taping, and cutting.
+- **Internationalization & Unit Conversion:** Supports both English (EN) and Portuguese (PT-BR) languages, and allows toggling between Centimeters (cm) and Millimeters (mm) while retaining physical scale accuracy.
+- **Dark Mode Support:** A sleek, toggleable dark mode for comfortable designing in any lighting condition.
 
-## React Compiler
+## 🛠 Tech Stack
+- **Framework:** React.js (with TypeScript) bootstrapped via Vite.
+- **Styling:** TailwindCSS (v3) for rapid, responsive, and themeable UI development.
+- **Visualization:** Native HTML5 Canvas API.
+- **PDF Generation:** jsPDF for precise, tiled PDF rendering.
+- **Internationalization:** react-i18next.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 💻 How to run locally
 
-## Expanding the ESLint configuration
+1. **Clone the repository:**
+   ```bash
+   git clone <your-repo-url>
+   cd aerobuilder
+   ```
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+2. **Install dependencies:**
+   Make sure you have Node.js installed, then run:
+   ```bash
+   npm install
+   ```
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+3. **Start the development server:**
+   ```bash
+   npm run dev
+   ```
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+4. **Access the application:**
+   Open your browser and navigate to the local URL provided in the terminal (typically `http://localhost:5173/`).
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+5. **Build for production:**
+   To create a production-ready build, run:
+   ```bash
+   npm run build
+   ```
+   You can then preview the build with:
+   ```bash
+   npm run preview
+   ```

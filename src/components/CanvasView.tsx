@@ -5,9 +5,10 @@ import type { AircraftDimensions, AircraftMetrics } from '../utils/calculations'
 interface CanvasViewProps {
   dimensions: AircraftDimensions;
   metrics: AircraftMetrics;
+  isDarkMode: boolean;
 }
 
-export default function CanvasView({ dimensions, metrics }: CanvasViewProps) {
+export default function CanvasView({ dimensions, metrics, isDarkMode }: CanvasViewProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -67,18 +68,32 @@ export default function CanvasView({ dimensions, metrics }: CanvasViewProps) {
       // --- DRAW TOP VIEW ---
       ctx.translate(cx, topCy - (maxAircraftLength * scale) / 2);
 
+      // Define colors based on theme
+      const colors = {
+        gridLine: isDarkMode ? '#374151' : '#e5e7eb', // gray-700 : gray-200
+        fuselageFill: isDarkMode ? '#4b5563' : '#f3f4f6', // gray-600 : gray-100
+        fuselageStroke: isDarkMode ? '#9ca3af' : '#6b7280', // gray-400 : gray-500
+        wingFill: isDarkMode ? '#0369a1' : '#e0f2fe', // sky-700 : sky-100
+        wingStroke: isDarkMode ? '#38bdf8' : '#0284c7', // sky-400 : sky-600
+        hStabFill: isDarkMode ? '#be185d' : '#fce7f3', // pink-700 : pink-100
+        hStabStroke: isDarkMode ? '#f472b6' : '#db2777', // pink-400 : pink-600
+        vStabFill: isDarkMode ? '#a16207' : '#fef08a', // yellow-700 : yellow-200
+        vStabStroke: isDarkMode ? '#fde047' : '#ca8a04', // yellow-400 : yellow-600
+        text: isDarkMode ? '#d1d5db' : '#374151', // gray-300 : gray-700
+      };
+
       // Draw Grid / Centerline
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.lineTo(0, maxAircraftLength * scale);
-      ctx.strokeStyle = '#e5e7eb'; // gray-200
+      ctx.strokeStyle = colors.gridLine;
       ctx.setLineDash([5, 5]);
       ctx.stroke();
       ctx.setLineDash([]);
 
       // Draw Fuselage
-      ctx.fillStyle = '#f3f4f6'; // gray-100
-      ctx.strokeStyle = '#6b7280'; // gray-500
+      ctx.fillStyle = colors.fuselageFill;
+      ctx.strokeStyle = colors.fuselageStroke;
       ctx.lineWidth = 2;
       const fuselageWidthScale = 10 * scale; // Assume constant 10 unit width for fuselage visual
       ctx.fillRect(-fuselageWidthScale / 2, 0, fuselageWidthScale, dims.fuselageLength * scale);
@@ -86,8 +101,8 @@ export default function CanvasView({ dimensions, metrics }: CanvasViewProps) {
 
       // Draw Wing
       const wingY = dims.noseLength * scale;
-      ctx.fillStyle = '#e0f2fe'; // sky-100
-      ctx.strokeStyle = '#0284c7'; // sky-600
+      ctx.fillStyle = colors.wingFill;
+      ctx.strokeStyle = colors.wingStroke;
 
       ctx.beginPath();
       // Right Wing
@@ -104,8 +119,8 @@ export default function CanvasView({ dimensions, metrics }: CanvasViewProps) {
 
       // Draw Horizontal Stabilizer
       const hStabY = wingY + (dims.rootChord * scale) + (dims.wingToTailDistance * scale);
-      ctx.fillStyle = '#fce7f3'; // pink-100
-      ctx.strokeStyle = '#db2777'; // pink-600
+      ctx.fillStyle = colors.hStabFill;
+      ctx.strokeStyle = colors.hStabStroke;
 
       ctx.beginPath();
       ctx.rect(
@@ -130,8 +145,8 @@ export default function CanvasView({ dimensions, metrics }: CanvasViewProps) {
 
       // Fuselage Side Profile (simple rectangle for now)
       const fuselageHeightSide = 10 * scale;
-      ctx.fillStyle = '#f3f4f6';
-      ctx.strokeStyle = '#6b7280';
+      ctx.fillStyle = colors.fuselageFill;
+      ctx.strokeStyle = colors.fuselageStroke;
       ctx.fillRect(
         -(maxAircraftLength * scale) / 2,
         0,
@@ -146,8 +161,8 @@ export default function CanvasView({ dimensions, metrics }: CanvasViewProps) {
       );
 
       // Vertical Stabilizer
-      ctx.fillStyle = '#fef08a'; // yellow-200
-      ctx.strokeStyle = '#ca8a04'; // yellow-600
+      ctx.fillStyle = colors.vStabFill;
+      ctx.strokeStyle = colors.vStabStroke;
       const vStabX = -(maxAircraftLength * scale) / 2 + hStabY; // align with HStab
 
       ctx.beginPath();
@@ -161,7 +176,7 @@ export default function CanvasView({ dimensions, metrics }: CanvasViewProps) {
 
       // Wing position indicator on fuselage
       const wingSideX = -(maxAircraftLength * scale) / 2 + wingY;
-      ctx.fillStyle = '#0284c7';
+      ctx.fillStyle = colors.wingStroke;
       ctx.fillRect(wingSideX, -2, dims.rootChord * scale, 4);
 
       // CG on side view
@@ -172,7 +187,7 @@ export default function CanvasView({ dimensions, metrics }: CanvasViewProps) {
 
       // Draw labels
       ctx.font = '14px sans-serif';
-      ctx.fillStyle = '#374151';
+      ctx.fillStyle = colors.text;
       ctx.fillText(t('top_view'), padding, padding);
       ctx.fillText(t('side_view'), padding, sideCy - 20);
     };
@@ -183,11 +198,12 @@ export default function CanvasView({ dimensions, metrics }: CanvasViewProps) {
 
       // Outer circle
       ctx.beginPath();
+      ctx.strokeStyle = isDarkMode ? 'white' : 'black';
       ctx.arc(0, 0, radius, 0, Math.PI * 2);
       ctx.stroke();
 
       // Quadrants
-      ctx.fillStyle = 'black';
+      ctx.fillStyle = isDarkMode ? 'white' : 'black';
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.arc(0, 0, radius, 0, Math.PI / 2);
@@ -198,7 +214,7 @@ export default function CanvasView({ dimensions, metrics }: CanvasViewProps) {
       ctx.arc(0, 0, radius, Math.PI, Math.PI * 1.5);
       ctx.fill();
 
-      ctx.fillStyle = 'white';
+      ctx.fillStyle = isDarkMode ? 'black' : 'white';
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.arc(0, 0, radius, Math.PI / 2, Math.PI);
@@ -216,7 +232,7 @@ export default function CanvasView({ dimensions, metrics }: CanvasViewProps) {
     resizeCanvas(); // Initial draw
 
     return () => window.removeEventListener('resize', resizeCanvas);
-  }, [dimensions, metrics, t]);
+  }, [dimensions, metrics, t, isDarkMode]);
 
   return (
     <div ref={containerRef} className="w-full h-full absolute inset-0">

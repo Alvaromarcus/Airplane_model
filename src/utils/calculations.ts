@@ -3,6 +3,7 @@ export interface AircraftDimensions {
   rootChord: number;
   tipChord: number;
   sweepOffset: number;
+  dihedral: number;
 
   hStabSpan: number;
   hStabChord: number;
@@ -21,6 +22,8 @@ export interface AircraftMetrics {
   vStabArea: number;
   mac: number;
   cgPosition: number; // relative to root chord leading edge
+  neutralPoint: number; // offset from root chord leading edge
+  staticMargin: number; // percentage
   aspectRatio: number;
   tailMomentArm: number;
 
@@ -77,19 +80,29 @@ export function calculateMetrics(dims: AircraftDimensions): AircraftMetrics {
   const cgAbsolutePosition = dims.noseLength + cgPosition;
   const tailMomentArm = hStabAcPosition - cgAbsolutePosition;
 
+  // Neutral Point relative to root chord leading edge
+  // Formula: NP = MAC_LE + 0.25 * MAC + (hStabArea / wingArea) * tailMomentArm
+  const neutralPoint = macLeOffset + (0.25 * mac) + ((hStabArea / wingArea) * tailMomentArm);
+
+  // Static Margin
+  // Formula: SM = (NP - CG) / MAC * 100
+  const staticMargin = ((neutralPoint - cgPosition) / mac) * 100;
+
   return {
     wingArea,
     hStabArea,
     vStabArea,
     mac,
     cgPosition,
+    neutralPoint,
+    staticMargin,
     aspectRatio,
     tailMomentArm,
     halfWingArea
   };
 }
 
-export function validateDesign(_dims: AircraftDimensions, metrics: AircraftMetrics): ValidationCheck[] {
+export function validateDesign(dims: AircraftDimensions, metrics: AircraftMetrics): ValidationCheck[] {
   const checks: ValidationCheck[] = [];
 
   // Aspect Ratio validation
@@ -119,6 +132,20 @@ export function validateDesign(_dims: AircraftDimensions, metrics: AircraftMetri
   const vStabRatio = metrics.vStabArea / metrics.wingArea;
   if (vStabRatio < 0.08) {
     checks.push({ id: 'vstab_small', level: 'unstable', messageKey: 'vstab_area_small' });
+  }
+
+  // Dihedral validation
+  if (dims.dihedral === 0) {
+    checks.push({ id: 'dihedral_zero', level: 'warning', messageKey: 'dihedral_zero' });
+  } else if (dims.dihedral > 15) {
+    checks.push({ id: 'dihedral_high', level: 'warning', messageKey: 'dihedral_high' });
+  }
+
+  // Static Margin validation
+  if (metrics.staticMargin < 5) {
+    checks.push({ id: 'sm_low', level: 'unstable', messageKey: 'sm_low' });
+  } else if (metrics.staticMargin > 15) {
+    checks.push({ id: 'sm_high', level: 'warning', messageKey: 'sm_high' });
   }
 
   return checks;

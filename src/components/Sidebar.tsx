@@ -18,26 +18,26 @@ export default function Sidebar({ dimensions, onChange }: SidebarProps) {
 
   const renderInput = (label: string, valueKey: keyof AircraftDimensions) => (
     <div className="mb-3">
-      <label className="block text-xs font-medium text-gray-700 mb-1">{t(label)}</label>
+      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t(label)}</label>
       <input
         type="number"
         value={dimensions[valueKey]}
         onChange={(e) => handleInputChange(valueKey, e.target.value)}
-        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
       />
     </div>
   );
 
   return (
-    <aside className="w-80 bg-white shadow-md z-20 flex flex-col h-full overflow-y-auto">
-      <div className="p-4 border-b border-gray-200 bg-gray-50">
-        <h2 className="text-lg font-semibold text-gray-800">{t('app_title')} Parameters</h2>
+    <aside className="w-80 bg-white dark:bg-gray-800 shadow-md z-20 flex flex-col h-full overflow-y-auto border-r border-gray-200 dark:border-gray-700 transition-colors duration-200">
+      <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{t('app_title')} Parameters</h2>
       </div>
 
       <div className="p-4">
         {/* Wing Section */}
         <div className="mb-6">
-          <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
             {t('wing')}
           </h3>
           {renderInput('wingspan', 'wingspan')}
@@ -50,11 +50,12 @@ export default function Sidebar({ dimensions, onChange }: SidebarProps) {
             </div>
           </div>
           {renderInput('sweep_angle', 'sweepOffset')}
+          {renderInput('dihedral', 'dihedral')}
         </div>
 
         {/* Tail Section */}
         <div className="mb-6">
-          <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
             {t('tail')}
           </h3>
           <div className="flex gap-2">
@@ -77,7 +78,7 @@ export default function Sidebar({ dimensions, onChange }: SidebarProps) {
 
         {/* Fuselage Section */}
         <div className="mb-6">
-          <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
             {t('fuselage')}
           </h3>
           {renderInput('total_length', 'fuselageLength')}
