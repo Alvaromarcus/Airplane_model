@@ -15,13 +15,13 @@ const defaultDimensions: AircraftDimensions = {
   tipChord: 15,
   sweepOffset: 5,
   dihedral: 5,
-  hStabSpan: 30,
-  hStabChord: 8,
+  hStabSpan: 32,
+  hStabChord: 9,
   vStabSpan: 15,
   vStabChord: 10,
   fuselageLength: 80,
   noseLength: 15,
-  wingToTailDistance: 35,
+  wingToTailDistance: 32,
 };
 
 function App() {

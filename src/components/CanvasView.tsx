@@ -46,8 +46,12 @@ export default function CanvasView({ dimensions, metrics, isDarkMode }: CanvasVi
       const sideViewBoxHeight = dims.vStabSpan + 20; // arbitrary height for side view
       const sideViewBoxWidth = maxAircraftLength;
 
-      const totalRequiredHeight = topViewBoxHeight + sideViewBoxHeight + 50; // 50px padding between views
-      const totalRequiredWidth = Math.max(topViewBoxWidth, sideViewBoxWidth);
+      const tipYOffset = (dims.wingspan / 2) * Math.tan(dims.dihedral * Math.PI / 180);
+      const frontViewBoxHeight = tipYOffset + 20;
+      const frontViewBoxWidth = dims.wingspan;
+
+      const totalRequiredHeight = topViewBoxHeight + sideViewBoxHeight + frontViewBoxHeight + 100; // padding between views
+      const totalRequiredWidth = Math.max(topViewBoxWidth, sideViewBoxWidth, frontViewBoxWidth);
 
       // Padding around the canvas
       const padding = 40;
@@ -185,11 +189,53 @@ export default function CanvasView({ dimensions, metrics, isDarkMode }: CanvasVi
 
       ctx.restore();
 
+      // --- DRAW FRONT VIEW ---
+      const frontCy = sideCy + sideViewBoxHeight * scale + 50;
+      ctx.save();
+      ctx.translate(cx, frontCy);
+
+      // Fuselage Front Profile
+      const fuselageWidthFront = 10 * scale;
+      const fuselageHeightFront = 10 * scale;
+      ctx.fillStyle = colors.fuselageFill;
+      ctx.strokeStyle = colors.fuselageStroke;
+      ctx.fillRect(
+        -fuselageWidthFront / 2,
+        0,
+        fuselageWidthFront,
+        fuselageHeightFront
+      );
+      ctx.strokeRect(
+        -fuselageWidthFront / 2,
+        0,
+        fuselageWidthFront,
+        fuselageHeightFront
+      );
+
+      // Wing Dihedral Front Profile
+      ctx.strokeStyle = colors.wingStroke;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+
+      // Right Wing
+      ctx.moveTo(fuselageWidthFront / 2, fuselageHeightFront / 2);
+      ctx.lineTo((dims.wingspan / 2) * scale, fuselageHeightFront / 2 - (tipYOffset * scale));
+
+      // Left Wing
+      ctx.moveTo(-fuselageWidthFront / 2, fuselageHeightFront / 2);
+      ctx.lineTo(-(dims.wingspan / 2) * scale, fuselageHeightFront / 2 - (tipYOffset * scale));
+
+      ctx.stroke();
+      ctx.lineWidth = 1; // reset
+
+      ctx.restore();
+
       // Draw labels
       ctx.font = '14px sans-serif';
       ctx.fillStyle = colors.text;
       ctx.fillText(t('top_view'), padding, padding);
       ctx.fillText(t('side_view'), padding, sideCy - 20);
+      ctx.fillText(t('front_view'), padding, frontCy - 20);
     };
 
     const drawCGCircle = (ctx: CanvasRenderingContext2D, x: number, y: number, radius: number) => {

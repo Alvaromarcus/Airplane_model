@@ -46,7 +46,7 @@ export default function FlightAssistant({ metrics, checks, unit }: FlightAssista
         {/* Metrics Section */}
         <div>
           <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
-            Metrics
+            {t('metrics')}
           </h3>
           <ul className="space-y-2 text-sm">
             <li className="flex justify-between">
@@ -88,7 +88,7 @@ export default function FlightAssistant({ metrics, checks, unit }: FlightAssista
         {checks.length > 0 && (
           <div>
             <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
-              Analysis
+              {t('analysis')}
             </h3>
             <div className="space-y-3">
               {checks.map(check => (
