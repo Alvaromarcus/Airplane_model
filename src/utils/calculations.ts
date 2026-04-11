@@ -80,9 +80,18 @@ export function calculateMetrics(dims: AircraftDimensions): AircraftMetrics {
   const cgAbsolutePosition = dims.noseLength + cgPosition;
   const tailMomentArm = hStabAcPosition - cgAbsolutePosition;
 
-  // Neutral Point relative to root chord leading edge
-  // Formula: NP = MAC_LE + 0.25 * MAC + (hStabArea / wingArea) * tailMomentArm
-  const neutralPoint = macLeOffset + (0.25 * mac) + ((hStabArea / wingArea) * tailMomentArm);
+  // --- NEUTRAL POINT PHYSICS CORRECTION ---
+  // 1. The real moment arm for NP is from Wing Aerodynamic Center (Wing AC) to Tail AC
+  const wingAcPosition = macLeOffset + (0.25 * mac);
+  const wingAcAbsolutePosition = dims.noseLength + wingAcPosition;
+  const lt_np = hStabAcPosition - wingAcAbsolutePosition;
+
+  // 2. Tail Efficiency Factor (Main wing downwash reduces tail authority)
+  // 0.55 (55%) is a standard realistic value for monoplane RC models
+  const tailEfficiency = 0.55;
+
+  // 3. Corrected Neutral Point formula
+  const neutralPoint = wingAcPosition + (tailEfficiency * (hStabArea / wingArea) * lt_np);
 
   // Static Margin
   // Formula: SM = (NP - CG) / MAC * 100
