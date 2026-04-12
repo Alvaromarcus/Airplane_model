@@ -26,10 +26,28 @@ const defaultDimensions: AircraftDimensions = {
 
 function App() {
   const { t, i18n } = useTranslation();
-  const [dimensions, setDimensions] = useState<AircraftDimensions>(defaultDimensions);
+
+  // Initialize state from localStorage or fallback to defaults
+  const [dimensions, setDimensions] = useState<AircraftDimensions>(() => {
+    const saved = localStorage.getItem('aerobuilder_dims');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Failed to parse saved dimensions', e);
+      }
+    }
+    return defaultDimensions;
+  });
+
   const [unit, setUnit] = useState<'cm' | 'mm'>('cm');
   const [isExporting, setIsExporting] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+
+  // Persist dimensions whenever they change
+  useEffect(() => {
+    localStorage.setItem('aerobuilder_dims', JSON.stringify(dimensions));
+  }, [dimensions]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -65,6 +83,7 @@ function App() {
   const toggleLanguage = () => {
     const newLang = i18n.language === 'en' ? 'pt' : 'en';
     i18n.changeLanguage(newLang);
+    document.documentElement.lang = newLang === 'pt' ? 'pt-BR' : 'en-US';
   };
 
   const handleExportPDF = async () => {
@@ -75,6 +94,12 @@ function App() {
       console.error("PDF Export failed", error);
     }
     setIsExporting(false);
+  };
+
+  const handleReset = () => {
+    localStorage.removeItem('aerobuilder_dims');
+    setDimensions(defaultDimensions);
+    setUnit('cm');
   };
 
   const metrics = useMemo(() => calculateMetrics(dimensions), [dimensions]);
@@ -112,6 +137,13 @@ function App() {
             {i18n.language === 'en' ? 'PT-BR' : 'EN'}
           </button>
 
+            <button
+              onClick={handleReset}
+              className="bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 px-3 py-1 rounded transition-colors text-sm font-medium border border-red-200 dark:border-red-800"
+            >
+              {t('reset')}
+            </button>
+
           <button
             onClick={handleExportPDF}
             disabled={isExporting}
@@ -127,6 +159,7 @@ function App() {
           <Sidebar
             dimensions={dimensions}
             onChange={handleDimensionChange}
+            unit={unit}
           />
         </div>
 

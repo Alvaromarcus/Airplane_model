@@ -5,6 +5,7 @@ const resources = {
   en: {
     translation: {
       "app_title": "AeroBuilder",
+      "sidebar_title": "AeroBuilder Parameters",
       "units": "Units",
       "cm": "Centimeters (cm)",
       "mm": "Millimeters (mm)",
@@ -34,6 +35,8 @@ const resources = {
       "hstab_area": "Horiz. Stab. Area",
       "vstab_area": "Vert. Stab. Area",
       "export_pdf": "Export to PDF",
+      "wing_area": "Wing Area",
+      "half_wing_area": "Half-Wing Area",
       "status_stable": "Stable",
       "status_warning": "Warning",
       "status_unstable": "Unstable/Unflyable",
@@ -58,6 +61,7 @@ const resources = {
       "metrics": "Metrics",
       "analysis": "Analysis",
       "export_loading": "Generating PDF...",
+      "reset": "Reset",
       "developed_by": "Developed by",
       "dark_mode": "Dark Mode",
       "light_mode": "Light Mode",
@@ -66,6 +70,7 @@ const resources = {
   pt: {
     translation: {
       "app_title": "AeroBuilder",
+      "sidebar_title": "Parâmetros do AeroBuilder",
       "units": "Unidades",
       "cm": "Centímetros (cm)",
       "mm": "Milímetros (mm)",
@@ -95,6 +100,8 @@ const resources = {
       "hstab_area": "Área do Estabilizador Horiz.",
       "vstab_area": "Área do Estabilizador Vert.",
       "export_pdf": "Exportar para PDF",
+      "wing_area": "Área da Asa",
+      "half_wing_area": "Área de Meia Asa",
       "status_stable": "Estável",
       "status_warning": "Aviso",
       "status_unstable": "Instável/Não voável",
@@ -119,6 +126,7 @@ const resources = {
       "metrics": "Métricas",
       "analysis": "Análise",
       "export_loading": "Gerando PDF...",
+      "reset": "Redefinir",
       "developed_by": "Desenvolvido por",
       "dark_mode": "Modo Escuro",
       "light_mode": "Modo Claro",

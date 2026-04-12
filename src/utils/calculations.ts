@@ -153,7 +153,7 @@ export function validateDesign(dims: AircraftDimensions, metrics: AircraftMetric
   // Static Margin validation
   if (metrics.staticMargin < 5) {
     checks.push({ id: 'sm_low', level: 'unstable', messageKey: 'sm_low' });
-  } else if (metrics.staticMargin > 25) {
+  } else if (metrics.staticMargin > 15) {
     checks.push({ id: 'sm_high', level: 'warning', messageKey: 'sm_high' });
   }
 

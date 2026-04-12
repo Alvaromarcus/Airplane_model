@@ -4,9 +4,10 @@ import type { AircraftDimensions } from '../utils/calculations';
 interface SidebarProps {
   dimensions: AircraftDimensions;
   onChange: (key: keyof AircraftDimensions, value: number) => void;
+  unit: 'cm' | 'mm';
 }
 
-export default function Sidebar({ dimensions, onChange }: SidebarProps) {
+export default function Sidebar({ dimensions, onChange, unit }: SidebarProps) {
   const { t } = useTranslation();
 
   const handleInputChange = (key: keyof AircraftDimensions, value: string) => {
@@ -16,22 +17,28 @@ export default function Sidebar({ dimensions, onChange }: SidebarProps) {
     }
   };
 
-  const renderInput = (label: string, valueKey: keyof AircraftDimensions) => (
+  const renderInput = (label: string, valueKey: keyof AircraftDimensions, minValue = 0.1) => (
     <div className="mb-3">
       <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t(label)}</label>
-      <input
-        type="number"
-        value={dimensions[valueKey]}
-        onChange={(e) => handleInputChange(valueKey, e.target.value)}
-        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-      />
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min={minValue}
+          value={dimensions[valueKey]}
+          onChange={(e) => handleInputChange(valueKey, e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+        />
+        <span className="text-sm text-gray-500 dark:text-gray-400 w-6">
+          {valueKey === 'dihedral' ? '°' : unit}
+        </span>
+      </div>
     </div>
   );
 
   return (
     <aside className="w-full h-auto lg:h-full bg-white dark:bg-gray-800 shadow-md z-20 flex flex-col overflow-y-auto border-r border-gray-200 dark:border-gray-700 transition-colors duration-200">
       <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-        <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{t('app_title')} Parameters</h2>
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{t('sidebar_title')}</h2>
       </div>
 
       <div className="p-4">
@@ -50,7 +57,7 @@ export default function Sidebar({ dimensions, onChange }: SidebarProps) {
             </div>
           </div>
           {renderInput('sweep_angle', 'sweepOffset')}
-          {renderInput('dihedral', 'dihedral')}
+          {renderInput('dihedral', 'dihedral', 0)}
         </div>
 
         {/* Tail Section */}
