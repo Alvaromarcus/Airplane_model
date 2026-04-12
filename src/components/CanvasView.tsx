@@ -167,7 +167,8 @@ export default function CanvasView({ dimensions, metrics, isDarkMode }: CanvasVi
       // Vertical Stabilizer
       ctx.fillStyle = colors.vStabFill;
       ctx.strokeStyle = colors.vStabStroke;
-      const vStabX = -(maxAircraftLength * scale) / 2 + hStabY; // align with HStab
+      // Align with the back of the fuselage
+      const vStabX = -(maxAircraftLength * scale) / 2 + (dims.fuselageLength * scale) - (dims.vStabChord * scale);
 
       ctx.beginPath();
       ctx.moveTo(vStabX, 0);
@@ -178,10 +179,22 @@ export default function CanvasView({ dimensions, metrics, isDarkMode }: CanvasVi
       ctx.fill();
       ctx.stroke();
 
-      // Wing position indicator on fuselage
+      // Horizontal Stabilizer (Side view representation)
+      ctx.fillStyle = colors.hStabFill;
+      ctx.strokeStyle = colors.hStabStroke;
+      const hStabSideX = -(maxAircraftLength * scale) / 2 + hStabY;
+      ctx.fillRect(hStabSideX, fuselageHeightSide / 2 - 2 * scale, dims.hStabChord * scale, 4 * scale);
+      ctx.strokeRect(hStabSideX, fuselageHeightSide / 2 - 2 * scale, dims.hStabChord * scale, 4 * scale);
+
+      // Wing position indicator on fuselage (Enhanced profile)
       const wingSideX = -(maxAircraftLength * scale) / 2 + wingY;
-      ctx.fillStyle = colors.wingStroke;
-      ctx.fillRect(wingSideX, -2, dims.rootChord * scale, 4);
+      ctx.fillStyle = colors.wingFill;
+      ctx.strokeStyle = colors.wingStroke;
+      ctx.beginPath();
+      ctx.moveTo(wingSideX, 0);
+      ctx.quadraticCurveTo(wingSideX + (dims.rootChord * scale) * 0.25, -6 * scale, wingSideX + (dims.rootChord * scale), 0);
+      ctx.fill();
+      ctx.stroke();
 
       // CG on side view
       const cgSideX = -(maxAircraftLength * scale) / 2 + cgY;
@@ -210,6 +223,23 @@ export default function CanvasView({ dimensions, metrics, isDarkMode }: CanvasVi
         0,
         fuselageWidthFront,
         fuselageHeightFront
+      );
+
+      // Vertical Stabilizer Front Profile
+      const vStabWidthFront = 4 * scale;
+      ctx.fillStyle = colors.vStabFill;
+      ctx.strokeStyle = colors.vStabStroke;
+      ctx.fillRect(
+        -vStabWidthFront / 2,
+        -dims.vStabSpan * scale,
+        vStabWidthFront,
+        dims.vStabSpan * scale
+      );
+      ctx.strokeRect(
+        -vStabWidthFront / 2,
+        -dims.vStabSpan * scale,
+        vStabWidthFront,
+        dims.vStabSpan * scale
       );
 
       // Wing Dihedral Front Profile
