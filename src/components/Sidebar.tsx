@@ -1,13 +1,14 @@
 import { useTranslation } from 'react-i18next';
-import type { AircraftDimensions } from '../utils/calculations';
+import type { AircraftDimensions, AircraftType } from '../utils/calculations';
 
 interface SidebarProps {
   dimensions: AircraftDimensions;
   onChange: (key: keyof AircraftDimensions, value: number) => void;
   unit: 'cm' | 'mm';
+  aircraftType: AircraftType;
 }
 
-export default function Sidebar({ dimensions, onChange, unit }: SidebarProps) {
+export default function Sidebar({ dimensions, onChange, unit, aircraftType }: SidebarProps) {
   const { t } = useTranslation();
 
   const handleInputChange = (key: keyof AircraftDimensions, value: string) => {
@@ -65,20 +66,28 @@ export default function Sidebar({ dimensions, onChange, unit }: SidebarProps) {
           <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
             {t('tail')}
           </h3>
+          {aircraftType !== 'flying_wing' && (
+            <div className="flex gap-2">
+              <div className="flex-1">
+                {renderInput('hstab_span', 'hStabSpan')}
+              </div>
+              <div className="flex-1">
+                {renderInput('hstab_chord', 'hStabChord')}
+              </div>
+            </div>
+          )}
           <div className="flex gap-2">
             <div className="flex-1">
-              {renderInput('hstab_span', 'hStabSpan')}
+              {renderInput(
+                aircraftType === 'flying_wing' ? 'winglet_span' : 'vstab_span',
+                'vStabSpan'
+              )}
             </div>
             <div className="flex-1">
-              {renderInput('hstab_chord', 'hStabChord')}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <div className="flex-1">
-              {renderInput('vstab_span', 'vStabSpan')}
-            </div>
-            <div className="flex-1">
-              {renderInput('vstab_chord', 'vStabChord')}
+              {renderInput(
+                aircraftType === 'flying_wing' ? 'winglet_chord' : 'vstab_chord',
+                'vStabChord'
+              )}
             </div>
           </div>
         </div>

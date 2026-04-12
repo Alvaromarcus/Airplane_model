@@ -172,11 +172,12 @@ function App() {
             dimensions={dimensions}
             onChange={handleDimensionChange}
             unit={unit}
+            aircraftType={aircraftType}
           />
         </div>
 
         <div className="order-1 lg:order-2 w-full lg:flex-1 relative min-h-[400px] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-x-auto">
-          <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} />
+          <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} aircraftType={aircraftType} />
         </div>
 
         <div className="order-2 lg:order-3 w-full lg:w-80 flex-shrink-0">
@@ -184,6 +185,7 @@ function App() {
             metrics={metrics}
             checks={validationChecks}
             unit={unit}
+            isDarkMode={isDarkMode}
           />
         </div>
       </main>
