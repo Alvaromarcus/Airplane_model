@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AircraftDimensions, AircraftType } from '../utils/calculations';
 
@@ -11,26 +12,59 @@ interface SidebarProps {
 export default function Sidebar({ dimensions, onChange, unit, aircraftType }: SidebarProps) {
   const { t } = useTranslation();
 
-  const handleInputChange = (key: keyof AircraftDimensions, value: string) => {
-    const num = parseFloat(value);
-    if (!isNaN(num)) {
-      onChange(key, num);
-    }
-  };
+  const [localValues, setLocalValues] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    (Object.keys(dimensions) as (keyof AircraftDimensions)[]).forEach(k => {
+      init[k] = String(dimensions[k]);
+    });
+    return init;
+  });
 
-  const renderInput = (label: string, valueKey: keyof AircraftDimensions, minValue = 0.1) => (
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLocalValues(prev => {
+      const next = { ...prev };
+      (Object.keys(dimensions) as (keyof AircraftDimensions)[]).forEach(k => {
+        const parsed = parseFloat(prev[k]);
+        if (!isNaN(parsed) && parsed !== dimensions[k]) {
+          next[k] = String(dimensions[k]);
+        }
+        if (isNaN(parsed)) {
+          next[k] = prev[k];
+        }
+      });
+      return next;
+    });
+  }, [dimensions]);
+
+  const renderInput = (label: string, valueKey: keyof AircraftDimensions, unitLabel?: string) => (
     <div className="mb-3">
-      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{t(label)}</label>
-      <div className="flex items-center gap-2">
+      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+        {t(label)}
+      </label>
+      <div className="flex items-center gap-1">
         <input
           type="number"
-          min={minValue}
-          value={dimensions[valueKey]}
-          onChange={(e) => handleInputChange(valueKey, e.target.value)}
+          value={localValues[valueKey] ?? ''}
+          onChange={(e) => {
+            const raw = e.target.value;
+            setLocalValues(prev => ({ ...prev, [valueKey]: raw }));
+            const num = parseFloat(raw);
+            if (!isNaN(num)) {
+              onChange(valueKey, num);
+            }
+          }}
+          onBlur={() => {
+            const raw = localValues[valueKey];
+            const num = parseFloat(raw);
+            if (isNaN(num) || raw.trim() === '') {
+              setLocalValues(prev => ({ ...prev, [valueKey]: String(dimensions[valueKey]) }));
+            }
+          }}
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
         />
-        <span className="text-sm text-gray-500 dark:text-gray-400 w-6">
-          {valueKey === 'dihedral' ? '°' : unit}
+        <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 w-6">
+          {unitLabel ?? unit}
         </span>
       </div>
     </div>
@@ -58,7 +92,7 @@ export default function Sidebar({ dimensions, onChange, unit, aircraftType }: Si
             </div>
           </div>
           {renderInput('sweep_angle', 'sweepOffset')}
-          {renderInput('dihedral', 'dihedral', 0)}
+          {renderInput('dihedral', 'dihedral', '°')}
         </div>
 
         {/* Tail Section */}

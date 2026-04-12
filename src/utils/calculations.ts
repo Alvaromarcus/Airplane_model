@@ -102,8 +102,12 @@ export function calculateMetrics(
   dims: AircraftDimensions,
   aircraftType: AircraftType = 'conventional'
 ): AircraftMetrics {
+  const safeWingspan   = Math.max(dims.wingspan, 0.1);
+  const safeRootChord  = Math.max(dims.rootChord, 0.1);
+  const safeTipChord   = Math.max(dims.tipChord, 0.01);
+
   // Area = (Root Chord + Tip Chord) / 2 * Wingspan
-  const wingArea = ((dims.rootChord + dims.tipChord) / 2) * dims.wingspan;
+  const wingArea = ((safeRootChord + safeTipChord) / 2) * safeWingspan;
   const halfWingArea = wingArea / 2;
 
   // Basic rectangular area for stabs (assuming mostly rectangular/simple shape for calculation ease,
@@ -113,22 +117,23 @@ export function calculateMetrics(
 
   // Mean Aerodynamic Chord (MAC) calculation for a swept tapered wing
   // Taper ratio (lambda)
-  const lambda = dims.tipChord / dims.rootChord;
-  const mac = dims.rootChord * (2/3) * ((1 + lambda + lambda * lambda) / (1 + lambda));
+  const lambda = safeTipChord / safeRootChord;
+  const mac = safeRootChord * (2/3) * ((1 + lambda + lambda * lambda) / (1 + lambda));
 
   // CG is typically 28% to 30% of MAC from MAC leading edge.
   // We need to find MAC leading edge offset from root chord leading edge.
   // Y-coordinate of MAC from root is (wingspan/6) * ((1 + 2*lambda) / (1 + lambda))
   // Then the X-offset of MAC LE = Y_mac * tan(sweepAngle).
   // Assuming sweepOffset is the X-distance from root LE to tip LE.
-  const yMac = (dims.wingspan / 6) * ((1 + 2 * lambda) / (1 + lambda));
-  const sweepAngleTan = dims.sweepOffset / (dims.wingspan / 2);
+  const yMac = (safeWingspan / 6) * ((1 + 2 * lambda) / (1 + lambda));
+  const sweepAngleTan = dims.sweepOffset / (safeWingspan / 2);
   const macLeOffset = yMac * sweepAngleTan;
 
   // Theoretical CG from root leading edge
-  const cgPosition = macLeOffset + (mac * 0.28);
+  const cgFraction = aircraftType === 'flying_wing' ? 0.18 : 0.28;
+  const cgPosition = macLeOffset + (mac * cgFraction);
 
-  const aspectRatio = (dims.wingspan * dims.wingspan) / wingArea;
+  const aspectRatio = (safeWingspan * safeWingspan) / wingArea;
 
   // Tail moment arm: distance from CG to aerodynamic center of horizontal stabilizer (approx quarter chord of HStab)
   // Position of wing LE from nose = noseLength
@@ -161,12 +166,25 @@ export function calculateMetrics(
   const tailEfficiency = preset?.tailEfficiencyOverride ?? 0.9;
 
   // 5. Corrected Neutral Point formula
-  // For flying_wing, neutralPoint = wingAcPosition (no tail contribution)
-  const neutralPoint =
-    tailEfficiency === 0
-      ? wingAcPosition
-      : wingAcPosition
-          + (hStabArea / wingArea) * lt_np * tailEfficiency * (1 - downwashGradient);
+  let neutralPoint: number;
+
+  if (aircraftType === 'flying_wing') {
+    // Swept flying wing: NP shifts aft with sweep.
+    // sweepRatio = sweepOffset / (halfSpan), clamped to [0, 0.7]
+    const halfSpan = safeWingspan / 2;
+    const sweepRatioNP = Math.min(0.7, Math.max(0, dims.sweepOffset / halfSpan));
+
+    // NP for flying wing ≈ AC_wing + sweep contribution
+    // Typical range: 25%MAC (unswept) to ~40%MAC (heavily swept)
+    const npFraction = 0.25 + 0.20 * sweepRatioNP;
+    neutralPoint = macLeOffset + (mac * npFraction);
+
+  } else {
+    // Conventional formula
+    neutralPoint =
+      wingAcPosition
+      + (hStabArea / wingArea) * lt_np * tailEfficiency * (1 - downwashGradient);
+  }
 
   // Static Margin
   // Formula: SM = (NP - CG) / MAC * 100
@@ -188,12 +206,16 @@ export function calculateMetrics(
     clAlpha,
     downwashGradient,
     tailVolumeCoefficient,
-    sweepRatio: dims.sweepOffset / (dims.wingspan / 2),
+    sweepRatio: dims.sweepOffset / (safeWingspan / 2),
     taperRatio: lambda
   };
 }
 
-export function validateDesign(dims: AircraftDimensions, metrics: AircraftMetrics): ValidationCheck[] {
+export function validateDesign(
+  dims: AircraftDimensions,
+  metrics: AircraftMetrics,
+  aircraftType: AircraftType = 'conventional'
+): ValidationCheck[] {
   const checks: ValidationCheck[] = [];
 
   // Aspect Ratio validation
@@ -203,26 +225,47 @@ export function validateDesign(dims: AircraftDimensions, metrics: AircraftMetric
     checks.push({ id: 'ar_high', level: 'warning', messageKey: 'ar_warning_high', fixKey: 'fix_ar_high' });
   }
 
-  // Tail Moment Arm validation (2.5 to 3.5 times MAC)
-  const tailArmRatio = metrics.tailMomentArm / metrics.mac;
-  if (tailArmRatio < 2.5) {
-    checks.push({ id: 'tail_short', level: 'unstable', messageKey: 'tail_arm_short', fixKey: 'fix_tail_short' });
-  } else if (tailArmRatio > 4.0) {
-    checks.push({ id: 'tail_long', level: 'warning', messageKey: 'tail_arm_long', fixKey: 'fix_tail_long' });
+  if (aircraftType === 'conventional') {
+    // Tail Moment Arm validation (2.5 to 3.5 times MAC)
+    const tailArmRatio = metrics.tailMomentArm / metrics.mac;
+    if (tailArmRatio < 2.5) {
+      checks.push({ id: 'tail_short', level: 'unstable', messageKey: 'tail_arm_short', fixKey: 'fix_tail_short' });
+    } else if (tailArmRatio > 4.0) {
+      checks.push({ id: 'tail_long', level: 'warning', messageKey: 'tail_arm_long', fixKey: 'fix_tail_long' });
+    }
+
+    // Horizontal Stabilizer Area validation (20% to 25% of Wing Area)
+    const hStabRatio = metrics.hStabArea / metrics.wingArea;
+    if (hStabRatio < 0.15) {
+      checks.push({ id: 'hstab_small', level: 'unstable', messageKey: 'hstab_area_small', fixKey: 'fix_hstab_small' });
+    } else if (hStabRatio > 0.30) {
+      checks.push({ id: 'hstab_large', level: 'warning', messageKey: 'hstab_area_large', fixKey: 'fix_hstab_large' });
+    }
+
+    // Vertical Stabilizer Area validation (10% to 15% of Wing Area)
+    const vStabRatio = metrics.vStabArea / metrics.wingArea;
+    if (vStabRatio < 0.08) {
+      checks.push({ id: 'vstab_small', level: 'unstable', messageKey: 'vstab_area_small', fixKey: 'fix_vstab_small' });
+    }
   }
 
-  // Horizontal Stabilizer Area validation (20% to 25% of Wing Area)
-  const hStabRatio = metrics.hStabArea / metrics.wingArea;
-  if (hStabRatio < 0.15) {
-    checks.push({ id: 'hstab_small', level: 'unstable', messageKey: 'hstab_area_small', fixKey: 'fix_hstab_small' });
-  } else if (hStabRatio > 0.30) {
-    checks.push({ id: 'hstab_large', level: 'warning', messageKey: 'hstab_area_large', fixKey: 'fix_hstab_large' });
-  }
-
-  // Vertical Stabilizer Area validation (10% to 15% of Wing Area)
-  const vStabRatio = metrics.vStabArea / metrics.wingArea;
-  if (vStabRatio < 0.08) {
-    checks.push({ id: 'vstab_small', level: 'unstable', messageKey: 'vstab_area_small', fixKey: 'fix_vstab_small' });
+  if (aircraftType === 'flying_wing') {
+    // Sweep check — flying wings need meaningful sweep for stability
+    const sweepRatioFW = dims.sweepOffset / Math.max(dims.wingspan / 2, 0.1);
+    if (sweepRatioFW < 0.10) {
+      checks.push({
+        id: 'fw_sweep_low', level: 'unstable',
+        messageKey: 'fw_sweep_low', fixKey: 'fix_fw_sweep_low'
+      });
+    }
+    // Taper check — extreme taper causes tip stall on flying wings
+    const taperFW = dims.tipChord / Math.max(dims.rootChord, 0.1);
+    if (taperFW < 0.2) {
+      checks.push({
+        id: 'fw_taper_low', level: 'warning',
+        messageKey: 'fw_taper_low', fixKey: 'fix_fw_taper_low'
+      });
+    }
   }
 
   // Dihedral validation

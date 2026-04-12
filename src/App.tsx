@@ -112,7 +112,7 @@ function App() {
   };
 
   const metrics = calculateMetrics(dimensions, aircraftType);
-  const validationChecks = validateDesign(dimensions, metrics);
+  const validationChecks = validateDesign(dimensions, metrics, aircraftType);
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900 overflow-hidden font-sans transition-colors duration-200">
