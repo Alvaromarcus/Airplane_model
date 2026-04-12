@@ -1,3 +1,57 @@
+export type AircraftType = 'conventional' | 'flying_wing';
+
+// Future: 'zagi' | 'delta' | 'canard'
+
+export interface AircraftPreset {
+  type: AircraftType;
+  labelKey: string;         // i18n key for display name
+  descriptionKey: string;   // i18n key for description
+  defaults: AircraftDimensions;
+  tailEfficiencyOverride?: number; // η override for non-conventional layouts
+}
+
+export const AIRCRAFT_PRESETS: AircraftPreset[] = [
+  {
+    type: 'conventional',
+    labelKey: 'preset_conventional',
+    descriptionKey: 'preset_conventional_desc',
+    defaults: {
+      wingspan: 100,
+      rootChord: 20,
+      tipChord: 15,
+      sweepOffset: 5,
+      dihedral: 5,
+      hStabSpan: 32,
+      hStabChord: 9,
+      vStabSpan: 15,
+      vStabChord: 10,
+      fuselageLength: 80,
+      noseLength: 15,
+      wingToTailDistance: 32,
+    },
+  },
+  {
+    type: 'flying_wing',
+    labelKey: 'preset_flying_wing',
+    descriptionKey: 'preset_flying_wing_desc',
+    tailEfficiencyOverride: 0,   // no tail
+    defaults: {
+      wingspan: 90,
+      rootChord: 30,
+      tipChord: 10,
+      sweepOffset: 20,
+      dihedral: 3,
+      hStabSpan: 0,
+      hStabChord: 0,
+      vStabSpan: 8,
+      vStabChord: 6,
+      fuselageLength: 45,
+      noseLength: 5,
+      wingToTailDistance: 0,
+    },
+  },
+];
+
 export interface AircraftDimensions {
   wingspan: number;
   rootChord: number;
@@ -30,6 +84,7 @@ export interface AircraftMetrics {
   halfWingArea: number;
   clAlpha: number; // wing lift-curve slope (per radian)
   downwashGradient: number; // dε/dα
+  tailVolumeCoefficient: number;  // Vbar
 }
 
 export type StatusLevel = 'stable' | 'warning' | 'unstable';
@@ -38,9 +93,13 @@ export interface ValidationCheck {
   id: string;
   level: StatusLevel;
   messageKey: string;
+  fixKey: string;
 }
 
-export function calculateMetrics(dims: AircraftDimensions): AircraftMetrics {
+export function calculateMetrics(
+  dims: AircraftDimensions,
+  aircraftType: AircraftType = 'conventional'
+): AircraftMetrics {
   // Area = (Root Chord + Tip Chord) / 2 * Wingspan
   const wingArea = ((dims.rootChord + dims.tipChord) / 2) * dims.wingspan;
   const halfWingArea = wingArea / 2;
@@ -96,14 +155,22 @@ export function calculateMetrics(dims: AircraftDimensions): AircraftMetrics {
   downwashGradient = Math.min(0.8, Math.max(0, downwashGradient)); // clamp to [0, 0.8]
 
   // 4. Tail Efficiency Factor
-  const tailEfficiency = 0.9; // approx 0.9 for conventional tractor monoplanes
+  const preset = AIRCRAFT_PRESETS.find(p => p.type === aircraftType);
+  const tailEfficiency = preset?.tailEfficiencyOverride ?? 0.9;
 
   // 5. Corrected Neutral Point formula
-  const neutralPoint = wingAcPosition + (hStabArea / wingArea) * lt_np * tailEfficiency * (1 - downwashGradient);
+  // For flying_wing, neutralPoint = wingAcPosition (no tail contribution)
+  const neutralPoint =
+    tailEfficiency === 0
+      ? wingAcPosition
+      : wingAcPosition
+          + (hStabArea / wingArea) * lt_np * tailEfficiency * (1 - downwashGradient);
 
   // Static Margin
   // Formula: SM = (NP - CG) / MAC * 100
   const staticMargin = ((neutralPoint - cgPosition) / mac) * 100;
+
+  const tailVolumeCoefficient = (hStabArea * tailMomentArm) / (wingArea * mac);
 
   return {
     wingArea,
@@ -117,7 +184,8 @@ export function calculateMetrics(dims: AircraftDimensions): AircraftMetrics {
     tailMomentArm,
     halfWingArea,
     clAlpha,
-    downwashGradient
+    downwashGradient,
+    tailVolumeCoefficient
   };
 }
 
@@ -126,45 +194,45 @@ export function validateDesign(dims: AircraftDimensions, metrics: AircraftMetric
 
   // Aspect Ratio validation
   if (metrics.aspectRatio < 4.5) {
-    checks.push({ id: 'ar_low', level: 'warning', messageKey: 'ar_warning_low' });
+    checks.push({ id: 'ar_low', level: 'warning', messageKey: 'ar_warning_low', fixKey: 'fix_ar_low' });
   } else if (metrics.aspectRatio > 8) {
-    checks.push({ id: 'ar_high', level: 'warning', messageKey: 'ar_warning_high' });
+    checks.push({ id: 'ar_high', level: 'warning', messageKey: 'ar_warning_high', fixKey: 'fix_ar_high' });
   }
 
   // Tail Moment Arm validation (2.5 to 3.5 times MAC)
   const tailArmRatio = metrics.tailMomentArm / metrics.mac;
   if (tailArmRatio < 2.5) {
-    checks.push({ id: 'tail_short', level: 'unstable', messageKey: 'tail_arm_short' });
+    checks.push({ id: 'tail_short', level: 'unstable', messageKey: 'tail_arm_short', fixKey: 'fix_tail_short' });
   } else if (tailArmRatio > 4.0) {
-    checks.push({ id: 'tail_long', level: 'warning', messageKey: 'tail_arm_long' });
+    checks.push({ id: 'tail_long', level: 'warning', messageKey: 'tail_arm_long', fixKey: 'fix_tail_long' });
   }
 
   // Horizontal Stabilizer Area validation (20% to 25% of Wing Area)
   const hStabRatio = metrics.hStabArea / metrics.wingArea;
   if (hStabRatio < 0.15) {
-    checks.push({ id: 'hstab_small', level: 'unstable', messageKey: 'hstab_area_small' });
+    checks.push({ id: 'hstab_small', level: 'unstable', messageKey: 'hstab_area_small', fixKey: 'fix_hstab_small' });
   } else if (hStabRatio > 0.30) {
-    checks.push({ id: 'hstab_large', level: 'warning', messageKey: 'hstab_area_large' });
+    checks.push({ id: 'hstab_large', level: 'warning', messageKey: 'hstab_area_large', fixKey: 'fix_hstab_large' });
   }
 
   // Vertical Stabilizer Area validation (10% to 15% of Wing Area)
   const vStabRatio = metrics.vStabArea / metrics.wingArea;
   if (vStabRatio < 0.08) {
-    checks.push({ id: 'vstab_small', level: 'unstable', messageKey: 'vstab_area_small' });
+    checks.push({ id: 'vstab_small', level: 'unstable', messageKey: 'vstab_area_small', fixKey: 'fix_vstab_small' });
   }
 
   // Dihedral validation
   if (dims.dihedral === 0) {
-    checks.push({ id: 'dihedral_zero', level: 'warning', messageKey: 'dihedral_zero' });
+    checks.push({ id: 'dihedral_zero', level: 'warning', messageKey: 'dihedral_zero', fixKey: 'fix_dihedral_zero' });
   } else if (dims.dihedral > 15) {
-    checks.push({ id: 'dihedral_high', level: 'warning', messageKey: 'dihedral_high' });
+    checks.push({ id: 'dihedral_high', level: 'warning', messageKey: 'dihedral_high', fixKey: 'fix_dihedral_high' });
   }
 
   // Static Margin validation
   if (metrics.staticMargin < 5) {
-    checks.push({ id: 'sm_low', level: 'unstable', messageKey: 'sm_low' });
+    checks.push({ id: 'sm_low', level: 'unstable', messageKey: 'sm_low', fixKey: 'fix_sm_low' });
   } else if (metrics.staticMargin > 20) {
-    checks.push({ id: 'sm_high', level: 'warning', messageKey: 'sm_high' });
+    checks.push({ id: 'sm_high', level: 'warning', messageKey: 'sm_high', fixKey: 'fix_sm_high' });
   }
 
   return checks;
