@@ -140,6 +140,10 @@ export default function CanvasView({ dimensions, metrics, isDarkMode }: CanvasVi
       const cgY = (dims.noseLength + metrics.cgPosition) * scale;
       drawCGCircle(ctx, 0, cgY, 6);
 
+      // Draw Neutral Point (NP)
+      const npY = (dims.noseLength + metrics.neutralPoint) * scale;
+      drawNPMarker(ctx, 0, npY, 6);
+
       ctx.restore();
 
       // --- DRAW SIDE VIEW ---
@@ -300,6 +304,27 @@ export default function CanvasView({ dimensions, metrics, isDarkMode }: CanvasVi
       ctx.moveTo(0, 0);
       ctx.arc(0, 0, radius, Math.PI * 1.5, Math.PI * 2);
       ctx.fill();
+
+      ctx.restore();
+    };
+
+    const drawNPMarker = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number) => {
+      ctx.save();
+      ctx.translate(x, y);
+
+      // Downward-pointing triangle for NP
+      ctx.beginPath();
+      ctx.fillStyle = '#f97316'; // orange-500
+      ctx.moveTo(0, size);
+      ctx.lineTo(-size, -size);
+      ctx.lineTo(size, -size);
+      ctx.closePath();
+      ctx.fill();
+
+      // NP Label
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = isDarkMode ? '#d1d5db' : '#374151'; // matches colors.text
+      ctx.fillText('NP', size + 4, size / 2);
 
       ctx.restore();
     };

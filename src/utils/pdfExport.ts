@@ -95,6 +95,19 @@ export async function exportToPDF(dims: AircraftDimensions, unit: 'cm' | 'mm') {
       // Wing Trailing Edge
       drawLine(halfWidthMm, wingY + (dims.sweepOffset * scaleToMm) + (dims.tipChord * scaleToMm), 0, wingY + (dims.rootChord * scaleToMm));
 
+      // Add Dimension Annotations for Wing
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      const textLine = (text: string, x: number, y: number) => {
+        doc.text(text, x - offsetX, y - offsetY);
+      };
+
+      textLine(`Span: ${dims.wingspan} ${unit}`, halfWidthMm / 2, wingY + (dims.sweepOffset * scaleToMm) + (dims.tipChord * scaleToMm) + 10);
+      textLine(`Root: ${dims.rootChord} ${unit}`, 5, wingY + (dims.rootChord * scaleToMm) / 2);
+
+      // Restore drawing styles
+      doc.setDrawColor(0, 0, 0);
+
       // --- Draw Half Horizontal Stabilizer ---
       const hStabY = wingY + (dims.rootChord * scaleToMm) + (dims.wingToTailDistance * scaleToMm);
       const halfHStabSpan = (dims.hStabSpan / 2) * scaleToMm;
@@ -135,6 +148,21 @@ export async function exportToPDF(dims: AircraftDimensions, unit: 'cm' | 'mm') {
       doc.setLineDashPattern([5, 5], 0);
       drawLine(0, 0, 0, totalDrawingHeightMm);
       doc.setLineDashPattern([], 0); // reset
+
+      // Scale bar (only on the first page, bottom left)
+      if (row === 0 && col === 0) {
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.5);
+        // Draw 50mm scale line
+        doc.line(15, a4HeightMm - 20, 15 + 50, a4HeightMm - 20);
+        // Tick marks
+        doc.line(15, a4HeightMm - 22, 15, a4HeightMm - 18);
+        doc.line(15 + 50, a4HeightMm - 22, 15 + 50, a4HeightMm - 18);
+
+        doc.setFontSize(8);
+        doc.setTextColor(100, 100, 100);
+        doc.text("50 mm", 15 + 25, a4HeightMm - 24, { align: "center" });
+      }
 
       // Restore black for labels
       doc.setDrawColor(0, 0, 0);

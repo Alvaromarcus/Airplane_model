@@ -33,7 +33,7 @@ export default function FlightAssistant({ metrics, checks, unit }: FlightAssista
   }
 
   return (
-    <aside className="w-full lg:w-80 bg-white dark:bg-gray-800 shadow-l z-20 flex flex-col h-auto lg:h-full border-t lg:border-t-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto transition-colors duration-200">
+    <aside className="w-full lg:w-80 bg-white dark:bg-gray-800 shadow-md z-20 flex flex-col h-auto lg:h-full border-t lg:border-t-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto transition-colors duration-200">
       <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{t('flight_assistant')}</h2>
         <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold border ${overallStatusColor}`}>
@@ -49,6 +49,14 @@ export default function FlightAssistant({ metrics, checks, unit }: FlightAssista
             {t('metrics')}
           </h3>
           <ul className="space-y-2 text-sm">
+            <li className="flex justify-between">
+              <span className="text-gray-600 dark:text-gray-400">{t('wing_area')}:</span>
+              <span className="font-medium">{formatNumber(metrics.wingArea, true)}</span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-gray-600 dark:text-gray-400">{t('half_wing_area')}:</span>
+              <span className="font-medium">{formatNumber(metrics.halfWingArea, true)}</span>
+            </li>
             <li className="flex justify-between">
               <span className="text-gray-600 dark:text-gray-400">{t('mac')}:</span>
               <span className="font-medium">{formatNumber(metrics.mac)}</span>
