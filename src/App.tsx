@@ -82,14 +82,16 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900 overflow-hidden font-sans transition-colors duration-200">
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar
-        dimensions={dimensions}
-        onChange={handleDimensionChange}
-      />
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden overflow-y-auto md:overflow-hidden">
+        <div className="w-full md:w-64 flex-shrink-0 z-10">
+          <Sidebar
+            dimensions={dimensions}
+            onChange={handleDimensionChange}
+          />
+        </div>
 
-      <main className="flex-1 flex flex-col overflow-hidden relative">
-        <header className="bg-white dark:bg-gray-800 shadow-sm z-10 flex justify-between items-center p-4 transition-colors duration-200">
+      <main className="flex-1 flex flex-col min-h-0 relative">
+        <header className="bg-white dark:bg-gray-800 shadow-sm z-10 flex flex-wrap gap-2 justify-between items-center p-4 transition-colors duration-200">
           <h1 className="text-xl font-bold text-gray-800 dark:text-white">{t('app_title')}</h1>
 
           <div className="flex gap-4 items-center">
@@ -129,16 +131,18 @@ function App() {
           </div>
         </header>
 
-        <div className="flex-1 flex overflow-hidden">
-          <div className="flex-1 relative bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-colors duration-200">
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden overflow-y-auto lg:overflow-hidden">
+          <div className="w-full lg:flex-1 relative bg-gray-50 dark:bg-gray-800 border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 transition-colors duration-200 min-h-[400px] overflow-x-auto">
             <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} />
           </div>
 
-          <FlightAssistant
-            metrics={metrics}
-            checks={validationChecks}
-            unit={unit}
-          />
+          <div className="w-full lg:w-80 flex-shrink-0">
+            <FlightAssistant
+              metrics={metrics}
+              checks={validationChecks}
+              unit={unit}
+            />
+          </div>
         </div>
       </main>
       </div>
