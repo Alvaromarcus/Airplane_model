@@ -1,11 +1,12 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Moon, Sun } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import FlightAssistant from './components/FlightAssistant';
 import CanvasView from './components/CanvasView';
+import AircraftTypeSelector from './components/AircraftTypeSelector';
 import { calculateMetrics, validateDesign } from './utils/calculations';
-import type { AircraftDimensions } from './utils/calculations';
+import type { AircraftDimensions, AircraftType, AircraftPreset } from './utils/calculations';
 import { exportToPDF } from './utils/pdfExport';
 import './App.css';
 
@@ -41,6 +42,7 @@ function App() {
   });
 
   const [unit, setUnit] = useState<'cm' | 'mm'>('cm');
+  const [aircraftType, setAircraftType] = useState<AircraftType>('conventional');
   const [isExporting, setIsExporting] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
@@ -89,7 +91,7 @@ function App() {
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
-      await exportToPDF(dimensions, unit);
+      await exportToPDF(dimensions, metrics, validationChecks, unit, i18n.language, t);
     } catch (error) {
       console.error("PDF Export failed", error);
     }
@@ -100,10 +102,16 @@ function App() {
     localStorage.removeItem('aerobuilder_dims');
     setDimensions(defaultDimensions);
     setUnit('cm');
+    setAircraftType('conventional');
   };
 
-  const metrics = useMemo(() => calculateMetrics(dimensions), [dimensions]);
-  const validationChecks = useMemo(() => validateDesign(dimensions, metrics), [dimensions, metrics]);
+  const handlePresetSelect = (preset: AircraftPreset) => {
+    setAircraftType(preset.type);
+    setDimensions(preset.defaults);
+  };
+
+  const metrics = calculateMetrics(dimensions, aircraftType);
+  const validationChecks = validateDesign(dimensions, metrics);
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900 overflow-hidden font-sans transition-colors duration-200">
@@ -153,6 +161,10 @@ function App() {
           </button>
         </div>
       </header>
+
+      <div className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-2 overflow-x-auto flex-shrink-0">
+        <AircraftTypeSelector selectedType={aircraftType} onSelect={handlePresetSelect} />
+      </div>
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden relative">
         <div className="order-3 lg:order-1 w-full lg:w-64 flex-shrink-0 z-10">

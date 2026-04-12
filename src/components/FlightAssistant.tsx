@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import type { AircraftMetrics, ValidationCheck } from '../utils/calculations';
+import PerformanceChart from './PerformanceChart';
 
 interface FlightAssistantProps {
   metrics: AircraftMetrics;
@@ -8,8 +9,11 @@ interface FlightAssistantProps {
   unit: 'cm' | 'mm';
 }
 
+import { useState } from 'react';
+
 export default function FlightAssistant({ metrics, checks, unit }: FlightAssistantProps) {
   const { t } = useTranslation();
+  const [openFixId, setOpenFixId] = useState<string | null>(null);
 
   const formatNumber = (num: number, isArea = false) => {
     return `${num.toFixed(1)} ${unit}${isArea ? '²' : ''}`;
@@ -92,6 +96,11 @@ export default function FlightAssistant({ metrics, checks, unit }: FlightAssista
           </ul>
         </div>
 
+        {/* Performance Chart Section */}
+        <div className="mb-6">
+          <PerformanceChart metrics={metrics} unit={unit} />
+        </div>
+
         {/* Warnings Section */}
         {checks.length > 0 && (
           <div>
@@ -110,7 +119,24 @@ export default function FlightAssistant({ metrics, checks, unit }: FlightAssista
                 >
                   <div className="flex gap-2">
                     <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-                    <p>{t(check.messageKey)}</p>
+                    <div className="flex flex-col w-full">
+                      <p>{t(check.messageKey)}</p>
+                      {check.fixKey && (
+                        <>
+                          <div
+                            className="text-xs underline opacity-70 hover:opacity-100 mt-1 cursor-pointer flex items-center gap-1"
+                            onClick={() => setOpenFixId(openFixId === check.id ? null : check.id)}
+                          >
+                            {openFixId === check.id ? t('hide_fix') : t('how_to_fix')}
+                          </div>
+                          {openFixId === check.id && (
+                            <div className="mt-2 pt-2 border-t border-current opacity-70 text-xs leading-relaxed">
+                              {t(check.fixKey)}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
