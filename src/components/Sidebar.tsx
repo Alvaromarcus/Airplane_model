@@ -93,14 +93,22 @@ export default function Sidebar({ dimensions, onChange, unit, aircraftType }: Si
         </div>
 
         {/* Fuselage Section */}
-        <div className="mb-6">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
-            {t('fuselage')}
-          </h3>
-          {renderInput('total_length', 'fuselageLength')}
-          {renderInput('nose_length', 'noseLength')}
-          {renderInput('wing_to_tail', 'wingToTailDistance')}
-        </div>
+        {aircraftType !== 'flying_wing' && (
+          <div className="mb-6">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
+              {t('fuselage')}
+            </h3>
+            {renderInput('total_length', 'fuselageLength')}
+            {renderInput('nose_length', 'noseLength')}
+            {renderInput('wing_to_tail', 'wingToTailDistance')}
+          </div>
+        )}
+
+        {aircraftType === 'flying_wing' && (
+          <div className="mb-6 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300">
+            {t('flying_wing_fuselage_note')}
+          </div>
+        )}
       </div>
     </aside>
   );

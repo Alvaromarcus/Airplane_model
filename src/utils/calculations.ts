@@ -85,6 +85,8 @@ export interface AircraftMetrics {
   clAlpha: number; // wing lift-curve slope (per radian)
   downwashGradient: number; // dε/dα
   tailVolumeCoefficient: number;  // Vbar
+  sweepRatio: number;   // sweepOffset / (wingspan / 2)  — dimensionless
+  taperRatio: number;   // tipChord / rootChord           — dimensionless (same as lambda)
 }
 
 export type StatusLevel = 'stable' | 'warning' | 'unstable';
@@ -185,7 +187,9 @@ export function calculateMetrics(
     halfWingArea,
     clAlpha,
     downwashGradient,
-    tailVolumeCoefficient
+    tailVolumeCoefficient,
+    sweepRatio: dims.sweepOffset / (dims.wingspan / 2),
+    taperRatio: lambda
   };
 }
 
