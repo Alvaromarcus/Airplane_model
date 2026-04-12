@@ -1,14 +1,15 @@
 import { useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AircraftMetrics } from '../utils/calculations';
+import type { AircraftMetrics, AircraftType } from '../utils/calculations';
 
 interface PerformanceChartProps {
   metrics: AircraftMetrics;
   unit: 'cm' | 'mm';
   isDarkMode: boolean;
+  aircraftType: AircraftType;
 }
 
-export default function PerformanceChart({ metrics, isDarkMode }: PerformanceChartProps) {
+export default function PerformanceChart({ metrics, isDarkMode, aircraftType }: PerformanceChartProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -95,26 +96,48 @@ export default function PerformanceChart({ metrics, isDarkMode }: PerformanceCha
       ctx.fillText(`${t('chart_sm_label')}: ${smValue.toFixed(1)}%`, smMarkerX, SM_Y - 18);
 
       // === Mini Horizontal Bars ===
-      const barMetrics = [
-        {
-          labelKey: 'chart_vbar_label',
-          value: metrics.tailVolumeCoefficient,
-          min: 0, max: 0.8,
-          idealMin: 0.35, idealMax: 0.55,
-        },
-        {
-          labelKey: 'chart_hstab_label',
-          value: metrics.hStabArea / metrics.wingArea,
-          min: 0, max: 0.5,
-          idealMin: 0.15, idealMax: 0.30,
-        },
-        {
-          labelKey: 'chart_ar_label',
-          value: metrics.aspectRatio,
-          min: 0, max: 12,
-          idealMin: 4.5, idealMax: 8.0,
-        },
-      ];
+      const barMetrics =
+        aircraftType === 'flying_wing'
+          ? [
+              {
+                labelKey: 'chart_sweep_ratio',
+                value: metrics.sweepRatio ?? 0,
+                min: 0, max: 1,
+                idealMin: 0.15, idealMax: 0.45,
+              },
+              {
+                labelKey: 'chart_taper_ratio',
+                value: metrics.taperRatio ?? 0,
+                min: 0, max: 1,
+                idealMin: 0.25, idealMax: 0.55,
+              },
+              {
+                labelKey: 'chart_ar_label',
+                value: metrics.aspectRatio,
+                min: 0, max: 12,
+                idealMin: 4.0, idealMax: 7.0,
+              },
+            ]
+          : [
+              {
+                labelKey: 'chart_vbar_label',
+                value: metrics.tailVolumeCoefficient,
+                min: 0, max: 0.8,
+                idealMin: 0.35, idealMax: 0.55,
+              },
+              {
+                labelKey: 'chart_hstab_label',
+                value: metrics.hStabArea / metrics.wingArea,
+                min: 0, max: 0.5,
+                idealMin: 0.15, idealMax: 0.30,
+              },
+              {
+                labelKey: 'chart_ar_label',
+                value: metrics.aspectRatio,
+                min: 0, max: 12,
+                idealMin: 4.5, idealMax: 8.0,
+              },
+            ];
 
       const padding = { top: 90, left: 10, right: 60, bottom: 10 };
       const rowHeight = 32;        // px per metric row
@@ -187,7 +210,7 @@ export default function PerformanceChart({ metrics, isDarkMode }: PerformanceCha
     return () => {
       resizeObserver.disconnect();
     };
-  }, [metrics, t, isDarkMode]);
+  }, [metrics, t, isDarkMode, aircraftType]);
 
   return (
     <div ref={containerRef} className="w-full" style={{ height: '220px' }}>
