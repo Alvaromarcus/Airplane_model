@@ -28,6 +28,8 @@ export interface AircraftMetrics {
   tailMomentArm: number;
 
   halfWingArea: number;
+  clAlpha: number; // wing lift-curve slope (per radian)
+  downwashGradient: number; // dε/dα
 }
 
 export type StatusLevel = 'stable' | 'warning' | 'unstable';
@@ -86,12 +88,18 @@ export function calculateMetrics(dims: AircraftDimensions): AircraftMetrics {
   const wingAcAbsolutePosition = dims.noseLength + wingAcPosition;
   const lt_np = hStabAcPosition - wingAcAbsolutePosition;
 
-  // 2. Tail Efficiency Factor (Main wing downwash reduces tail authority)
-  // 0.55 (55%) is a standard realistic value for monoplane RC models
-  const tailEfficiency = 0.55;
+  // 2. Wing lift-curve slope — Helmbold's approximation (subsonic)
+  const clAlpha = (2 * Math.PI * aspectRatio) / (2 + Math.sqrt(aspectRatio * aspectRatio + 4));
 
-  // 3. Corrected Neutral Point formula
-  const neutralPoint = wingAcPosition + (tailEfficiency * (hStabArea / wingArea) * lt_np);
+  // 3. Downwash gradient
+  let downwashGradient = (2 * clAlpha) / (Math.PI * aspectRatio);
+  downwashGradient = Math.min(0.8, Math.max(0, downwashGradient)); // clamp to [0, 0.8]
+
+  // 4. Tail Efficiency Factor
+  const tailEfficiency = 0.9; // approx 0.9 for conventional tractor monoplanes
+
+  // 5. Corrected Neutral Point formula
+  const neutralPoint = wingAcPosition + (hStabArea / wingArea) * lt_np * tailEfficiency * (1 - downwashGradient);
 
   // Static Margin
   // Formula: SM = (NP - CG) / MAC * 100
@@ -107,7 +115,9 @@ export function calculateMetrics(dims: AircraftDimensions): AircraftMetrics {
     staticMargin,
     aspectRatio,
     tailMomentArm,
-    halfWingArea
+    halfWingArea,
+    clAlpha,
+    downwashGradient
   };
 }
 
@@ -153,7 +163,7 @@ export function validateDesign(dims: AircraftDimensions, metrics: AircraftMetric
   // Static Margin validation
   if (metrics.staticMargin < 5) {
     checks.push({ id: 'sm_low', level: 'unstable', messageKey: 'sm_low' });
-  } else if (metrics.staticMargin > 15) {
+  } else if (metrics.staticMargin > 20) {
     checks.push({ id: 'sm_high', level: 'warning', messageKey: 'sm_high' });
   }
 
