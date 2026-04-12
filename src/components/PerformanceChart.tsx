@@ -5,9 +5,10 @@ import type { AircraftMetrics } from '../utils/calculations';
 interface PerformanceChartProps {
   metrics: AircraftMetrics;
   unit: 'cm' | 'mm';
+  isDarkMode: boolean;
 }
 
-export default function PerformanceChart({ metrics }: PerformanceChartProps) {
+export default function PerformanceChart({ metrics, isDarkMode }: PerformanceChartProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,59 +94,86 @@ export default function PerformanceChart({ metrics }: PerformanceChartProps) {
       ctx.fillStyle = document.documentElement.classList.contains('dark') ? '#e5e7eb' : '#111827';
       ctx.fillText(`${t('chart_sm_label')}: ${smValue.toFixed(1)}%`, smMarkerX, SM_Y - 18);
 
-      // === Mini Vertical Bars ===
-      const MINI_Y = 110;
-      const MINI_H = 40;
-      const numBars = 3;
-      const spacing = 15;
-      const miniW = (BAR_W - (numBars - 1) * spacing) / numBars;
+      // === Mini Horizontal Bars ===
+      const barMetrics = [
+        {
+          labelKey: 'chart_vbar_label',
+          value: metrics.tailVolumeCoefficient,
+          min: 0, max: 0.8,
+          idealMin: 0.35, idealMax: 0.55,
+        },
+        {
+          labelKey: 'chart_hstab_label',
+          value: metrics.hStabArea / metrics.wingArea,
+          min: 0, max: 0.5,
+          idealMin: 0.15, idealMax: 0.30,
+        },
+        {
+          labelKey: 'chart_ar_label',
+          value: metrics.aspectRatio,
+          min: 0, max: 12,
+          idealMin: 4.5, idealMax: 8.0,
+        },
+      ];
 
-      const drawMiniBar = (index: number, label: string, value: number, minIdeal: number, maxIdeal: number, rangeMin: number, rangeMax: number) => {
-        const x = BAR_X + index * (miniW + spacing);
+      const padding = { top: 90, left: 10, right: 60, bottom: 10 };
+      const rowHeight = 32;        // px per metric row
+      const barHeight = 12;        // px height of the bar itself
+      const labelFontSize = 11;
+      const valueFontSize = 11;
+      const barTop = (rowIndex: number) => padding.top + rowIndex * rowHeight + labelFontSize + 4;
+      const barLeft = padding.left;
+      const barWidth = w - padding.left - padding.right;
 
-        // Background
-        ctx.fillStyle = document.documentElement.classList.contains('dark') ? '#374151' : '#e5e7eb';
-        ctx.fillRect(x, MINI_Y, miniW, MINI_H);
-
-        // Normalize value
-        const norm = Math.max(0, Math.min(1, (value - rangeMin) / (rangeMax - rangeMin)));
-        const fillW = norm * miniW;
-
-        // Color based on ideal
-        const isIdeal = value >= minIdeal && value <= maxIdeal;
-        const isSlightlyOff = (value >= minIdeal * 0.8 && value <= maxIdeal * 1.2) && !isIdeal;
-
-        if (isIdeal) ctx.fillStyle = '#22c55e'; // green
-        else if (isSlightlyOff) ctx.fillStyle = '#f59e0b'; // amber
-        else ctx.fillStyle = '#ef4444'; // red
-
-        ctx.fillRect(x, MINI_Y, fillW, MINI_H);
-
-        // Ideal bounds ticks
-        const t1X = x + ((minIdeal - rangeMin) / (rangeMax - rangeMin)) * miniW;
-        const t2X = x + ((maxIdeal - rangeMin) / (rangeMax - rangeMin)) * miniW;
-
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(t1X, MINI_Y, 2, MINI_H);
-        ctx.fillRect(t2X, MINI_Y, 2, MINI_H);
-
-        // Label
-        ctx.fillStyle = document.documentElement.classList.contains('dark') ? '#9ca3af' : '#4b5563';
-        ctx.font = '10px sans-serif';
+      barMetrics.forEach((m, i) => {
+        // 1. Draw label text
+        ctx.font = `${labelFontSize}px sans-serif`;
+        ctx.fillStyle = isDarkMode ? '#d1d5db' : '#374151';
         ctx.textAlign = 'left';
-        ctx.fillText(label, x, MINI_Y - 5);
-        ctx.textAlign = 'right';
-        ctx.fillText(value.toFixed(2), x + miniW, MINI_Y - 5);
-      };
+        ctx.fillText(t(m.labelKey), barLeft, padding.top + i * rowHeight + labelFontSize);
 
-      const hStabRatio = metrics.hStabArea / metrics.wingArea;
+        // 2. Draw background bar
+        ctx.fillStyle = isDarkMode ? '#374151' : '#e5e7eb';
+        ctx.fillRect(barLeft, barTop(i), barWidth, barHeight);
 
-      // 1. Tail Volume
-      drawMiniBar(0, t('chart_vbar_label'), metrics.tailVolumeCoefficient, 0.35, 0.55, 0, 1);
-      // 2. HStab Ratio
-      drawMiniBar(1, t('chart_hstab_label'), hStabRatio, 0.15, 0.30, 0, 0.5);
-      // 3. Aspect Ratio
-      drawMiniBar(2, t('chart_ar_label'), metrics.aspectRatio, 4.5, 8.0, 2, 12);
+        // 3. Compute normalized fill width
+        const clampedValue = Math.min(Math.max(m.value, m.min), m.max);
+        const fillRatio = (clampedValue - m.min) / (m.max - m.min);
+        const fillWidth = fillRatio * barWidth;
+
+        // 4. Choose bar color
+        const inIdeal = m.value >= m.idealMin && m.value <= m.idealMax;
+        const nearIdeal = m.value >= m.idealMin * 0.7 && m.value <= m.idealMax * 1.3;
+        const barColor = inIdeal ? '#22c55e' : nearIdeal ? '#f59e0b' : '#ef4444';
+        ctx.fillStyle = barColor;
+        ctx.fillRect(barLeft, barTop(i), fillWidth, barHeight);
+
+        // 5. Draw ideal range tick marks
+        const idealMinX = barLeft + ((m.idealMin - m.min) / (m.max - m.min)) * barWidth;
+        const idealMaxX = barLeft + ((m.idealMax - m.min) / (m.max - m.min)) * barWidth;
+        ctx.strokeStyle = isDarkMode ? '#9ca3af' : '#6b7280';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(idealMinX, barTop(i) - 2);
+        ctx.lineTo(idealMinX, barTop(i) + barHeight + 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(idealMaxX, barTop(i) - 2);
+        ctx.lineTo(idealMaxX, barTop(i) + barHeight + 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 6. Draw value text
+        ctx.font = `${valueFontSize}px sans-serif`;
+        ctx.fillStyle = barColor;
+        ctx.textAlign = 'left';
+        ctx.fillText(
+          m.value.toFixed(2),
+          barLeft + barWidth + 4,
+          barTop(i) + barHeight / 2 + 4
+        );
+      });
 
     };
 
@@ -159,10 +187,10 @@ export default function PerformanceChart({ metrics }: PerformanceChartProps) {
     return () => {
       resizeObserver.disconnect();
     };
-  }, [metrics, t]);
+  }, [metrics, t, isDarkMode]);
 
   return (
-    <div ref={containerRef} className="w-full" style={{ height: '180px' }}>
+    <div ref={containerRef} className="w-full" style={{ height: '220px' }}>
       <canvas ref={canvasRef} className="w-full h-full block" />
     </div>
   );

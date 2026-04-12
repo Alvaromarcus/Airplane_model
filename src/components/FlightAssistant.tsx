@@ -7,11 +7,12 @@ interface FlightAssistantProps {
   metrics: AircraftMetrics;
   checks: ValidationCheck[];
   unit: 'cm' | 'mm';
+  isDarkMode: boolean;
 }
 
 import { useState } from 'react';
 
-export default function FlightAssistant({ metrics, checks, unit }: FlightAssistantProps) {
+export default function FlightAssistant({ metrics, checks, unit, isDarkMode }: FlightAssistantProps) {
   const { t } = useTranslation();
   const [openFixId, setOpenFixId] = useState<string | null>(null);
 
@@ -98,7 +99,7 @@ export default function FlightAssistant({ metrics, checks, unit }: FlightAssista
 
         {/* Performance Chart Section */}
         <div className="mb-6">
-          <PerformanceChart metrics={metrics} unit={unit} />
+          <PerformanceChart metrics={metrics} unit={unit} isDarkMode={isDarkMode} />
         </div>
 
         {/* Warnings Section */}
