@@ -82,70 +82,66 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900 overflow-hidden font-sans transition-colors duration-200">
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden overflow-y-auto md:overflow-hidden">
-        <div className="w-full md:w-64 flex-shrink-0 z-10">
+      <header className="bg-white dark:bg-gray-800 shadow-sm z-10 flex flex-wrap gap-2 justify-between items-center p-4 transition-colors duration-200 flex-shrink-0">
+        <h1 className="text-xl font-bold text-gray-800 dark:text-white">{t('app_title')}</h1>
+
+        <div className="flex gap-4 items-center">
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-colors"
+            title={isDarkMode ? t('light_mode') : t('dark_mode')}
+          >
+            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-medium text-gray-600 dark:text-gray-300">{t('units')}:</span>
+            <select
+              value={unit}
+              onChange={(e) => handleUnitToggle(e.target.value as 'cm' | 'mm')}
+              className="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+            >
+              <option value="cm">{t('cm')}</option>
+              <option value="mm">{t('mm')}</option>
+            </select>
+          </div>
+
+          <button
+            onClick={toggleLanguage}
+            className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 px-3 py-1 rounded transition-colors text-sm font-medium"
+          >
+            {i18n.language === 'en' ? 'PT-BR' : 'EN'}
+          </button>
+
+          <button
+            onClick={handleExportPDF}
+            disabled={isExporting}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition-colors text-sm font-medium flex items-center gap-2"
+          >
+            {isExporting ? t('export_loading') : t('export_pdf')}
+          </button>
+        </div>
+      </header>
+
+      <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden relative">
+        <div className="order-3 lg:order-1 w-full lg:w-64 flex-shrink-0 z-10">
           <Sidebar
             dimensions={dimensions}
             onChange={handleDimensionChange}
           />
         </div>
 
-      <main className="flex-1 flex flex-col min-h-0 relative">
-        <header className="bg-white dark:bg-gray-800 shadow-sm z-10 flex flex-wrap gap-2 justify-between items-center p-4 transition-colors duration-200">
-          <h1 className="text-xl font-bold text-gray-800 dark:text-white">{t('app_title')}</h1>
+        <div className="order-1 lg:order-2 w-full lg:flex-1 relative min-h-[400px] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-x-auto">
+          <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} />
+        </div>
 
-          <div className="flex gap-4 items-center">
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-colors"
-              title={isDarkMode ? t('light_mode') : t('dark_mode')}
-            >
-              {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-            </button>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="font-medium text-gray-600 dark:text-gray-300">{t('units')}:</span>
-              <select
-                value={unit}
-                onChange={(e) => handleUnitToggle(e.target.value as 'cm' | 'mm')}
-                className="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-              >
-                <option value="cm">{t('cm')}</option>
-                <option value="mm">{t('mm')}</option>
-              </select>
-            </div>
-
-            <button
-              onClick={toggleLanguage}
-              className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 px-3 py-1 rounded transition-colors text-sm font-medium"
-            >
-              {i18n.language === 'en' ? 'PT-BR' : 'EN'}
-            </button>
-
-            <button
-              onClick={handleExportPDF}
-              disabled={isExporting}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition-colors text-sm font-medium flex items-center gap-2"
-            >
-              {isExporting ? t('export_loading') : t('export_pdf')}
-            </button>
-          </div>
-        </header>
-
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden overflow-y-auto lg:overflow-hidden">
-          <div className="w-full lg:flex-1 relative bg-gray-50 dark:bg-gray-800 border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 transition-colors duration-200 min-h-[400px] overflow-x-auto">
-            <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} />
-          </div>
-
-          <div className="w-full lg:w-80 flex-shrink-0">
-            <FlightAssistant
-              metrics={metrics}
-              checks={validationChecks}
-              unit={unit}
-            />
-          </div>
+        <div className="order-2 lg:order-3 w-full lg:w-80 flex-shrink-0">
+          <FlightAssistant
+            metrics={metrics}
+            checks={validationChecks}
+            unit={unit}
+          />
         </div>
       </main>
-      </div>
       <footer className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 p-2 text-center text-xs text-gray-500 dark:text-gray-400 transition-colors duration-200 z-20">
         {t('developed_by')} <a href="https://www.linkedin.com/in/alvaromarcus/" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Alvaro Marcus</a>
       </footer>
