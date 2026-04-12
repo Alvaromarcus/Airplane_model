@@ -29,7 +29,7 @@ export default function Sidebar({ dimensions, onChange }: SidebarProps) {
   );
 
   return (
-    <aside className="w-full h-full bg-white dark:bg-gray-800 shadow-md z-20 flex flex-col overflow-y-auto border-r border-gray-200 dark:border-gray-700 transition-colors duration-200">
+    <aside className="w-full h-auto lg:h-full bg-white dark:bg-gray-800 shadow-md z-20 flex flex-col overflow-y-auto border-r border-gray-200 dark:border-gray-700 transition-colors duration-200">
       <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{t('app_title')} Parameters</h2>
       </div>
