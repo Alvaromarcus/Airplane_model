@@ -9,6 +9,7 @@ import AppLogo from './components/AppLogo';
 import { calculateMetrics, validateDesign } from './utils/calculations';
 import type { AircraftDimensions, AircraftType, AircraftPreset } from './utils/calculations';
 import { exportToPDF } from './utils/pdfExport';
+import { useVersionCheck } from './hooks/useVersionCheck';
 import './App.css';
 
 const defaultDimensions: AircraftDimensions = {
@@ -27,6 +28,7 @@ const defaultDimensions: AircraftDimensions = {
 };
 
 function App() {
+  useVersionCheck();
   const { t, i18n } = useTranslation();
 
   // Initialize state from localStorage or fallback to defaults
