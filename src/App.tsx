@@ -182,7 +182,7 @@ function App() {
       </div>
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden relative">
-        <div className="order-3 lg:order-1 w-full lg:w-64 flex-shrink-0 z-10">
+        <div className="order-2 lg:order-1 w-full lg:w-64 flex-shrink-0 z-10">
           <Sidebar
             dimensions={dimensions}
             onChange={handleDimensionChange}
@@ -192,10 +192,10 @@ function App() {
         </div>
 
         <div className="order-1 lg:order-2 w-full lg:flex-1 relative min-h-[400px] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-x-auto">
-          <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} aircraftType={aircraftType} />
+          <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} aircraftType={aircraftType} unit={unit} />
         </div>
 
-        <div className="order-2 lg:order-3 w-full lg:w-80 flex-shrink-0">
+        <div className="order-3 lg:order-3 w-full lg:w-80 flex-shrink-0">
           <FlightAssistant
             metrics={metrics}
             checks={validationChecks}
