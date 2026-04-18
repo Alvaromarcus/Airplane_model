@@ -4,6 +4,7 @@ import { Moon, Sun } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import FlightAssistant from './components/FlightAssistant';
 import CanvasView from './components/CanvasView';
+import Scene3D from './components/Scene3D';
 import AircraftTypeSelector from './components/AircraftTypeSelector';
 import AppLogo from './components/AppLogo';
 import { calculateMetrics, validateDesign } from './utils/calculations';
@@ -48,6 +49,7 @@ function App() {
   const [aircraftType, setAircraftType] = useState<AircraftType>('conventional');
   const [isExporting, setIsExporting] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [viewMode, setViewMode] = useState<'2D' | '3D'>('2D');
 
   // Persist dimensions whenever they change
   useEffect(() => {
@@ -131,6 +133,14 @@ function App() {
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </button>
 
+          {/* View toggle */}
+          <button
+            onClick={() => setViewMode(prev => prev === '2D' ? '3D' : '2D')}
+            className="bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded transition-colors text-sm font-medium border border-indigo-200 dark:border-indigo-800 flex-shrink-0"
+          >
+            {viewMode === '2D' ? '3D View' : '2D View'}
+          </button>
+
           {/* Unit select — hide label on mobile, show on sm+ */}
           <div className="flex items-center gap-1 text-sm">
             <span className="hidden sm:inline font-medium text-gray-600 dark:text-gray-300">{t('units')}:</span>
@@ -182,7 +192,7 @@ function App() {
       </div>
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden relative">
-        <div className="order-2 lg:order-1 w-full lg:w-64 flex-shrink-0 z-10">
+        <div className="order-3 lg:order-1 w-full lg:w-64 flex-shrink-0 z-10">
           <Sidebar
             dimensions={dimensions}
             onChange={handleDimensionChange}
@@ -192,10 +202,14 @@ function App() {
         </div>
 
         <div className="order-1 lg:order-2 w-full lg:flex-1 relative min-h-[400px] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-x-auto">
-          <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} aircraftType={aircraftType} unit={unit} />
+          {viewMode === '2D' ? (
+            <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} aircraftType={aircraftType} unit={unit} />
+          ) : (
+            <Scene3D dimensions={dimensions} aircraftType={aircraftType} unit={unit} />
+          )}
         </div>
 
-        <div className="order-3 lg:order-3 w-full lg:w-80 flex-shrink-0">
+        <div className="order-2 lg:order-3 w-full lg:w-80 flex-shrink-0">
           <FlightAssistant
             metrics={metrics}
             checks={validationChecks}
