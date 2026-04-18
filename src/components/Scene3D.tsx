@@ -13,198 +13,196 @@ interface Scene3DProps {
 function AircraftMesh({ dimensions: dims, aircraftType, unit }: Scene3DProps) {
   const groupRef = useRef<THREE.Group>(null);
 
-  // Gentle auto-rotation
   useFrame((_, delta) => {
     if (groupRef.current) {
-      groupRef.current.rotation.y += delta * 0.3;
+      groupRef.current.rotation.y += delta * 0.25;
     }
   });
 
-  // Normalize to cm internally so scale stays sane
+  // Normalize all dims to cm
   const s = unit === 'mm' ? 0.1 : 1;
-  const WS  = dims.wingspan      * s;  // wingspan
-  const RC  = dims.rootChord     * s;  // root chord
-  const TC  = dims.tipChord      * s;  // tip chord
-  const SW  = dims.sweepOffset   * s;  // sweep
-  const FL  = dims.fuselageLength * s; // fuselage length
-  const NL  = dims.noseLength    * s;  // nose length
-  const HS  = dims.hStabSpan     * s;  // h-stab span
-  const HC  = dims.hStabChord    * s;  // h-stab chord
-  const VS  = dims.vStabSpan     * s;  // v-stab span
-  const VC  = dims.vStabChord    * s;  // v-stab chord
+  const WS  = Math.max(dims.wingspan * s, 1);
+  const RC  = Math.max(dims.rootChord * s, 0.5);
+  const TC  = Math.max(dims.tipChord * s, 0.1);
+  const SW  = dims.sweepOffset * s;
+  const FL  = Math.max(dims.fuselageLength * s, 1);
+  const NL  = Math.max(dims.noseLength * s, 0.1);
+  const HS  = Math.max(dims.hStabSpan * s, 0.1);
+  const HC  = Math.max(dims.hStabChord * s, 0.1);
+  const VS  = Math.max(dims.vStabSpan * s, 0.1);
+  const VC  = Math.max(dims.vStabChord * s, 0.1);
   const WTT = dims.wingToTailDistance * s;
 
-  // Fit everything into a ~100-unit bounding box for camera
-  const maxDim = Math.max(WS, FL, 1);
-  const F = 60 / maxDim; // scale factor to fit in view
+  // Scale factor: fit longest dimension into ~60 units
+  const maxDim = Math.max(WS, FL);
+  const F = 50 / maxDim;
 
-  const fw = 3 * F;   // fuselage cross-section half-width
-  const fh = 3 * F;   // fuselage cross-section half-height
-  const thick = 1.2 * F; // wing thickness
+  // Fuselage cross-section radius
+  const fR = Math.max(2.5 * F, 1);
+  // Wing thickness
+  const thick = Math.max(1.5 * F, 0.5);
 
-  // Colors
-  const fuselageColor  = '#6b7280';
-  const wingColor      = '#0284c7';
-  const hStabColor     = '#db2777';
-  const vStabColor     = '#ca8a04';
-  const noseColor      = '#374151';
+  // ─── Z positions (nose = positive Z, tail = negative Z) ───
+  // We place the origin at the nose tip for simplicity,
+  // then shift everything so the model is centered.
+  const totalLength = FL * F;
+  const noseTip     =  totalLength / 2;   // +Z
 
-  // Build wing geometry (tapered trapezoid extruded)
-  const buildWingGeometry = (
-    span: number, rootC: number, tipC: number, sweep: number, t: number
-  ): THREE.BufferGeometry => {
+  // Wing LE Z position (measured from nose tip, going back)
+  const wingLeZ = noseTip - NL * F;
+
+  // Tail group Z
+  const tailLeZ  = noseTip - (NL + RC + WTT) * F;
+
+  // ─── Build tapered wing geometry (right half only) ───
+  // Shape in local XY plane, then extruded along local Z (thickness).
+  // After rotation [-PI/2, 0, 0]:  local X→world X, local Y→world Z, local Z→world Y
+  // So we define: X = spanwise, Y = chordwise (will become -Z in world), extrude = thickness (world Y)
+  const buildWing = (span: number, rootC: number, tipC: number, sweep: number, t: number) => {
     const hw = (span / 2) * F;
     const rc = rootC * F;
     const tc = tipC  * F;
     const sw = sweep  * F;
-    const halfT = t / 2;
 
-    // Right half wing outline (top-down, Z = forward = negative in THREE.js convention)
-    // We'll build using ShapeGeometry
     const shape = new THREE.Shape();
-    shape.moveTo(0, 0);                     // root LE
-    shape.lineTo(hw, -sw);                  // tip LE
-    shape.lineTo(hw, -sw - tc);             // tip TE
-    shape.lineTo(0, -rc);                   // root TE
+    shape.moveTo(0,   0);          // root LE
+    shape.lineTo(hw,  -sw);        // tip LE (swept back)
+    shape.lineTo(hw,  -sw - tc);   // tip TE
+    shape.lineTo(0,   -rc);        // root TE
     shape.closePath();
 
-    const extrudeSettings = {
+    return new THREE.ExtrudeGeometry(shape, {
       depth: t,
       bevelEnabled: true,
-      bevelSize: halfT * 0.3,
-      bevelThickness: halfT * 0.3,
+      bevelSize: t * 0.15,
+      bevelThickness: t * 0.15,
       bevelSegments: 2,
-    };
-    return new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    });
   };
 
-  // Wing offset: wing LE starts at noseLength from nose
-  const wingLEz = -(NL * F); // negative Z = forward in scene
+  const wingGeo  = buildWing(WS, RC, TC, SW, thick);
+  const hStabGeo = buildWing(HS, HC, HC * 0.75, 0, thick * 0.75);
+  const vStabGeo = buildWing(VS, VC, VC * 0.6,  0, thick * 0.7);
+
+  // Colors
+  const C = {
+    fuse:  '#5a6270',
+    nose:  '#374151',
+    wing:  '#0284c7',
+    hStab: '#db2777',
+    vStab: '#ca8a04',
+  };
+
+  // Wing rotation: lays the shape flat (chord along -Z, span along X)
+  const wingRot: [number, number, number] = [-Math.PI / 2, 0, 0];
+  // Left wing mirror rotation (flip X)
+  const wingRotL: [number, number, number] = [-Math.PI / 2, 0, Math.PI];
 
   return (
     <group ref={groupRef}>
-      {/* === FUSELAGE BODY === */}
-      {/* Main cylinder-ish body */}
-      <mesh position={[0, 0, -(FL * F / 2 - NL * F / 2)]}>
-        <cylinderGeometry
-          args={[fw, fh, (FL - NL * 0.5) * F, 8]}
-        />
-        <meshStandardMaterial color={fuselageColor} roughness={0.6} />
+
+      {/* ── Fuselage body (cylinder along Z) ── */}
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+        <cylinderGeometry args={[fR, fR * 0.85, totalLength * 0.82, 10]} />
+        <meshStandardMaterial color={C.fuse} roughness={0.6} />
       </mesh>
 
-      {/* Nose cone */}
-      <mesh position={[0, 0, (NL * 0.8) * F]}
-            rotation={[Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[fw, NL * F * 1.2, 8]} />
-        <meshStandardMaterial color={noseColor} roughness={0.5} />
+      {/* ── Nose cone (points toward +Z) ── */}
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, noseTip - NL * F * 0.3]}>
+        <coneGeometry args={[fR, NL * F * 1.4, 10]} />
+        <meshStandardMaterial color={C.nose} roughness={0.5} />
       </mesh>
 
-      {/* === RIGHT WING === */}
+      {/* ── Right wing ── */}
       <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, 0, wingLEz]}
+        rotation={wingRot}
+        position={[0, 0, wingLeZ]}
       >
-        <primitive object={buildWingGeometry(WS, RC, TC, SW, thick)} />
-        <meshStandardMaterial color={wingColor} roughness={0.4} />
+        <primitive object={wingGeo} />
+        <meshStandardMaterial color={C.wing} roughness={0.35} side={THREE.DoubleSide} />
       </mesh>
 
-      {/* === LEFT WING (mirror) === */}
+      {/* ── Left wing (mirror on X axis) ── */}
       <mesh
-        rotation={[-Math.PI / 2, 0, Math.PI]}
-        position={[0, 0, -(wingLEz + RC * F)]}
+        rotation={wingRotL}
+        position={[0, 0, wingLeZ - RC * F]}
         scale={[-1, 1, 1]}
       >
-        <primitive
-          object={buildWingGeometry(WS, RC, TC, SW, thick).clone()}
-        />
-        <meshStandardMaterial color={wingColor} roughness={0.4} />
+        <primitive object={wingGeo.clone()} />
+        <meshStandardMaterial color={C.wing} roughness={0.35} side={THREE.DoubleSide} />
       </mesh>
 
-      {/* === CONVENTIONAL TAIL === */}
-      {aircraftType === 'conventional' && (() => {
-        const tailZ = -(NL + RC + WTT) * F;
-        return (
-          <group position={[0, 0, tailZ]}>
-            {/* Horizontal Stabilizer */}
-            <mesh rotation={[-Math.PI / 2, 0, 0]}>
-              <primitive
-                object={buildWingGeometry(HS, HC, HC * 0.7, 0, thick * 0.8)}
-              />
-              <meshStandardMaterial color={hStabColor} roughness={0.4} />
-            </mesh>
-            <mesh
-              rotation={[-Math.PI / 2, 0, Math.PI]}
-              position={[0, 0, -HC * F]}
-              scale={[-1, 1, 1]}
-            >
-              <primitive
-                object={buildWingGeometry(HS, HC, HC * 0.7, 0, thick * 0.8).clone()}
-              />
-              <meshStandardMaterial color={hStabColor} roughness={0.4} />
-            </mesh>
+      {/* ── Conventional tail surfaces ── */}
+      {aircraftType === 'conventional' && (
+        <group>
+          {/* H-Stab right */}
+          <mesh rotation={wingRot} position={[0, 0, tailLeZ]}>
+            <primitive object={hStabGeo} />
+            <meshStandardMaterial color={C.hStab} roughness={0.4} side={THREE.DoubleSide} />
+          </mesh>
+          {/* H-Stab left */}
+          <mesh rotation={wingRotL} position={[0, 0, tailLeZ - HC * F]} scale={[-1, 1, 1]}>
+            <primitive object={hStabGeo.clone()} />
+            <meshStandardMaterial color={C.hStab} roughness={0.4} side={THREE.DoubleSide} />
+          </mesh>
 
-            {/* Vertical Stabilizer */}
-            <mesh rotation={[0, 0, -Math.PI / 2]} position={[0, VS * F / 2, 0]}>
-              <primitive
-                object={buildWingGeometry(VS, VC, VC * 0.6, 0, thick * 0.7)}
-              />
-              <meshStandardMaterial color={vStabColor} roughness={0.4} />
-            </mesh>
-          </group>
-        );
-      })()}
+          {/* V-Stab (vertical fin) — rotate 90° so it stands up */}
+          {/* We rotate the wing shape: span goes up (Y), chord goes back (-Z) */}
+          <mesh
+            rotation={[0, 0, Math.PI / 2]}
+            position={[0, 0, tailLeZ]}
+          >
+            <primitive object={vStabGeo.clone()} />
+            <meshStandardMaterial color={C.vStab} roughness={0.4} side={THREE.DoubleSide} />
+          </mesh>
+        </group>
+      )}
 
-      {/* === FLYING WING WINGLETS === */}
+      {/* ── Flying wing winglets ── */}
       {aircraftType === 'flying_wing' && (() => {
         const tipX = (WS / 2) * F;
-        const tipZ = -(SW + TC / 2) * F + wingLEz;
+        const tipZ = wingLeZ - SW * F - TC * F / 2;
+        const wl = thick;
         return (
           <>
             <mesh position={[tipX, VS * F / 2, tipZ]}>
-              <boxGeometry args={[thick, VS * F, VC * F]} />
-              <meshStandardMaterial color={vStabColor} roughness={0.4} />
+              <boxGeometry args={[wl, VS * F, VC * F]} />
+              <meshStandardMaterial color={C.vStab} roughness={0.4} />
             </mesh>
             <mesh position={[-tipX, VS * F / 2, tipZ]}>
-              <boxGeometry args={[thick, VS * F, VC * F]} />
-              <meshStandardMaterial color={vStabColor} roughness={0.4} />
+              <boxGeometry args={[wl, VS * F, VC * F]} />
+              <meshStandardMaterial color={C.vStab} roughness={0.4} />
             </mesh>
           </>
         );
       })()}
 
-      {/* Ground shadow plane */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -fh * 3, 0]}>
-        <planeGeometry args={[WS * F * 1.5, FL * F * 1.5]} />
-        <meshStandardMaterial
-          color="#000000"
-          transparent
-          opacity={0.08}
-        />
+      {/* ── Ground shadow ── */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -fR * 4, 0]}>
+        <planeGeometry args={[WS * F * 1.4, FL * F * 1.4]} />
+        <meshStandardMaterial color="#000" transparent opacity={0.07} />
       </mesh>
     </group>
   );
 }
 
 export default function Scene3D({ dimensions, aircraftType, unit }: Scene3DProps) {
-  // Compute a good camera distance from wingspan
   const s = unit === 'mm' ? 0.1 : 1;
-  const span = dimensions.wingspan * s;
-  const camDist = Math.max(80, span * 1.2);
+  const span = Math.max(dimensions.wingspan * s, 1);
+  const len  = Math.max(dimensions.fuselageLength * s, 1);
+  const maxD = Math.max(span, len);
+  const dist = (50 / maxD) * maxD * 1.8;
 
   return (
     <div className="w-full h-full absolute inset-0 bg-gray-50 dark:bg-gray-800">
       <Canvas
-        camera={{ position: [camDist * 0.6, camDist * 0.4, camDist * 0.6], fov: 40 }}
+        camera={{ position: [dist * 0.7, dist * 0.5, dist * 0.9], fov: 38 }}
         shadows
       >
         <color attach="background" args={['transparent']} />
-        <ambientLight intensity={0.6} />
-        <directionalLight
-          position={[50, 80, 30]}
-          intensity={1.2}
-          castShadow
-        />
-        <directionalLight position={[-30, 20, -30]} intensity={0.3} />
+        <ambientLight intensity={0.5} />
+        <directionalLight position={[40, 60, 40]} intensity={1.3} castShadow />
+        <directionalLight position={[-20, 10, -20]} intensity={0.25} />
         <AircraftMesh dimensions={dimensions} aircraftType={aircraftType} unit={unit} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
         <Environment preset="sunset" />
