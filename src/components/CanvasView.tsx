@@ -10,7 +10,7 @@ interface CanvasViewProps {
   unit: 'cm' | 'mm';
 }
 
-export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftType, unit }: CanvasViewProps) {
+export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftType }: CanvasViewProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -54,10 +54,6 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
 
       const totalRequiredHeight = topViewBoxHeight + sideViewBoxHeight + frontViewBoxHeight + 100; // padding between views
       const totalRequiredWidth = Math.max(topViewBoxWidth, sideViewBoxWidth, frontViewBoxWidth);
-
-      // Ensure hardcoded shapes (nacelles, winglets, fuselages) scale with unit choice so they
-      // don't look 10x smaller visually when using millimeters.
-      const uScale = unit === 'mm' ? 10 : 1;
 
       // Padding around the canvas
       const paddingPixels = 40;
@@ -109,14 +105,14 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
       ctx.lineWidth = 2;
 
       if (aircraftType === 'flying_wing') {
-        const nacelleWidth = 8 * uScale * scale;
+        const nacelleWidth = 10;
         const nacelleLength = (dims.rootChord * 0.6) * scale;
         const nacelleX = -nacelleWidth / 2;
         const nacelleY = wingY + (dims.rootChord * 0.2) * scale;
         ctx.fillRect(nacelleX, nacelleY, nacelleWidth, nacelleLength);
         ctx.strokeRect(nacelleX, nacelleY, nacelleWidth, nacelleLength);
       } else {
-        const fuselageWidthScale = 10 * uScale * scale; // Assume constant 10 unit width for fuselage visual
+        const fuselageWidthScale = 14; // Assume constant 14 unit width for fuselage visual
         ctx.fillRect(-fuselageWidthScale / 2, 0, fuselageWidthScale, dims.fuselageLength * scale);
         ctx.strokeRect(-fuselageWidthScale / 2, 0, fuselageWidthScale, dims.fuselageLength * scale);
       }
@@ -183,25 +179,25 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
 
       // Draw Theoretical CG (Top View)
       const cgY = (dims.noseLength + metrics.cgPosition) * scale;
-      drawCGCircle(ctx, 0, cgY, 6 * uScale);
+      drawCGCircle(ctx, 0, cgY, 6);
 
       // Draw Neutral Point (NP)
       const npY = (dims.noseLength + metrics.neutralPoint) * scale;
-      drawNPMarker(ctx, 0, npY, 6 * uScale);
+      drawNPMarker(ctx, 0, npY, 6);
 
       ctx.restore();
 
       // --- DRAW SIDE VIEW ---
-      const sideCy = paddingPixels + topViewBoxHeight * scale + 50;
+      const sideCy = paddingPixels + topViewBoxHeight * scale + 40;
       ctx.save();
       ctx.translate(cx, sideCy);
 
       // Fuselage Side Profile (simple rectangle for now)
-      const fuselageHeightSide = 10 * uScale * scale;
+      const fuselageHeightSide = 14;
       ctx.fillStyle = colors.fuselageFill;
       ctx.strokeStyle = colors.fuselageStroke;
       if (aircraftType === 'flying_wing') {
-        const nacelleH = 8 * uScale * scale;
+        const nacelleH = 10;
         const nacelleW = (dims.rootChord * 0.6) * scale;
         const nacelleStartX = -(maxAircraftLength * scale) / 2
                               + (dims.noseLength * scale)
@@ -254,8 +250,8 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
         ctx.fillStyle = colors.hStabFill;
         ctx.strokeStyle = colors.hStabStroke;
         const hStabSideX = -(maxAircraftLength * scale) / 2 + hStabY;
-        ctx.fillRect(hStabSideX, fuselageHeightSide / 2 - 2 * uScale * scale, dims.hStabChord * scale, 4 * uScale * scale);
-        ctx.strokeRect(hStabSideX, fuselageHeightSide / 2 - 2 * uScale * scale, dims.hStabChord * scale, 4 * uScale * scale);
+        ctx.fillRect(hStabSideX, fuselageHeightSide / 2 - 2, dims.hStabChord * scale, 4);
+        ctx.strokeRect(hStabSideX, fuselageHeightSide / 2 - 2, dims.hStabChord * scale, 4);
       }
 
       // Wing position indicator on fuselage (Enhanced profile)
@@ -264,24 +260,24 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
       ctx.strokeStyle = colors.wingStroke;
       ctx.beginPath();
       ctx.moveTo(wingSideX, 0);
-      ctx.quadraticCurveTo(wingSideX + (dims.rootChord * scale) * 0.25, -6 * uScale * scale, wingSideX + (dims.rootChord * scale), 0);
+      ctx.quadraticCurveTo(wingSideX + (dims.rootChord * scale) * 0.25, -6, wingSideX + (dims.rootChord * scale), 0);
       ctx.fill();
       ctx.stroke();
 
       // CG on side view
       const cgSideX = -(maxAircraftLength * scale) / 2 + cgY;
-      drawCGCircle(ctx, cgSideX, fuselageHeightSide / 2, 6 * uScale);
+      drawCGCircle(ctx, cgSideX, fuselageHeightSide / 2, 6);
 
       ctx.restore();
 
       // --- DRAW FRONT VIEW ---
-      const frontCy = sideCy + sideViewBoxHeight * scale + 50;
+      const frontCy = sideCy + sideViewBoxHeight * scale + 40;
       ctx.save();
       ctx.translate(cx, frontCy);
 
       // Fuselage Front Profile
-      const fuselageWidthFront = 10 * uScale * scale;
-      const fuselageHeightFront = 10 * uScale * scale;
+      const fuselageWidthFront = 12;
+      const fuselageHeightFront = 12;
       ctx.fillStyle = colors.fuselageFill;
       ctx.strokeStyle = colors.fuselageStroke;
       ctx.fillRect(
@@ -305,7 +301,7 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
         const tipX = (dims.wingspan / 2) * scale;
         const tipY = fuselageHeightFront / 2 - (tipYOffset * scale);
         const wingletH = dims.vStabSpan * scale * 0.5;
-        const wingletW = 3 * uScale * scale;
+        const wingletW = 3;
 
         // Right winglet
         ctx.fillRect(tipX - wingletW / 2, tipY - wingletH, wingletW, wingletH);
@@ -314,7 +310,7 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
         ctx.fillRect(-tipX - wingletW / 2, tipY - wingletH, wingletW, wingletH);
         ctx.strokeRect(-tipX - wingletW / 2, tipY - wingletH, wingletW, wingletH);
       } else {
-        const vStabWidthFront = 4 * uScale * scale;
+        const vStabWidthFront = 4;
         ctx.fillRect(
           -vStabWidthFront / 2,
           -dims.vStabSpan * scale,
@@ -331,7 +327,7 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
 
       // Wing Dihedral Front Profile
       ctx.strokeStyle = colors.wingStroke;
-      ctx.lineWidth = 3 * uScale;
+      ctx.lineWidth = 3;
       ctx.beginPath();
 
       // Right Wing
@@ -353,6 +349,24 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
       ctx.fillText(t('top_view'), 40, 40);
       ctx.fillText(t('side_view'), 40, sideCy - 20);
       ctx.fillText(t('front_view'), 40, frontCy - 20);
+
+      // --- LEGEND ---
+      const legendX = 10;
+      const legendY = canvas.height - 70;
+      ctx.font = '11px sans-serif';
+      ctx.fillStyle = colors.text;
+      ctx.fillText(t('legend') ?? 'Legend', legendX, legendY);
+
+      // CG symbol
+      drawCGCircle(ctx, legendX + 6, legendY + 14, 6);
+      ctx.fillStyle = colors.text;
+      ctx.font = '10px sans-serif';
+      ctx.fillText('CG', legendX + 16, legendY + 18);
+
+      // NP symbol
+      drawNPMarker(ctx, legendX + 6, legendY + 32, 6);
+      ctx.fillStyle = colors.text;
+      ctx.fillText('NP', legendX + 16, legendY + 36);
     };
 
     const drawCGCircle = (ctx: CanvasRenderingContext2D, x: number, y: number, radius: number) => {
@@ -416,7 +430,7 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
     resizeCanvas(); // Initial draw
 
     return () => window.removeEventListener('resize', resizeCanvas);
-  }, [dimensions, metrics, t, isDarkMode, aircraftType, unit]);
+  }, [dimensions, metrics, t, isDarkMode, aircraftType]);
 
   return (
     <div ref={containerRef} className="w-full h-full absolute inset-0">
