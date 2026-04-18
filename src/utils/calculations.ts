@@ -1,4 +1,5 @@
 export type AircraftType = 'conventional' | 'flying_wing';
+export type AirfoilType = 'flat' | 'semi' | 'sym';
 
 // Future: 'zagi' | 'delta' | 'canard'
 
