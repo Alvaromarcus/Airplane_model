@@ -55,10 +55,14 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
       const totalRequiredHeight = topViewBoxHeight + sideViewBoxHeight + frontViewBoxHeight + 100; // padding between views
       const totalRequiredWidth = Math.max(topViewBoxWidth, sideViewBoxWidth, frontViewBoxWidth);
 
+      // Ensure hardcoded shapes (nacelles, winglets, fuselages) scale with unit choice so they
+      // don't look 10x smaller visually when using millimeters.
+      const uScale = unit === 'mm' ? 10 : 1;
+
       // Padding around the canvas
-      const padding = 40;
-      const availableWidth = canvas.width - padding * 2;
-      const availableHeight = canvas.height - padding * 2;
+      const paddingPixels = 40;
+      const availableWidth = canvas.width - paddingPixels * 2;
+      const availableHeight = canvas.height - paddingPixels * 2;
 
       const scaleX = availableWidth / totalRequiredWidth;
       const scaleY = availableHeight / totalRequiredHeight;
@@ -66,12 +70,8 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
 
       const cx = canvas.width / 2;
 
-      // Ensure hardcoded shapes (nacelles, winglets, fuselages) scale with unit choice so they
-      // don't look 10x smaller visually when using millimeters.
-      const uScale = unit === 'mm' ? 10 : 1;
-
       // Top View Center Y
-      const topCy = padding + (topViewBoxHeight * scale) / 2;
+      const topCy = paddingPixels + (topViewBoxHeight * scale) / 2;
 
       ctx.save();
 
@@ -192,7 +192,7 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
       ctx.restore();
 
       // --- DRAW SIDE VIEW ---
-      const sideCy = padding + topViewBoxHeight * scale + 50;
+      const sideCy = paddingPixels + topViewBoxHeight * scale + 50;
       ctx.save();
       ctx.translate(cx, sideCy);
 
@@ -350,9 +350,9 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
       // Draw labels
       ctx.font = '14px sans-serif';
       ctx.fillStyle = colors.text;
-      ctx.fillText(t('top_view'), padding, padding);
-      ctx.fillText(t('side_view'), padding, sideCy - 20);
-      ctx.fillText(t('front_view'), padding, frontCy - 20);
+      ctx.fillText(t('top_view'), 40, 40);
+      ctx.fillText(t('side_view'), 40, sideCy - 20);
+      ctx.fillText(t('front_view'), 40, frontCy - 20);
     };
 
     const drawCGCircle = (ctx: CanvasRenderingContext2D, x: number, y: number, radius: number) => {
