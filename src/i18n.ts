@@ -100,6 +100,7 @@ const resources = {
       "developed_by": "Developed by",
       "dark_mode": "Dark Mode",
       "light_mode": "Light Mode",
+      "legend": "Legend",
     }
   },
   pt: {
@@ -200,6 +201,7 @@ const resources = {
       "developed_by": "Desenvolvido por",
       "dark_mode": "Modo Escuro",
       "light_mode": "Modo Claro",
+      "legend": "Legenda",
     }
   }
 };
