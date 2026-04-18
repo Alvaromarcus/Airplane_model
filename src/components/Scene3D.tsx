@@ -82,8 +82,8 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit }: Scene3DProps) {
   };
 
   const wingGeo  = buildWing(WS, RC, TC, SW, thick);
-  const hStabGeo = buildWing(HS, HC, HC * 0.75, 0, thick * 0.75);
-  const vStabGeo = buildWing(VS, VC, VC * 0.6,  0, thick * 0.7);
+  const hStabGeo = buildWing(HS, HC, HC * 0.75, HC * 0.25, thick * 0.75);
+  const vStabGeo = buildWing(VS * 2, VC, VC * 0.6,  VC * 0.4, thick * 0.7);
 
   // Colors
   const C = {
@@ -100,17 +100,21 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit }: Scene3DProps) {
   return (
     <group ref={groupRef}>
 
-      {/* ── Fuselage body (cylinder along Z) ── */}
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <cylinderGeometry args={[fR, fR * 0.85, totalLength * 0.82, 10]} />
-        <meshStandardMaterial color={C.fuse} roughness={0.6} />
-      </mesh>
-
-      {/* ── Nose cone (points toward +Z) ── */}
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, noseTip - NL * F * 0.3]}>
-        <coneGeometry args={[fR, NL * F * 1.4, 10]} />
-        <meshStandardMaterial color={C.nose} roughness={0.5} />
-      </mesh>
+      {/* ── Fuselage body (conventional only) ── */}
+      {aircraftType === 'conventional' && (
+        <group>
+          {/* Rectangular tube */}
+          <mesh position={[0, 0, 0]}>
+            <boxGeometry args={[fR * 1.2, fR * 1.5, totalLength]} />
+            <meshStandardMaterial color={C.fuse} roughness={0.6} />
+          </mesh>
+          {/* Propeller disc at the nose */}
+          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, noseTip + 0.1 * F]}>
+            <cylinderGeometry args={[fR * 2.5, fR * 2.5, 0.2 * F, 16]} />
+            <meshStandardMaterial color="#000000" transparent opacity={0.3} />
+          </mesh>
+        </group>
+      )}
 
       {/* ── Right wing ── */}
       <group position={[0, 0, wingLeZ]} rotation={[0, 0, dihedralRad]}>
@@ -157,13 +161,12 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit }: Scene3DProps) {
           </mesh>
 
           {/* V-Stab (vertical fin) */}
-          <mesh
-            rotation={[-Math.PI / 2, 0, Math.PI / 2]}
-            position={[(thick * 0.7) / 2, 0, tailLeZ]}
-          >
-            <primitive object={vStabGeo.clone()} />
-            <meshStandardMaterial color={C.vStab} roughness={0.4} side={THREE.DoubleSide} />
-          </mesh>
+          <group position={[0, fR * 1.5 / 2, tailLeZ]} rotation={[0, 0, Math.PI / 2]}>
+            <mesh rotation={wingRot} position={[0, -thick * 0.7 / 2, 0]}>
+              <primitive object={vStabGeo.clone()} />
+              <meshStandardMaterial color={C.vStab} roughness={0.4} side={THREE.DoubleSide} />
+            </mesh>
+          </group>
         </group>
       )}
 
