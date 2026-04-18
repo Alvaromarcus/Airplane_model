@@ -38,6 +38,17 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
     StatusIcon = AlertTriangle;
   }
 
+  const wingAreaCm2 = unit === 'mm' ? metrics.wingArea / 100 : metrics.wingArea;
+  const aileronArea = metrics.wingArea * 0.12;
+  const elevatorArea = metrics.hStabArea * 0.25;
+  const rudderArea = metrics.vStabArea * 0.25;
+  
+  const auwGrams = wingAreaCm2 * 0.45; 
+  const powerWatts = (auwGrams / 453.6) * 100;
+  const kv = 1000;
+  const lipoCells = '3S';
+  const recProp = '9x6 - 10x5';
+
   return (
     <aside className="w-full lg:w-80 bg-white dark:bg-gray-800 shadow-md z-20 flex flex-col h-auto lg:h-full border-t lg:border-t-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto transition-colors duration-200">
       <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
@@ -146,24 +157,50 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
           </div>
         )}
 
-        {/* Guidelines Section */}
+        {/* Components & Specs Section */}
         <div>
           <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
-            {t('control_surfaces')}
+            {t('components_specs')}
           </h3>
-          <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3 text-sm text-blue-800 dark:text-blue-300 space-y-2">
-            <div className="flex gap-2">
-              <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
-              <p>{t('ailerons_rec')}</p>
-            </div>
-            <div className="flex gap-2">
-              <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
-              <p>{t('elevator_rec')}</p>
-            </div>
-            <div className="flex gap-2">
-              <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
-              <p>{t('rudder_rec')}</p>
-            </div>
+          <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3 text-sm text-blue-800 dark:text-blue-300">
+            <ul className="space-y-2">
+              <li className="flex justify-between">
+                <span className="opacity-80">{t('aileron_area')}:</span>
+                <span className="font-semibold">{formatNumber(aileronArea, true)}</span>
+              </li>
+              {aircraftType === 'conventional' && (
+                <>
+                  <li className="flex justify-between">
+                    <span className="opacity-80">{t('elevator_area')}:</span>
+                    <span className="font-semibold">{formatNumber(elevatorArea, true)}</span>
+                  </li>
+                  <li className="flex justify-between">
+                    <span className="opacity-80">{t('rudder_area')}:</span>
+                    <span className="font-semibold">{formatNumber(rudderArea, true)}</span>
+                  </li>
+                </>
+              )}
+              <li className="flex justify-between mt-2 pt-2 border-t border-blue-200 dark:border-blue-800/50">
+                <span className="opacity-80">{t('est_auw')}:</span>
+                <span className="font-semibold">{auwGrams.toFixed(0)} g</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="opacity-80">{t('req_power')}:</span>
+                <span className="font-semibold">{powerWatts.toFixed(0)} W</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="opacity-80">{t('motor_kv')}:</span>
+                <span className="font-semibold">~{kv} Kv</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="opacity-80">{t('lipo_cells')}:</span>
+                <span className="font-semibold">{lipoCells}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="opacity-80">{t('rec_prop')}:</span>
+                <span className="font-semibold">{recProp}</span>
+              </li>
+            </ul>
           </div>
         </div>
       </div>
