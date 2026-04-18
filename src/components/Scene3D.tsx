@@ -53,11 +53,12 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit }: Scene3DProps) {
 
   // Tail group Z
   const tailLeZ  = noseTip - (NL + RC + WTT) * F;
+  
+  const dihedralRad = (dims.dihedral || 0) * (Math.PI / 180);
 
   // ─── Build tapered wing geometry (right half only) ───
   // Shape in local XY plane, then extruded along local Z (thickness).
-  // After rotation [-PI/2, 0, 0]:  local X→world X, local Y→world Z, local Z→world Y
-  // So we define: X = spanwise, Y = chordwise (will become -Z in world), extrude = thickness (world Y)
+  // After rotation [-PI/2, 0, 0]: local X→world X, local Y→world Z, local Z→world Y
   const buildWing = (span: number, rootC: number, tipC: number, sweep: number, t: number) => {
     const hw = (span / 2) * F;
     const rc = rootC * F;
@@ -66,9 +67,9 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit }: Scene3DProps) {
 
     const shape = new THREE.Shape();
     shape.moveTo(0,   0);          // root LE
-    shape.lineTo(hw,  -sw);        // tip LE (swept back)
-    shape.lineTo(hw,  -sw - tc);   // tip TE
-    shape.lineTo(0,   -rc);        // root TE
+    shape.lineTo(hw,  sw);         // tip LE (swept back)
+    shape.lineTo(hw,  sw + tc);    // tip TE
+    shape.lineTo(0,   rc);         // root TE
     shape.closePath();
 
     return new THREE.ExtrudeGeometry(shape, {
@@ -93,10 +94,8 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit }: Scene3DProps) {
     vStab: '#ca8a04',
   };
 
-  // Wing rotation: lays the shape flat (chord along -Z, span along X)
+  // Wing rotation: lays the shape flat (chord goes towards -Z, span along X)
   const wingRot: [number, number, number] = [-Math.PI / 2, 0, 0];
-  // Left wing mirror rotation (flip X)
-  const wingRotL: [number, number, number] = [-Math.PI / 2, 0, Math.PI];
 
   return (
     <group ref={groupRef}>
@@ -114,23 +113,34 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit }: Scene3DProps) {
       </mesh>
 
       {/* ── Right wing ── */}
-      <mesh
-        rotation={wingRot}
-        position={[0, 0, wingLeZ]}
-      >
-        <primitive object={wingGeo} />
-        <meshStandardMaterial color={C.wing} roughness={0.35} side={THREE.DoubleSide} />
-      </mesh>
+      <group position={[0, 0, wingLeZ]} rotation={[0, 0, dihedralRad]}>
+        <mesh rotation={wingRot}>
+          <primitive object={wingGeo} />
+          <meshStandardMaterial color={C.wing} roughness={0.35} side={THREE.DoubleSide} />
+        </mesh>
+        {/* Flying wing winglets */}
+        {aircraftType === 'flying_wing' && (
+          <mesh position={[(WS / 2) * F, VS * F / 2, -SW * F - TC * F / 2]}>
+            <boxGeometry args={[thick, VS * F, VC * F]} />
+            <meshStandardMaterial color={C.vStab} roughness={0.4} />
+          </mesh>
+        )}
+      </group>
 
       {/* ── Left wing (mirror on X axis) ── */}
-      <mesh
-        rotation={wingRotL}
-        position={[0, 0, wingLeZ - RC * F]}
-        scale={[-1, 1, 1]}
-      >
-        <primitive object={wingGeo.clone()} />
-        <meshStandardMaterial color={C.wing} roughness={0.35} side={THREE.DoubleSide} />
-      </mesh>
+      <group position={[0, 0, wingLeZ]} rotation={[0, 0, -dihedralRad]}>
+        <mesh rotation={wingRot} scale={[-1, 1, 1]}>
+          <primitive object={wingGeo.clone()} />
+          <meshStandardMaterial color={C.wing} roughness={0.35} side={THREE.DoubleSide} />
+        </mesh>
+        {/* Flying wing winglets */}
+        {aircraftType === 'flying_wing' && (
+          <mesh position={[-(WS / 2) * F, VS * F / 2, -SW * F - TC * F / 2]}>
+            <boxGeometry args={[thick, VS * F, VC * F]} />
+            <meshStandardMaterial color={C.vStab} roughness={0.4} />
+          </mesh>
+        )}
+      </group>
 
       {/* ── Conventional tail surfaces ── */}
       {aircraftType === 'conventional' && (
@@ -141,41 +151,21 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit }: Scene3DProps) {
             <meshStandardMaterial color={C.hStab} roughness={0.4} side={THREE.DoubleSide} />
           </mesh>
           {/* H-Stab left */}
-          <mesh rotation={wingRotL} position={[0, 0, tailLeZ - HC * F]} scale={[-1, 1, 1]}>
+          <mesh rotation={wingRot} position={[0, 0, tailLeZ]} scale={[-1, 1, 1]}>
             <primitive object={hStabGeo.clone()} />
             <meshStandardMaterial color={C.hStab} roughness={0.4} side={THREE.DoubleSide} />
           </mesh>
 
-          {/* V-Stab (vertical fin) — rotate 90° so it stands up */}
-          {/* We rotate the wing shape: span goes up (Y), chord goes back (-Z) */}
+          {/* V-Stab (vertical fin) */}
           <mesh
-            rotation={[0, 0, Math.PI / 2]}
-            position={[0, 0, tailLeZ]}
+            rotation={[-Math.PI / 2, 0, Math.PI / 2]}
+            position={[(thick * 0.7) / 2, 0, tailLeZ]}
           >
             <primitive object={vStabGeo.clone()} />
             <meshStandardMaterial color={C.vStab} roughness={0.4} side={THREE.DoubleSide} />
           </mesh>
         </group>
       )}
-
-      {/* ── Flying wing winglets ── */}
-      {aircraftType === 'flying_wing' && (() => {
-        const tipX = (WS / 2) * F;
-        const tipZ = wingLeZ - SW * F - TC * F / 2;
-        const wl = thick;
-        return (
-          <>
-            <mesh position={[tipX, VS * F / 2, tipZ]}>
-              <boxGeometry args={[wl, VS * F, VC * F]} />
-              <meshStandardMaterial color={C.vStab} roughness={0.4} />
-            </mesh>
-            <mesh position={[-tipX, VS * F / 2, tipZ]}>
-              <boxGeometry args={[wl, VS * F, VC * F]} />
-              <meshStandardMaterial color={C.vStab} roughness={0.4} />
-            </mesh>
-          </>
-        );
-      })()}
 
       {/* ── Ground shadow ── */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -fR * 4, 0]}>
