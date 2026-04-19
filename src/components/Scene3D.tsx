@@ -164,22 +164,27 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
     const swStart = (sweep * F) * startFrac;
     const swEnd = (sweep * F) * endFrac;
 
-    const teYStart = -1 * lcStart + swStart;
-    const teYEnd = -1 * lcEnd + swEnd;
+    // FIX: Trailing edge in this projection is at positive Y
+    const teYStart = 1 * lcStart + swStart;
+    const teYEnd = 1 * lcEnd + swEnd;
 
-    const hingeYStart = -0.75 * lcStart + swStart;
-    const hingeYEnd = -0.75 * lcEnd + swEnd;
+    const hingeYStart = 0.75 * lcStart + swStart;
+    const hingeYEnd = 0.75 * lcEnd + swEnd;
 
-    const zOffset = F * 0.05;
+    const shape = new THREE.Shape();
+    shape.moveTo(zStart, hingeYStart);
+    shape.lineTo(zEnd, hingeYEnd);
+    shape.lineTo(zEnd, teYEnd);
+    shape.lineTo(zStart, teYStart);
+    shape.lineTo(zStart, hingeYStart);
 
-    const pts = [];
-    pts.push(new THREE.Vector3(zStart, hingeYStart, zOffset));
-    pts.push(new THREE.Vector3(zEnd, hingeYEnd, zOffset));
-    pts.push(new THREE.Vector3(zEnd, teYEnd, zOffset));
-    pts.push(new THREE.Vector3(zStart, teYStart, zOffset));
-    pts.push(new THREE.Vector3(zStart, hingeYStart, zOffset));
+    // Create a very thin extrusion so it acts as a slightly raised panel 
+    // representing the aileron surface, making it look like a connected part.
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: F * 0.04, bevelEnabled: false });
+    // Center it vertically on the wing TE so it overlaps the wing perfectly
+    geo.translate(0, 0, -F * 0.02);
 
-    return new THREE.BufferGeometry().setFromPoints(pts);
+    return geo;
   };
 
   const aileronGeo = createAileronGeo(WS, RC, TC, SW, aircraftType === 'flying_wing');
@@ -220,10 +225,14 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
         <mesh rotation={wingRot}>
           <primitive object={wingGeo} />
           <meshStandardMaterial color={C.wing} roughness={0.35} side={THREE.DoubleSide} />
-          <line>
+          <mesh>
             <primitive object={aileronGeo} attach="geometry" />
-            <lineBasicMaterial color={C.nose} linewidth={2} />
-          </line>
+            <meshStandardMaterial color={C.wing} roughness={0.4} side={THREE.DoubleSide} />
+            <lineSegments>
+              <edgesGeometry attach="geometry" args={[aileronGeo]} />
+              <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
+            </lineSegments>
+          </mesh>
         </mesh>
         {/* Flying wing winglets */}
         {aircraftType === 'flying_wing' && (
@@ -239,10 +248,14 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
         <mesh rotation={wingRot} scale={[-1, 1, 1]}>
           <primitive object={wingGeo.clone()} />
           <meshStandardMaterial color={C.wing} roughness={0.35} side={THREE.DoubleSide} />
-          <line>
+          <mesh>
             <primitive object={aileronGeo} attach="geometry" />
-            <lineBasicMaterial color={C.nose} linewidth={2} />
-          </line>
+            <meshStandardMaterial color={C.wing} roughness={0.4} side={THREE.DoubleSide} />
+            <lineSegments>
+              <edgesGeometry attach="geometry" args={[aileronGeo]} />
+              <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
+            </lineSegments>
+          </mesh>
         </mesh>
         {/* Flying wing winglets */}
         {aircraftType === 'flying_wing' && (
