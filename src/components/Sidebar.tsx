@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AircraftDimensions, AircraftType } from '../utils/calculations';
+import type { AircraftDimensions, AircraftType, AirfoilType } from '../utils/calculations';
 
 interface SidebarProps {
   dimensions: AircraftDimensions;
   onChange: (key: keyof AircraftDimensions, value: number) => void;
   unit: 'cm' | 'mm';
   aircraftType: AircraftType;
+  airfoil: AirfoilType;
+  onAirfoilChange: (val: AirfoilType) => void;
 }
 
-export default function Sidebar({ dimensions, onChange, unit, aircraftType }: SidebarProps) {
+export default function Sidebar({ dimensions, onChange, unit, aircraftType, airfoil, onAirfoilChange }: SidebarProps) {
   const { t } = useTranslation();
 
   const [localValues, setLocalValues] = useState<Record<string, string>>(() => {
@@ -82,6 +84,20 @@ export default function Sidebar({ dimensions, onChange, unit, aircraftType }: Si
           <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
             {t('wing')}
           </h3>
+          <div className="mb-3">
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              {t('airfoil_profile')}
+            </label>
+            <select
+              value={airfoil}
+              onChange={(e) => onAirfoilChange(e.target.value as AirfoilType)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+            >
+              <option value="flat">{t('airfoil_flat')}</option>
+              <option value="semi">{t('airfoil_semi')}</option>
+              <option value="sym">{t('airfoil_sym')}</option>
+            </select>
+          </div>
           {renderInput('wingspan', 'wingspan')}
           <div className="flex gap-2">
             <div className="flex-1">
