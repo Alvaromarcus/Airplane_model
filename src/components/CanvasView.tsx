@@ -161,6 +161,45 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
         ctx.setLineDash([]);
         ctx.restore();
       } else {
+        // Draw Aileron hint: dashed line
+        const aileronStartX = (dims.wingspan * 0.5 / 2) * scale;
+        const aileronEndX   = (dims.wingspan * 0.95 / 2) * scale;
+        
+        const spanFractionStart = aileronStartX / ((dims.wingspan / 2) * scale);
+        const spanFractionEnd = aileronEndX / ((dims.wingspan / 2) * scale);
+
+        const teYAtStart = wingY + (dims.rootChord * scale) + spanFractionStart * (dims.sweepOffset * scale + dims.tipChord * scale - dims.rootChord * scale);
+        const teYAtEnd = wingY + (dims.rootChord * scale) + spanFractionEnd * (dims.sweepOffset * scale + dims.tipChord * scale - dims.rootChord * scale);
+
+        const localChordStart = (dims.rootChord * scale) + spanFractionStart * (dims.tipChord * scale - dims.rootChord * scale);
+        const localChordEnd = (dims.rootChord * scale) + spanFractionEnd * (dims.tipChord * scale - dims.rootChord * scale);
+
+        const hingeYStart = teYAtStart - localChordStart * 0.25;
+        const hingeYEnd = teYAtEnd - localChordEnd * 0.25;
+
+        ctx.save();
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = isDarkMode ? '#60a5fa' : '#2563eb';
+        ctx.lineWidth = 1.5;
+        // Right aileron
+        ctx.beginPath();
+        ctx.moveTo(aileronStartX, teYAtStart);
+        ctx.lineTo(aileronStartX, hingeYStart);
+        ctx.lineTo(aileronEndX, hingeYEnd);
+        ctx.lineTo(aileronEndX, teYAtEnd);
+        ctx.stroke();
+
+        // Left aileron (mirror)
+        ctx.beginPath();
+        ctx.moveTo(-aileronStartX, teYAtStart);
+        ctx.lineTo(-aileronStartX, hingeYStart);
+        ctx.lineTo(-aileronEndX, hingeYEnd);
+        ctx.lineTo(-aileronEndX, teYAtEnd);
+        ctx.stroke();
+
+        ctx.setLineDash([]);
+        ctx.restore();
+
         // Draw Horizontal Stabilizer
         const hStabY = wingY + (dims.rootChord * scale) + (dims.wingToTailDistance * scale);
         ctx.fillStyle = colors.hStabFill;
