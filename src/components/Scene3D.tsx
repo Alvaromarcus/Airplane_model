@@ -116,18 +116,15 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
   const dihedralRad = (dims.dihedral || 0) * (Math.PI / 180);
 
   // ─── Build tapered wing geometry (right half only) ───
-  const createWingGeometry = (span: number, rootC: number, tipC: number, sweep: number, airfoilType: AirfoilType | 'sym_tail', hasAileron: boolean = false, isFlyingWing: boolean = false) => {
+  const createWingGeometry = (span: number, rootC: number, tipC: number, sweep: number, airfoilType: AirfoilType | 'sym_tail', csStartFrac: number | null, csEndFrac: number | null, csChordFrac: number | null) => {
     const hw = (span / 2) * F;
     
     const shape = new THREE.Shape(getAirfoilPoints(airfoilType));
     const geo = new THREE.ExtrudeGeometry(shape, {
       depth: hw,
       bevelEnabled: false,
-      steps: hasAileron ? 40 : 1
+      steps: csStartFrac !== null ? 40 : 1
     });
-
-    const startFrac = isFlyingWing ? 0.35 : 0.5;
-    const endFrac = isFlyingWing ? 1.0 : 0.95;
 
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
@@ -137,10 +134,11 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
 
       const spanFrac = z / hw;
       
-      if (hasAileron) {
-        if (spanFrac >= startFrac - 0.001 && spanFrac <= endFrac + 0.001) {
-          if (x < -0.73) {
-            x = -0.73; // blunt trailing edge to leave a physical gap
+      if (csStartFrac !== null && csEndFrac !== null && csChordFrac !== null) {
+        if (spanFrac >= csStartFrac - 0.001 && spanFrac <= csEndFrac + 0.001) {
+          const cutX = - (1 - csChordFrac) + 0.02; // leaves a physical gap of 2%
+          if (x < cutX) {
+            x = cutX; 
           }
         }
       }
@@ -150,7 +148,7 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
 
       const finalX = z;
       const finalY = (-x) * localChord + localSweep;
-      const finalZ = y * localChord * 0.8; // slightly thinner for aesthetics
+      const finalZ = y * localChord * 0.8; 
 
       pos.setXYZ(i, finalX, finalY, finalZ);
     }
@@ -158,15 +156,16 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
     return geo;
   };
 
-  const wingGeo  = createWingGeometry(WS, RC, TC, SW, airfoil, true, aircraftType === 'flying_wing');
-  const hStabGeo = createWingGeometry(HS, HC, HC * 0.75, HC * 0.25, 'sym_tail');
-  const vStabGeo = createWingGeometry(VS * 2, VC, VC * 0.6,  VC * 0.4, 'sym_tail');
+  const aileronStart = aircraftType === 'flying_wing' ? 0.35 : 0.5;
+  const aileronEnd = aircraftType === 'flying_wing' ? 1.0 : 0.95;
 
-  const createAileronGeo = (span: number, rootC: number, tipC: number, sweep: number, isFlyingWing: boolean) => {
+  const wingGeo  = createWingGeometry(WS, RC, TC, SW, airfoil, aileronStart, aileronEnd, 0.25);
+  const hStabGeo = createWingGeometry(HS, HC, HC * 0.75, HC * 0.25, 'sym_tail', 0.0, 1.0, 0.3);
+  const vStabGeo = createWingGeometry(VS * 2, VC, VC * 0.6,  VC * 0.4, 'sym_tail', 0.0, 1.0, 0.4);
+
+  const createControlSurfaceGeo = (span: number, rootC: number, tipC: number, sweep: number, startFrac: number, endFrac: number, chordFrac: number) => {
     const hw = (span / 2) * F;
-    const startFrac = isFlyingWing ? 0.35 : 0.5;
-    const endFrac = isFlyingWing ? 1.0 : 0.95;
-
+    
     const zStart = hw * startFrac;
     const zEnd = hw * endFrac;
 
@@ -176,12 +175,11 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
     const swStart = (sweep * F) * startFrac;
     const swEnd = (sweep * F) * endFrac;
 
-    // FIX: Trailing edge in this projection is at positive Y
     const teYStart = 1 * lcStart + swStart;
     const teYEnd = 1 * lcEnd + swEnd;
 
-    const hingeYStart = 0.75 * lcStart + swStart;
-    const hingeYEnd = 0.75 * lcEnd + swEnd;
+    const hingeYStart = (1 - chordFrac) * lcStart + swStart;
+    const hingeYEnd = (1 - chordFrac) * lcEnd + swEnd;
 
     const shape = new THREE.Shape();
     shape.moveTo(zStart, hingeYStart);
@@ -190,16 +188,15 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
     shape.lineTo(zStart, teYStart);
     shape.lineTo(zStart, hingeYStart);
 
-    // Create a very thin extrusion so it acts as a slightly raised panel 
-    // representing the aileron surface, making it look like a connected part.
     const geo = new THREE.ExtrudeGeometry(shape, { depth: F * 0.04, bevelEnabled: false });
-    // Center it vertically on the wing TE so it overlaps the wing perfectly
     geo.translate(0, 0, -F * 0.02);
 
     return geo;
   };
 
-  const aileronGeo = createAileronGeo(WS, RC, TC, SW, aircraftType === 'flying_wing');
+  const aileronGeo = createControlSurfaceGeo(WS, RC, TC, SW, aileronStart, aileronEnd, 0.25);
+  const elevatorGeo = createControlSurfaceGeo(HS, HC, HC * 0.75, HC * 0.25, 0.0, 1.0, 0.3);
+  const rudderGeo = createControlSurfaceGeo(VS * 2, VC, VC * 0.6, VC * 0.4, 0.0, 1.0, 0.4);
 
   // Colors
   const C = {
@@ -285,11 +282,27 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
           <mesh rotation={wingRot} position={[0, 0, tailLeZ]}>
             <primitive object={hStabGeo} />
             <meshStandardMaterial color={C.hStab} roughness={0.4} side={THREE.DoubleSide} />
+            <mesh>
+              <primitive object={elevatorGeo} attach="geometry" />
+              <meshStandardMaterial color={C.hStab} roughness={0.4} side={THREE.DoubleSide} />
+              <lineSegments>
+                <edgesGeometry attach="geometry" args={[elevatorGeo]} />
+                <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
+              </lineSegments>
+            </mesh>
           </mesh>
           {/* H-Stab left */}
           <mesh rotation={wingRot} position={[0, 0, tailLeZ]} scale={[-1, 1, 1]}>
             <primitive object={hStabGeo.clone()} />
             <meshStandardMaterial color={C.hStab} roughness={0.4} side={THREE.DoubleSide} />
+            <mesh>
+              <primitive object={elevatorGeo} attach="geometry" />
+              <meshStandardMaterial color={C.hStab} roughness={0.4} side={THREE.DoubleSide} />
+              <lineSegments>
+                <edgesGeometry attach="geometry" args={[elevatorGeo]} />
+                <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
+              </lineSegments>
+            </mesh>
           </mesh>
 
           {/* V-Stab (vertical fin) */}
@@ -297,6 +310,14 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
             <mesh rotation={wingRot} position={[0, -thick * 0.7 / 2, 0]}>
               <primitive object={vStabGeo.clone()} />
               <meshStandardMaterial color={C.vStab} roughness={0.4} side={THREE.DoubleSide} />
+              <mesh>
+                <primitive object={rudderGeo} attach="geometry" />
+                <meshStandardMaterial color={C.vStab} roughness={0.4} side={THREE.DoubleSide} />
+                <lineSegments>
+                  <edgesGeometry attach="geometry" args={[rudderGeo]} />
+                  <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
+                </lineSegments>
+              </mesh>
             </mesh>
           </group>
         </group>
