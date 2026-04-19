@@ -162,6 +162,7 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
   const wingGeo  = createWingGeometry(WS, RC, TC, SW, airfoil, aileronStart, aileronEnd, 0.25);
   const hStabGeo = createWingGeometry(HS, HC, HC * 0.75, HC * 0.25, 'sym_tail', 0.0, 1.0, 0.3);
   const vStabGeo = createWingGeometry(VS * 2, VC, VC * 0.6,  VC * 0.4, 'sym_tail', 0.0, 1.0, 0.4);
+  const wingletGeo = createWingGeometry(VS * 2, VC, VC * 0.4, VC * 0.6, 'sym_tail', null, null, null);
 
   const createControlSurfaceGeo = (span: number, rootC: number, tipC: number, sweep: number, startFrac: number, endFrac: number, chordFrac: number) => {
     const hw = (span / 2) * F;
@@ -245,10 +246,12 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
         </mesh>
         {/* Flying wing winglets */}
         {aircraftType === 'flying_wing' && (
-          <mesh position={[(WS / 2) * F, VS * F / 2, -SW * F - TC * F / 2]}>
-            <boxGeometry args={[thick, VS * F, VC * F]} />
-            <meshStandardMaterial color={C.vStab} roughness={0.4} />
-          </mesh>
+          <group position={[(WS / 2) * F, -VS * F * 0.2, -SW * F - TC * F * 0.2]} rotation={[0, 0, Math.PI / 2]}>
+            <mesh rotation={wingRot}>
+              <primitive object={wingletGeo} />
+              <meshStandardMaterial color={C.vStab} roughness={0.4} side={THREE.DoubleSide} />
+            </mesh>
+          </group>
         )}
       </group>
 
@@ -268,10 +271,12 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
         </mesh>
         {/* Flying wing winglets */}
         {aircraftType === 'flying_wing' && (
-          <mesh position={[-(WS / 2) * F, VS * F / 2, -SW * F - TC * F / 2]}>
-            <boxGeometry args={[thick, VS * F, VC * F]} />
-            <meshStandardMaterial color={C.vStab} roughness={0.4} />
-          </mesh>
+          <group position={[-(WS / 2) * F, -VS * F * 0.2, -SW * F - TC * F * 0.2]} rotation={[0, 0, Math.PI / 2]}>
+            <mesh rotation={wingRot}>
+              <primitive object={wingletGeo.clone()} />
+              <meshStandardMaterial color={C.vStab} roughness={0.4} side={THREE.DoubleSide} />
+            </mesh>
+          </group>
         )}
       </group>
 

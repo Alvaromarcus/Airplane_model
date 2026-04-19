@@ -276,13 +276,22 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
       ctx.strokeStyle = colors.vStabStroke;
 
       if (aircraftType === 'flying_wing') {
-        const wingletX = -(maxAircraftLength * scale) / 2
-                         + (dims.fuselageLength * scale) - (dims.vStabChord * scale * 0.5);
-        ctx.save();
-        ctx.translate(wingletX, 0);
-        ctx.rotate(-0.3); // slight outward angle
-        ctx.fillRect(0, -dims.vStabSpan * scale * 0.6, dims.vStabChord * scale * 0.5, dims.vStabSpan * scale * 0.6);
-        ctx.strokeRect(0, -dims.vStabSpan * scale * 0.6, dims.vStabChord * scale * 0.5, dims.vStabSpan * scale * 0.6);
+        const wingletRootX = -(maxAircraftLength * scale) / 2 + (dims.noseLength + dims.sweepOffset) * scale;
+        const rootC = dims.vStabChord * scale;
+        const tipC = dims.vStabChord * 0.4 * scale;
+        const spanH = dims.vStabSpan * scale;
+        const sweepW = dims.vStabChord * 0.6 * scale;
+
+        const startY = spanH * 0.2; // 20% below the wing
+
+        ctx.beginPath();
+        ctx.moveTo(wingletRootX, startY);
+        ctx.lineTo(wingletRootX + sweepW, startY - spanH);
+        ctx.lineTo(wingletRootX + sweepW + tipC, startY - spanH);
+        ctx.lineTo(wingletRootX + rootC, startY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
         ctx.restore();
       } else {
         // Align with the back of the fuselage
@@ -365,15 +374,17 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
       if (aircraftType === 'flying_wing') {
         const tipX = (dims.wingspan / 2) * scale;
         const tipY = fuselageHeightFront / 2 - (tipYOffset * scale);
-        const wingletH = dims.vStabSpan * scale * 0.5;
+        const spanH = dims.vStabSpan * scale;
         const wingletW = 3;
+        const startY = spanH * 0.2; // 20% below wing
 
         // Right winglet
-        ctx.fillRect(tipX - wingletW / 2, tipY - wingletH, wingletW, wingletH);
-        ctx.strokeRect(tipX - wingletW / 2, tipY - wingletH, wingletW, wingletH);
+        ctx.fillRect(tipX - wingletW / 2, tipY - spanH + startY, wingletW, spanH);
+        ctx.strokeRect(tipX - wingletW / 2, tipY - spanH + startY, wingletW, spanH);
+
         // Left winglet
-        ctx.fillRect(-tipX - wingletW / 2, tipY - wingletH, wingletW, wingletH);
-        ctx.strokeRect(-tipX - wingletW / 2, tipY - wingletH, wingletW, wingletH);
+        ctx.fillRect(-tipX - wingletW / 2, tipY - spanH + startY, wingletW, spanH);
+        ctx.strokeRect(-tipX - wingletW / 2, tipY - spanH + startY, wingletW, spanH);
       } else {
         const vStabWidthFront = 4;
         ctx.fillRect(
