@@ -116,23 +116,35 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
   const dihedralRad = (dims.dihedral || 0) * (Math.PI / 180);
 
   // ─── Build tapered wing geometry (right half only) ───
-  const createWingGeometry = (span: number, rootC: number, tipC: number, sweep: number, airfoilType: AirfoilType | 'sym_tail') => {
+  const createWingGeometry = (span: number, rootC: number, tipC: number, sweep: number, airfoilType: AirfoilType | 'sym_tail', hasAileron: boolean = false, isFlyingWing: boolean = false) => {
     const hw = (span / 2) * F;
     
     const shape = new THREE.Shape(getAirfoilPoints(airfoilType));
     const geo = new THREE.ExtrudeGeometry(shape, {
       depth: hw,
       bevelEnabled: false,
-      steps: 1
+      steps: hasAileron ? 40 : 1
     });
+
+    const startFrac = isFlyingWing ? 0.35 : 0.5;
+    const endFrac = isFlyingWing ? 1.0 : 0.95;
 
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i); 
+      let x = pos.getX(i); 
       const y = pos.getY(i); 
       const z = pos.getZ(i); 
 
       const spanFrac = z / hw;
+      
+      if (hasAileron) {
+        if (spanFrac >= startFrac - 0.001 && spanFrac <= endFrac + 0.001) {
+          if (x < -0.73) {
+            x = -0.73; // blunt trailing edge to leave a physical gap
+          }
+        }
+      }
+
       const localChord = (rootC * F) + ((tipC * F) - (rootC * F)) * spanFrac;
       const localSweep = (sweep * F) * spanFrac;
 
@@ -146,7 +158,7 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
     return geo;
   };
 
-  const wingGeo  = createWingGeometry(WS, RC, TC, SW, airfoil);
+  const wingGeo  = createWingGeometry(WS, RC, TC, SW, airfoil, true, aircraftType === 'flying_wing');
   const hStabGeo = createWingGeometry(HS, HC, HC * 0.75, HC * 0.25, 'sym_tail');
   const vStabGeo = createWingGeometry(VS * 2, VC, VC * 0.6,  VC * 0.4, 'sym_tail');
 
