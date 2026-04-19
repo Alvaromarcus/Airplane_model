@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Environment } from '@react-three/drei';
 import * as THREE from 'three';
+import { Play, Pause } from 'lucide-react';
 import type { AircraftDimensions, AircraftType, AirfoilType } from '../utils/calculations';
 
 interface Scene3DProps {
@@ -64,11 +65,15 @@ function getAirfoilPoints(type: AirfoilType | 'sym_tail') {
   return pts;
 }
 
-function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil }: Scene3DProps) {
+interface AircraftMeshProps extends Scene3DProps {
+  isRotating: boolean;
+}
+
+function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotating }: AircraftMeshProps) {
   const groupRef = useRef<THREE.Group>(null);
 
   useFrame((_, delta) => {
-    if (groupRef.current) {
+    if (groupRef.current && isRotating) {
       groupRef.current.rotation.y += delta * 0.25;
     }
   });
@@ -145,6 +150,40 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil }: Scene3D
   const hStabGeo = createWingGeometry(HS, HC, HC * 0.75, HC * 0.25, 'sym_tail');
   const vStabGeo = createWingGeometry(VS * 2, VC, VC * 0.6,  VC * 0.4, 'sym_tail');
 
+  const createAileronGeo = (span: number, rootC: number, tipC: number, sweep: number, isFlyingWing: boolean) => {
+    const hw = (span / 2) * F;
+    const startFrac = isFlyingWing ? 0.35 : 0.5;
+    const endFrac = isFlyingWing ? 1.0 : 0.95;
+
+    const zStart = hw * startFrac;
+    const zEnd = hw * endFrac;
+
+    const lcStart = (rootC * F) + ((tipC * F) - (rootC * F)) * startFrac;
+    const lcEnd = (rootC * F) + ((tipC * F) - (rootC * F)) * endFrac;
+
+    const swStart = (sweep * F) * startFrac;
+    const swEnd = (sweep * F) * endFrac;
+
+    const teYStart = -1 * lcStart + swStart;
+    const teYEnd = -1 * lcEnd + swEnd;
+
+    const hingeYStart = -0.75 * lcStart + swStart;
+    const hingeYEnd = -0.75 * lcEnd + swEnd;
+
+    const zOffset = F * 0.05;
+
+    const pts = [];
+    pts.push(new THREE.Vector3(zStart, hingeYStart, zOffset));
+    pts.push(new THREE.Vector3(zEnd, hingeYEnd, zOffset));
+    pts.push(new THREE.Vector3(zEnd, teYEnd, zOffset));
+    pts.push(new THREE.Vector3(zStart, teYStart, zOffset));
+    pts.push(new THREE.Vector3(zStart, hingeYStart, zOffset));
+
+    return new THREE.BufferGeometry().setFromPoints(pts);
+  };
+
+  const aileronGeo = createAileronGeo(WS, RC, TC, SW, aircraftType === 'flying_wing');
+
   // Colors
   const C = {
     fuse:  '#5a6270',
@@ -181,6 +220,10 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil }: Scene3D
         <mesh rotation={wingRot}>
           <primitive object={wingGeo} />
           <meshStandardMaterial color={C.wing} roughness={0.35} side={THREE.DoubleSide} />
+          <line>
+            <primitive object={aileronGeo} attach="geometry" />
+            <lineBasicMaterial color={C.nose} linewidth={2} />
+          </line>
         </mesh>
         {/* Flying wing winglets */}
         {aircraftType === 'flying_wing' && (
@@ -196,6 +239,10 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil }: Scene3D
         <mesh rotation={wingRot} scale={[-1, 1, 1]}>
           <primitive object={wingGeo.clone()} />
           <meshStandardMaterial color={C.wing} roughness={0.35} side={THREE.DoubleSide} />
+          <line>
+            <primitive object={aileronGeo} attach="geometry" />
+            <lineBasicMaterial color={C.nose} linewidth={2} />
+          </line>
         </mesh>
         {/* Flying wing winglets */}
         {aircraftType === 'flying_wing' && (
@@ -240,6 +287,8 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil }: Scene3D
 }
 
 export default function Scene3D({ dimensions, aircraftType, unit, airfoil }: Scene3DProps) {
+  const [isRotating, setIsRotating] = useState(true);
+
   const s = unit === 'mm' ? 0.1 : 1;
   const span = Math.max(dimensions.wingspan * s, 1);
   const len  = Math.max(dimensions.fuselageLength * s, 1);
@@ -256,13 +305,20 @@ export default function Scene3D({ dimensions, aircraftType, unit, airfoil }: Sce
         <ambientLight intensity={0.5} />
         <directionalLight position={[40, 60, 40]} intensity={1.3} castShadow />
         <directionalLight position={[-20, 10, -20]} intensity={0.25} />
-        <AircraftMesh dimensions={dimensions} aircraftType={aircraftType} unit={unit} airfoil={airfoil} />
+        <AircraftMesh dimensions={dimensions} aircraftType={aircraftType} unit={unit} airfoil={airfoil} isRotating={isRotating} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
         <Environment preset="sunset" />
       </Canvas>
       <div className="absolute bottom-2 right-3 text-xs text-gray-400 dark:text-gray-500 pointer-events-none">
         Drag to rotate · Scroll to zoom
       </div>
+      <button
+        onClick={() => setIsRotating(!isRotating)}
+        className="absolute top-4 right-4 p-2 bg-white dark:bg-gray-800 rounded-full shadow-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        title={isRotating ? "Pause rotation" : "Start rotation"}
+      >
+        {isRotating ? <Pause size={20} /> : <Play size={20} />}
+      </button>
     </div>
   );
 }
