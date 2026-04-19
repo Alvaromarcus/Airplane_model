@@ -214,6 +214,19 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
         );
         ctx.fill();
         ctx.stroke();
+
+        // Draw Elevator hint: dashed line
+        const elevatorHingeY = hStabY + dims.hStabChord * scale * 0.7;
+        ctx.save();
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = isDarkMode ? '#f472b6' : '#db2777'; // hStabStroke
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-(dims.hStabSpan / 2) * scale, elevatorHingeY);
+        ctx.lineTo((dims.hStabSpan / 2) * scale, elevatorHingeY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
       }
 
       // Draw Theoretical CG (Top View)
@@ -283,6 +296,19 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
+
+        // Draw Rudder hint: dashed line
+        const rudderHingeX = vStabX + dims.vStabChord * scale * 0.6;
+        ctx.save();
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = isDarkMode ? '#fde047' : '#ca8a04'; // vStabStroke
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(rudderHingeX, 0);
+        ctx.lineTo(rudderHingeX, -dims.vStabSpan * scale);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
 
         // Horizontal Stabilizer (Side view representation)
         const hStabY = wingY + (dims.rootChord * scale) + (dims.wingToTailDistance * scale);
