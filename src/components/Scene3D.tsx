@@ -208,6 +208,33 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
     vStab: '#ca8a04',
   };
 
+  const createFuselageGeo = () => {
+    const geo = new THREE.BoxGeometry(fR * 1.2, fR * 1.5, totalLength, 1, 1, 2);
+    const pos = geo.attributes.position;
+    const wingTeZ = noseTip - (NL + RC) * F;
+    
+    for (let i = 0; i < pos.count; i++) {
+      let x = pos.getX(i);
+      let y = pos.getY(i);
+      let z = pos.getZ(i);
+
+      if (Math.abs(z - 0) < 0.01) {
+        z = wingTeZ; 
+      }
+
+      if (z < wingTeZ - 0.01) {
+        x *= 0.3; 
+        y *= 0.6; 
+      }
+      
+      pos.setXYZ(i, x, y, z);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  };
+
+  const fuseGeo = createFuselageGeo();
+
   // Wing rotation: lays the shape flat (chord goes towards -Z, span along X)
   const wingRot: [number, number, number] = [-Math.PI / 2, 0, 0];
 
@@ -217,10 +244,14 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
       {/* ── Fuselage body (conventional only) ── */}
       {aircraftType === 'conventional' && (
         <group>
-          {/* Rectangular tube */}
+          {/* Tapered Fuselage Tube */}
           <mesh position={[0, 0, 0]}>
-            <boxGeometry args={[fR * 1.2, fR * 1.5, totalLength]} />
+            <primitive object={fuseGeo} attach="geometry" />
             <meshStandardMaterial color={C.fuse} roughness={0.6} />
+            <lineSegments>
+              <edgesGeometry attach="geometry" args={[fuseGeo]} />
+              <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
+            </lineSegments>
           </mesh>
           {/* Propeller disc at the nose */}
           <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, noseTip + 0.1 * F]}>

@@ -112,9 +112,22 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
         ctx.fillRect(nacelleX, nacelleY, nacelleWidth, nacelleLength);
         ctx.strokeRect(nacelleX, nacelleY, nacelleWidth, nacelleLength);
       } else {
-        const fuselageWidthScale = 14; // Assume constant 14 unit width for fuselage visual
-        ctx.fillRect(-fuselageWidthScale / 2, 0, fuselageWidthScale, dims.fuselageLength * scale);
-        ctx.strokeRect(-fuselageWidthScale / 2, 0, fuselageWidthScale, dims.fuselageLength * scale);
+        const wFront = 14 / 2;
+        const wTail = (14 * 0.3) / 2;
+        const noseY = 0;
+        const wingTeY = wingY + (dims.rootChord * scale);
+        const tailY = dims.fuselageLength * scale;
+
+        ctx.beginPath();
+        ctx.moveTo(-wFront, noseY);
+        ctx.lineTo(wFront, noseY);
+        ctx.lineTo(wFront, wingTeY);
+        ctx.lineTo(wTail, tailY);
+        ctx.lineTo(-wTail, tailY);
+        ctx.lineTo(-wFront, wingTeY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
       }
 
       // Draw Wing
@@ -257,18 +270,24 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
         ctx.fillRect(nacelleStartX, 0, nacelleW, nacelleH);
         ctx.strokeRect(nacelleStartX, 0, nacelleW, nacelleH);
       } else {
-        ctx.fillRect(
-          -(maxAircraftLength * scale) / 2,
-          0,
-          dims.fuselageLength * scale,
-          fuselageHeightSide
-        );
-        ctx.strokeRect(
-          -(maxAircraftLength * scale) / 2,
-          0,
-          dims.fuselageLength * scale,
-          fuselageHeightSide
-        );
+        const noseX = -(maxAircraftLength * scale) / 2;
+        const wingTeX = noseX + (dims.noseLength + dims.rootChord) * scale;
+        const tailX = noseX + dims.fuselageLength * scale;
+        
+        const hFront = fuselageHeightSide;
+        const hTail = fuselageHeightSide * 0.6;
+        const tailYStart = (hFront - hTail) / 2;
+        
+        ctx.beginPath();
+        ctx.moveTo(noseX, 0);
+        ctx.lineTo(noseX, hFront);
+        ctx.lineTo(wingTeX, hFront);
+        ctx.lineTo(tailX, hFront - tailYStart);
+        ctx.lineTo(tailX, tailYStart);
+        ctx.lineTo(wingTeX, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
       }
 
       // Vertical Stabilizer
