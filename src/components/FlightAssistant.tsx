@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Zap } from 'lucide-react';
 import type { AircraftMetrics, ValidationCheck, AircraftType } from '../utils/calculations';
+import type { AircraftDimensions } from '../utils/calculations';
 import PerformanceChart from './PerformanceChart';
+import ElectricSystemAdvisor from './ElectricSystemAdvisor';
 
 interface FlightAssistantProps {
   metrics: AircraftMetrics;
@@ -9,13 +12,15 @@ interface FlightAssistantProps {
   unit: 'cm' | 'mm';
   isDarkMode: boolean;
   aircraftType: AircraftType;
+  dimensions: AircraftDimensions;
 }
 
-import { useState } from 'react';
-
-export default function FlightAssistant({ metrics, checks, unit, isDarkMode, aircraftType }: FlightAssistantProps) {
-  const { t } = useTranslation();
+export default function FlightAssistant({ metrics, checks, unit, isDarkMode, aircraftType, dimensions }: FlightAssistantProps) {
+  const { t, i18n } = useTranslation();
   const [openFixId, setOpenFixId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'analysis' | 'electric'>('analysis');
+
+  const lang = i18n.language === 'pt' ? 'pt' : 'en';
 
   const formatNumber = (num: number, isArea = false) => {
     return `${num.toFixed(1)} ${unit}${isArea ? '²' : ''}`;
@@ -40,7 +45,9 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
 
   return (
     <aside className="w-full lg:w-80 bg-white dark:bg-gray-800 shadow-md z-20 flex flex-col h-auto lg:h-full border-t lg:border-t-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto transition-colors duration-200">
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between">
+
+      {/* Header */}
+      <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between flex-shrink-0">
         <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{t('flight_assistant')}</h2>
         <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold border ${overallStatusColor}`}>
           <StatusIcon size={14} />
@@ -48,125 +55,161 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
         </div>
       </div>
 
-      <div className="p-4 space-y-6 text-gray-800 dark:text-gray-200">
-        {/* Metrics Section */}
-        <div>
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
-            {t('metrics')}
-          </h3>
-          <ul className="space-y-2 text-sm">
-            <li className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">{t('wing_area')}:</span>
-              <span className="font-medium">{formatNumber(metrics.wingArea, true)}</span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">{t('half_wing_area')}:</span>
-              <span className="font-medium">{formatNumber(metrics.halfWingArea, true)}</span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">{t('mac')}:</span>
-              <span className="font-medium">{formatNumber(metrics.mac)}</span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">{t('cg_position')}:</span>
-              <span className="font-medium">{formatNumber(metrics.cgPosition)}</span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">{t('neutral_point')}:</span>
-              <span className="font-medium">{formatNumber(metrics.neutralPoint)}</span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">{t('static_margin')}:</span>
-              <span className="font-medium">{metrics.staticMargin.toFixed(1)}%</span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">{t('aspect_ratio')}:</span>
-              <span className="font-medium">{metrics.aspectRatio.toFixed(2)}</span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">{t('tail_moment_arm')}:</span>
-              <span className="font-medium">{formatNumber(metrics.tailMomentArm)}</span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">{t('hstab_area')}:</span>
-              <span className="font-medium">{formatNumber(metrics.hStabArea, true)}</span>
-            </li>
-            <li className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">{t('vstab_area')}:</span>
-              <span className="font-medium">{formatNumber(metrics.vStabArea, true)}</span>
-            </li>
-          </ul>
-        </div>
+      {/* Tab bar */}
+      <div className="flex border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+        <button
+          onClick={() => setActiveTab('analysis')}
+          className={[
+            'flex-1 py-2.5 text-xs font-medium transition-colors',
+            activeTab === 'analysis'
+              ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
+          ].join(' ')}
+        >
+          {lang === 'pt' ? 'Análise Aero' : 'Aero Analysis'}
+        </button>
+        <button
+          onClick={() => setActiveTab('electric')}
+          className={[
+            'flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors',
+            activeTab === 'electric'
+              ? 'border-b-2 border-amber-500 text-amber-600 dark:text-amber-400'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
+          ].join(' ')}
+        >
+          <Zap size={12} />
+          {lang === 'pt' ? 'Sistema Elétrico' : 'Electric System'}
+        </button>
+      </div>
 
-        {/* Performance Chart Section */}
-        <div className="mb-6">
-          <PerformanceChart metrics={metrics} unit={unit} isDarkMode={isDarkMode} aircraftType={aircraftType} />
-        </div>
-
-        {/* Warnings Section */}
-        {checks.length > 0 && (
+      {/* Tab content */}
+      {activeTab === 'analysis' ? (
+        <div className="p-4 space-y-6 text-gray-800 dark:text-gray-200">
+          {/* Metrics Section */}
           <div>
             <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
-              {t('analysis')}
+              {t('metrics')}
             </h3>
-            <div className="space-y-3">
-              {checks.map(check => (
-                <div
-                  key={check.id}
-                  className={`p-3 rounded border text-sm ${
-                    check.level === 'unstable'
-                      ? 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
-                      : 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300'
-                  }`}
-                >
-                  <div className="flex gap-2">
-                    <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-                    <div className="flex flex-col w-full">
-                      <p>{t(check.messageKey)}</p>
-                      {check.fixKey && (
-                        <>
-                          <div
-                            className="text-xs underline opacity-70 hover:opacity-100 mt-1 cursor-pointer flex items-center gap-1"
-                            onClick={() => setOpenFixId(openFixId === check.id ? null : check.id)}
-                          >
-                            {openFixId === check.id ? t('hide_fix') : t('how_to_fix')}
-                          </div>
-                          {openFixId === check.id && (
-                            <div className="mt-2 pt-2 border-t border-current opacity-70 text-xs leading-relaxed">
-                              {t(check.fixKey)}
+            <ul className="space-y-2 text-sm">
+              <li className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">{t('wing_area')}:</span>
+                <span className="font-medium">{formatNumber(metrics.wingArea, true)}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">{t('half_wing_area')}:</span>
+                <span className="font-medium">{formatNumber(metrics.halfWingArea, true)}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">{t('mac')}:</span>
+                <span className="font-medium">{formatNumber(metrics.mac)}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">{t('cg_position')}:</span>
+                <span className="font-medium">{formatNumber(metrics.cgPosition)}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">{t('neutral_point')}:</span>
+                <span className="font-medium">{formatNumber(metrics.neutralPoint)}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">{t('static_margin')}:</span>
+                <span className="font-medium">{metrics.staticMargin.toFixed(1)}%</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">{t('aspect_ratio')}:</span>
+                <span className="font-medium">{metrics.aspectRatio.toFixed(2)}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">{t('tail_moment_arm')}:</span>
+                <span className="font-medium">{formatNumber(metrics.tailMomentArm)}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">{t('hstab_area')}:</span>
+                <span className="font-medium">{formatNumber(metrics.hStabArea, true)}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">{t('vstab_area')}:</span>
+                <span className="font-medium">{formatNumber(metrics.vStabArea, true)}</span>
+              </li>
+            </ul>
+          </div>
+
+          {/* Performance Chart */}
+          <div className="mb-6">
+            <PerformanceChart metrics={metrics} unit={unit} isDarkMode={isDarkMode} aircraftType={aircraftType} />
+          </div>
+
+          {/* Warnings Section */}
+          {checks.length > 0 && (
+            <div>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
+                {t('analysis')}
+              </h3>
+              <div className="space-y-3">
+                {checks.map(check => (
+                  <div
+                    key={check.id}
+                    className={`p-3 rounded border text-sm ${
+                      check.level === 'unstable'
+                        ? 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'
+                        : 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300'
+                    }`}
+                  >
+                    <div className="flex gap-2">
+                      <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                      <div className="flex flex-col w-full">
+                        <p>{t(check.messageKey)}</p>
+                        {check.fixKey && (
+                          <>
+                            <div
+                              className="text-xs underline opacity-70 hover:opacity-100 mt-1 cursor-pointer flex items-center gap-1"
+                              onClick={() => setOpenFixId(openFixId === check.id ? null : check.id)}
+                            >
+                              {openFixId === check.id ? t('hide_fix') : t('how_to_fix')}
                             </div>
-                          )}
-                        </>
-                      )}
+                            {openFixId === check.id && (
+                              <div className="mt-2 pt-2 border-t border-current opacity-70 text-xs leading-relaxed">
+                                {t(check.fixKey)}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Guidelines Section */}
-        <div>
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
-            {t('control_surfaces')}
-          </h3>
-          <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3 text-sm text-blue-800 dark:text-blue-300 space-y-2">
-            <div className="flex gap-2">
-              <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
-              <p>{t('ailerons_rec')}</p>
-            </div>
-            <div className="flex gap-2">
-              <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
-              <p>{t('elevator_rec')}</p>
-            </div>
-            <div className="flex gap-2">
-              <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
-              <p>{t('rudder_rec')}</p>
+          {/* Control surfaces guidelines */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
+              {t('control_surfaces')}
+            </h3>
+            <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3 text-sm text-blue-800 dark:text-blue-300 space-y-2">
+              <div className="flex gap-2">
+                <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
+                <p>{t('ailerons_rec')}</p>
+              </div>
+              <div className="flex gap-2">
+                <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
+                <p>{t('elevator_rec')}</p>
+              </div>
+              <div className="flex gap-2">
+                <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
+                <p>{t('rudder_rec')}</p>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <ElectricSystemAdvisor
+          dimensions={dimensions}
+          aircraftType={aircraftType}
+          unit={unit}
+        />
+      )}
     </aside>
   );
 }
