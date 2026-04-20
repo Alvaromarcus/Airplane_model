@@ -224,6 +224,7 @@ function App() {
             unit={unit}
             isDarkMode={isDarkMode}
             aircraftType={aircraftType}
+            dimensions={dimensions}
           />
         </div>
       </main>
