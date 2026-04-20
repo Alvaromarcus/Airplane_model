@@ -11,7 +11,7 @@ interface CanvasViewProps {
   fuselageStyle?: FuselageType;
 }
 
-export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftType, unit, fuselageStyle = 'trainer' }: CanvasViewProps) {
+export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftType, fuselageStyle = 'trainer' }: CanvasViewProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
