@@ -3,7 +3,7 @@
 **AeroBuilder** is an interactive, web-based application tailored for aeromodelling enthusiasts. It allows you to design RC monoplane aircraft by inputting dimensions, verifying aerodynamic stability in real-time, and generating 1:1 scale templates ready for physical construction (using materials like Depron or Balsa wood).
 
 ## 🚀 Live Demo
-[Check out the live demo here!](#) *(Replace with actual Netlify link after deployment)*
+[Check out the live demo here!](#) *https://aerobuilder-calc.netlify.app/*
 
 ## ✨ Features
 - **Real-Time 2D Visualization:** Instantly see your design changes reflected on a dynamically rendered top and side view, including an accurate Center of Gravity (CG) marker.
