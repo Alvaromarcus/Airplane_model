@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AircraftDimensions, AircraftMetrics, AircraftType } from '../utils/calculations';
+import type { AircraftDimensions, AircraftMetrics, AircraftType, FuselageType } from '../utils/calculations';
 
 interface CanvasViewProps {
   dimensions: AircraftDimensions;
@@ -8,9 +8,10 @@ interface CanvasViewProps {
   isDarkMode: boolean;
   aircraftType: AircraftType;
   unit: 'cm' | 'mm';
+  fuselageStyle?: FuselageType;
 }
 
-export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftType }: CanvasViewProps) {
+export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftType, fuselageStyle = 'trainer' }: CanvasViewProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -112,19 +113,33 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
         ctx.fillRect(nacelleX, nacelleY, nacelleWidth, nacelleLength);
         ctx.strokeRect(nacelleX, nacelleY, nacelleWidth, nacelleLength);
       } else {
-        const wFront = 14 / 2;
+        const isSport = fuselageStyle === 'sport';
+        const wFront = isSport ? 14 / 2 : 14 / 2;
         const wTail = (14 * 0.3) / 2;
         const noseY = 0;
+        const wingLeY = dims.noseLength * scale;
         const wingTeY = wingY + (dims.rootChord * scale);
         const tailY = dims.fuselageLength * scale;
 
         ctx.beginPath();
-        ctx.moveTo(-wFront, noseY);
-        ctx.lineTo(wFront, noseY);
-        ctx.lineTo(wFront, wingTeY);
-        ctx.lineTo(wTail, tailY);
-        ctx.lineTo(-wTail, tailY);
-        ctx.lineTo(-wFront, wingTeY);
+        if (isSport) {
+           // Pointed nose, widens to canopy, then tapers
+           ctx.moveTo(0, noseY);
+           ctx.lineTo(wFront * 1.2, wingLeY * 0.5); // widest at canopy
+           ctx.lineTo(wFront, wingTeY);
+           ctx.lineTo(wTail, tailY);
+           ctx.lineTo(-wTail, tailY);
+           ctx.lineTo(-wFront, wingTeY);
+           ctx.lineTo(-wFront * 1.2, wingLeY * 0.5);
+        } else {
+           // Flat boxy nose
+           ctx.moveTo(-wFront, noseY);
+           ctx.lineTo(wFront, noseY);
+           ctx.lineTo(wFront, wingTeY);
+           ctx.lineTo(wTail, tailY);
+           ctx.lineTo(-wTail, tailY);
+           ctx.lineTo(-wFront, wingTeY);
+        }
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
@@ -270,21 +285,36 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
         ctx.fillRect(nacelleStartX, 0, nacelleW, nacelleH);
         ctx.strokeRect(nacelleStartX, 0, nacelleW, nacelleH);
       } else {
+        const isSport = fuselageStyle === 'sport';
         const noseX = -(maxAircraftLength * scale) / 2;
+        const wingLeX = noseX + (dims.noseLength) * scale;
         const wingTeX = noseX + (dims.noseLength + dims.rootChord) * scale;
         const tailX = noseX + dims.fuselageLength * scale;
         
-        const hFront = fuselageHeightSide;
+        const hFront = fuselageHeightSide * (isSport ? 1.2 : 1.0);
         const hTail = fuselageHeightSide * 0.6;
         const tailYStart = (hFront - hTail) / 2;
         
         ctx.beginPath();
-        ctx.moveTo(noseX, 0);
-        ctx.lineTo(noseX, hFront);
-        ctx.lineTo(wingTeX, hFront);
-        ctx.lineTo(tailX, hFront - tailYStart);
-        ctx.lineTo(tailX, tailYStart);
-        ctx.lineTo(wingTeX, 0);
+        if (isSport) {
+           // Bubble canopy profile
+           ctx.moveTo(noseX, hFront * 0.6); // Pointed nose center
+           ctx.lineTo(noseX + (dims.noseLength * scale * 0.2), hFront * 0.8); // bottom contour
+           ctx.lineTo(wingTeX, hFront); // flat bottom under wing
+           ctx.lineTo(tailX, hFront - tailYStart); // taper to tail
+           ctx.lineTo(tailX, tailYStart); // tail top
+           ctx.lineTo(wingTeX, 0); // taper back up
+           // Canopy bubble
+           ctx.quadraticCurveTo(wingLeX * 0.8, -hFront * 0.2, noseX, hFront * 0.6);
+        } else {
+           // Trainer profile
+           ctx.moveTo(noseX, 0);
+           ctx.lineTo(noseX, hFront);
+           ctx.lineTo(wingTeX, hFront);
+           ctx.lineTo(tailX, hFront - tailYStart);
+           ctx.lineTo(tailX, tailYStart);
+           ctx.lineTo(wingTeX, 0);
+        }
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
