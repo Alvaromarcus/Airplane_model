@@ -95,9 +95,10 @@ export default function Sidebar({ dimensions, onChange, unit, aircraftType, airf
               onChange={(e) => onAirfoilChange(e.target.value as AirfoilType)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
             >
-              <option value="flat">{t('airfoil_flat')}</option>
-              <option value="semi">{t('airfoil_semi')}</option>
-              <option value="sym">{t('airfoil_sym')}</option>
+              <option value="clarky">{t('airfoil_clarky')}</option>
+              <option value="naca4412">{t('airfoil_naca4412')}</option>
+              <option value="naca0012">{t('airfoil_naca0012')}</option>
+              <option value="mh45">{t('airfoil_mh45')}</option>
             </select>
           </div>
           {renderInput('wingspan', 'wingspan')}

@@ -47,7 +47,7 @@ function App() {
 
   const [unit, setUnit] = useState<'cm' | 'mm'>('cm');
   const [aircraftType, setAircraftType] = useState<AircraftType>('conventional');
-  const [airfoil, setAirfoil] = useState<AirfoilType>('flat');
+  const [airfoil, setAirfoil] = useState<AirfoilType>('clarky');
   const [fuselageStyle, setFuselageStyle] = useState<FuselageType>('trainer');
   const [isExporting, setIsExporting] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -110,7 +110,7 @@ function App() {
     setDimensions(defaultDimensions);
     setUnit('cm');
     setAircraftType('conventional');
-    setAirfoil('flat');
+    setAirfoil('clarky');
     setFuselageStyle('trainer');
   };
 

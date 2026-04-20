@@ -15,56 +15,7 @@ interface Scene3DProps {
   fuselageStyle?: FuselageType;
 }
 
-const AIRFOIL_CACHE: Record<string, THREE.Vector2[]> = {};
-
-function getAirfoilPoints(type: AirfoilType | 'sym_tail') {
-  if (AIRFOIL_CACHE[type]) return AIRFOIL_CACHE[type];
-  
-  const m = type === 'flat' ? 0.04 : type === 'semi' ? 0.02 : 0;
-  const p = type === 'flat' ? 0.4 : type === 'semi' ? 0.4 : 0.1;
-  const t = 0.12;
-
-  const pointsUpper: THREE.Vector2[] = [];
-  const pointsLower: THREE.Vector2[] = [];
-
-  const steps = 40;
-  for (let i = 0; i <= steps; i++) {
-    const beta = (i / steps) * Math.PI;
-    const x = 0.5 * (1 - Math.cos(beta));
-
-    const yt = 5 * t * (0.2969 * Math.sqrt(x) - 0.126 * x - 0.3516 * Math.pow(x, 2) + 0.2843 * Math.pow(x, 3) - 0.1015 * Math.pow(x, 4));
-
-    let yc = 0;
-    let dyc_dx = 0;
-    if (m > 0) {
-      if (x <= p) {
-        yc = (m / Math.pow(p, 2)) * (2 * p * x - Math.pow(x, 2));
-        dyc_dx = (2 * m / Math.pow(p, 2)) * (p - x);
-      } else {
-        yc = (m / Math.pow(1 - p, 2)) * ((1 - 2 * p) + 2 * p * x - Math.pow(x, 2));
-        dyc_dx = (2 * m / Math.pow(1 - p, 2)) * (p - x);
-      }
-    }
-
-    const theta = Math.atan(dyc_dx);
-    const xu = x - yt * Math.sin(theta);
-    const yu = yc + yt * Math.cos(theta);
-    const xl = x + yt * Math.sin(theta);
-    let yl = yc - yt * Math.cos(theta);
-
-    if (type === 'flat' && i > 0 && i < steps) {
-      yl = Math.max(yl, -0.015);
-    }
-
-    pointsUpper.push(new THREE.Vector2(-xu, yu));
-    pointsLower.push(new THREE.Vector2(-xl, yl));
-  }
-
-  pointsLower.reverse();
-  const pts = [...pointsUpper, ...pointsLower];
-  AIRFOIL_CACHE[type] = pts;
-  return pts;
-}
+import { getAirfoilCoordinates } from '../utils/airfoils';
 
 interface AircraftMeshProps extends Scene3DProps {
   isRotating: boolean;
@@ -119,8 +70,9 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, fuselageS
   // ─── Build tapered wing geometry (right half only) ───
   const createWingGeometry = (span: number, rootC: number, tipC: number, sweep: number, airfoilType: AirfoilType | 'sym_tail', csStartFrac: number | null, csEndFrac: number | null, csChordFrac: number | null) => {
     const hw = (span / 2) * F;
+    const pts = getAirfoilCoordinates(airfoilType).map(p => new THREE.Vector2(p.x, p.y));
     
-    const shape = new THREE.Shape(getAirfoilPoints(airfoilType));
+    const shape = new THREE.Shape(pts);
     const geo = new THREE.ExtrudeGeometry(shape, {
       depth: hw,
       bevelEnabled: false,
