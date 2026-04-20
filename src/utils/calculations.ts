@@ -1,5 +1,5 @@
 export type AircraftType = 'conventional' | 'flying_wing';
-export type AirfoilType = 'flat' | 'semi' | 'sym';
+export type AirfoilType = 'clarky' | 'naca4412' | 'naca0012' | 'mh45';
 export type FuselageType = 'trainer' | 'sport';
 
 // Future: 'zagi' | 'delta' | 'canard'
