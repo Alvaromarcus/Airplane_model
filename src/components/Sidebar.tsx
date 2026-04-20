@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AircraftDimensions, AircraftType, AirfoilType } from '../utils/calculations';
+import type { AircraftDimensions, AircraftType, AirfoilType, FuselageType } from '../utils/calculations';
 
 interface SidebarProps {
   dimensions: AircraftDimensions;
@@ -9,9 +9,11 @@ interface SidebarProps {
   aircraftType: AircraftType;
   airfoil: AirfoilType;
   onAirfoilChange: (val: AirfoilType) => void;
+  fuselageStyle: FuselageType;
+  onFuselageStyleChange: (val: FuselageType) => void;
 }
 
-export default function Sidebar({ dimensions, onChange, unit, aircraftType, airfoil, onAirfoilChange }: SidebarProps) {
+export default function Sidebar({ dimensions, onChange, unit, aircraftType, airfoil, onAirfoilChange, fuselageStyle, onFuselageStyleChange }: SidebarProps) {
   const { t } = useTranslation();
 
   const [localValues, setLocalValues] = useState<Record<string, string>>(() => {
@@ -148,6 +150,19 @@ export default function Sidebar({ dimensions, onChange, unit, aircraftType, airf
             <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
               {t('fuselage')}
             </h3>
+            <div className="mb-3">
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                {t('fuselage_type')}
+              </label>
+              <select
+                value={fuselageStyle}
+                onChange={(e) => onFuselageStyleChange(e.target.value as FuselageType)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              >
+                <option value="trainer">{t('fuselage_trainer')}</option>
+                <option value="sport">{t('fuselage_sport')}</option>
+              </select>
+            </div>
             {renderInput('total_length', 'fuselageLength')}
             {renderInput('nose_length', 'noseLength')}
             {renderInput('wing_to_tail', 'wingToTailDistance')}

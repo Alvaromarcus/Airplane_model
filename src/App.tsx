@@ -8,7 +8,7 @@ import Scene3D from './components/Scene3D';
 import AircraftTypeSelector from './components/AircraftTypeSelector';
 import AppLogo from './components/AppLogo';
 import { calculateMetrics, validateDesign } from './utils/calculations';
-import type { AircraftDimensions, AircraftType, AircraftPreset, AirfoilType } from './utils/calculations';
+import type { AircraftDimensions, AircraftType, AircraftPreset, AirfoilType, FuselageType } from './utils/calculations';
 import { exportToPDF } from './utils/pdfExport';
 import { useVersionCheck } from './hooks/useVersionCheck';
 import './App.css';
@@ -48,6 +48,7 @@ function App() {
   const [unit, setUnit] = useState<'cm' | 'mm'>('cm');
   const [aircraftType, setAircraftType] = useState<AircraftType>('conventional');
   const [airfoil, setAirfoil] = useState<AirfoilType>('flat');
+  const [fuselageStyle, setFuselageStyle] = useState<FuselageType>('trainer');
   const [isExporting, setIsExporting] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [viewMode, setViewMode] = useState<'2D' | '3D'>('2D');
@@ -110,6 +111,7 @@ function App() {
     setUnit('cm');
     setAircraftType('conventional');
     setAirfoil('flat');
+    setFuselageStyle('trainer');
   };
 
   const handlePresetSelect = (preset: AircraftPreset) => {
@@ -202,14 +204,16 @@ function App() {
             aircraftType={aircraftType}
             airfoil={airfoil}
             onAirfoilChange={setAirfoil}
+            fuselageStyle={fuselageStyle}
+            onFuselageStyleChange={setFuselageStyle}
           />
         </div>
 
         <div className="order-1 lg:order-2 w-full lg:flex-1 relative min-h-[400px] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-x-auto">
           {viewMode === '2D' ? (
-            <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} aircraftType={aircraftType} unit={unit} />
+            <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} aircraftType={aircraftType} unit={unit} fuselageStyle={fuselageStyle} />
           ) : (
-            <Scene3D dimensions={dimensions} aircraftType={aircraftType} unit={unit} airfoil={airfoil} />
+            <Scene3D dimensions={dimensions} aircraftType={aircraftType} unit={unit} airfoil={airfoil} fuselageStyle={fuselageStyle} />
           )}
         </div>
 

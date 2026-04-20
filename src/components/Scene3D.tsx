@@ -5,13 +5,14 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import { Play, Pause } from 'lucide-react';
-import type { AircraftDimensions, AircraftType, AirfoilType } from '../utils/calculations';
+import type { AircraftDimensions, AircraftType, AirfoilType, FuselageType } from '../utils/calculations';
 
 interface Scene3DProps {
   dimensions: AircraftDimensions;
   aircraftType: AircraftType;
   unit: 'cm' | 'mm';
   airfoil: AirfoilType;
+  fuselageStyle?: FuselageType;
 }
 
 const AIRFOIL_CACHE: Record<string, THREE.Vector2[]> = {};
@@ -69,7 +70,7 @@ interface AircraftMeshProps extends Scene3DProps {
   isRotating: boolean;
 }
 
-function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotating }: AircraftMeshProps) {
+function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, fuselageStyle = 'trainer', isRotating }: AircraftMeshProps) {
   const groupRef = useRef<THREE.Group>(null);
 
   useFrame((_, delta) => {
@@ -209,22 +210,62 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
   };
 
   const createFuselageGeo = () => {
-    const geo = new THREE.BoxGeometry(fR * 1.2, fR * 1.5, totalLength, 1, 1, 2);
+    // Sport fuse is a bit more streamlined, trainer is boxy
+    const isSport = fuselageStyle === 'sport';
+    const widthFactor = isSport ? 1.0 : 1.2;
+    const heightFactor = isSport ? 1.2 : 1.5;
+    
+    // Add more depthSegments for sport canopy
+    const segments = isSport ? 4 : 2;
+    const geo = new THREE.BoxGeometry(fR * widthFactor, fR * heightFactor, totalLength, 1, 1, segments);
     const pos = geo.attributes.position;
     const wingTeZ = noseTip - (NL + RC) * F;
+    const wingLeZ = noseTip - NL * F;
     
     for (let i = 0; i < pos.count; i++) {
       let x = pos.getX(i);
       let y = pos.getY(i);
       let z = pos.getZ(i);
 
-      if (Math.abs(z - 0) < 0.01) {
-        z = wingTeZ; 
-      }
+      if (isSport) {
+        // More complex shape for sport
+        const zFraction = (noseTip - z) / totalLength; // 0 to 1
+        
+        if (zFraction < 0.2) {
+          // Nose section - make it slightly pointed
+          z = noseTip - zFraction * (NL * F);
+          if (z === noseTip) {
+            x *= 0.5; // narrow nose
+            y *= 0.5;
+          }
+        } else if (zFraction >= 0.2 && zFraction < 0.6) {
+          // Canopy/Wing section
+          z = wingLeZ - (zFraction - 0.2) * 2.5 * (RC * F);
+          if (y > 0) {
+             y *= 1.2; // bubble canopy
+          }
+        } else {
+          // Tail section
+          z = wingTeZ - (zFraction - 0.6) * 2.5 * (totalLength - NL * F - RC * F);
+          // Taper to tail
+          const tailFrac = Math.max(0, (wingTeZ - z) / (totalLength - NL * F - RC * F));
+          x *= (1 - 0.7 * tailFrac);
+          y *= (1 - 0.5 * tailFrac);
+        }
+      } else {
+        // Trainer shape (classic flat bottom taper)
+        if (Math.abs(z - 0) < 0.01) {
+          z = wingTeZ; 
+        }
 
-      if (z < wingTeZ - 0.01) {
-        x *= 0.3; 
-        y *= 0.6; 
+        if (z < wingTeZ - 0.01) {
+          x *= 0.3; 
+          y *= 0.6; 
+          // move y up to keep bottom flat
+          if (y < 0) {
+            y += (fR * heightFactor / 2) * 0.4;
+          }
+        }
       }
       
       pos.setXYZ(i, x, y, z);
@@ -368,7 +409,7 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, isRotatin
   );
 }
 
-export default function Scene3D({ dimensions, aircraftType, unit, airfoil }: Scene3DProps) {
+export default function Scene3D({ dimensions, aircraftType, unit, airfoil, fuselageStyle }: Scene3DProps) {
   const [isRotating, setIsRotating] = useState(true);
 
   const s = unit === 'mm' ? 0.1 : 1;
@@ -387,7 +428,7 @@ export default function Scene3D({ dimensions, aircraftType, unit, airfoil }: Sce
         <ambientLight intensity={0.5} />
         <directionalLight position={[40, 60, 40]} intensity={1.3} castShadow />
         <directionalLight position={[-20, 10, -20]} intensity={0.25} />
-        <AircraftMesh dimensions={dimensions} aircraftType={aircraftType} unit={unit} airfoil={airfoil} isRotating={isRotating} />
+        <AircraftMesh dimensions={dimensions} aircraftType={aircraftType} unit={unit} airfoil={airfoil} fuselageStyle={fuselageStyle} isRotating={isRotating} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
         <Environment preset="sunset" />
       </Canvas>
