@@ -139,7 +139,7 @@ export default function PerformanceChart({ metrics, isDarkMode, aircraftType }: 
               },
             ];
 
-      const padding = { top: 90, left: 10, right: 60, bottom: 10 };
+      const padding = { top: 90, left: PADDING, right: 60, bottom: 10 };
       const rowHeight = 32;        // px per metric row
       const barHeight = 12;        // px height of the bar itself
       const labelFontSize = 11;
