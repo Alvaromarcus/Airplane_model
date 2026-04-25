@@ -130,18 +130,56 @@ const MOTORS: MotorSpec[] = [
   },
 ];
 
-const PROPS: PropSpec[] = [
-  { diameter_inch: 5, pitch_inch: 3, label: '5×3', type: 'puller', notes: 'Micro planes < 200g' },
-  { diameter_inch: 6, pitch_inch: 4, label: '6×4', type: 'puller', notes: 'Small planes 200–350g' },
-  { diameter_inch: 7, pitch_inch: 3.5, label: '7×3.5', type: 'puller', notes: 'Small-medium 300–500g' },
-  { diameter_inch: 8, pitch_inch: 4, label: '8×4', type: 'puller', notes: 'Medium planes 400–700g' },
-  { diameter_inch: 8, pitch_inch: 6, label: '8×6', type: 'pusher', notes: 'Medium pusher 400–700g' },
-  { diameter_inch: 9, pitch_inch: 4.7, label: '9×4.7', type: 'puller', notes: 'Medium planes 600–900g' },
-  { diameter_inch: 10, pitch_inch: 4.5, label: '10×4.5', type: 'puller', notes: 'Larger planes 800–1200g' },
-  { diameter_inch: 10, pitch_inch: 7, label: '10×7', type: 'pusher', notes: 'Pusher 800–1200g' },
-  { diameter_inch: 11, pitch_inch: 5.5, label: '11×5.5', type: 'puller', notes: 'Large 1000–1500g' },
-  { diameter_inch: 12, pitch_inch: 6, label: '12×6', type: 'puller', notes: 'Large 1200–2000g' },
+// All tractor (puller) props — for conventional nose-motor layout
+const PROPS_TRACTOR: PropSpec[] = [
+  { diameter_inch: 6,  pitch_inch: 4,   label: '6×4',    type: 'puller', notes: 'Micro/Small 200–400g. Ex: Gemfan 6040, APC 6×4' },
+  { diameter_inch: 7,  pitch_inch: 4,   label: '7×4',    type: 'puller', notes: 'Small 350–550g. Ex: APC 7×4, Gemfan 7040' },
+  { diameter_inch: 8,  pitch_inch: 4,   label: '8×4',    type: 'puller', notes: 'Small-medium 450–700g. Ex: APC 8×4, Gemfan 8040' },
+  { diameter_inch: 8,  pitch_inch: 6,   label: '8×6',    type: 'puller', notes: 'Medium 500–800g, mais velocidade. Ex: APC 8×6E, Graupner 8×6' },
+  { diameter_inch: 9,  pitch_inch: 4.7, label: '9×4.7',  type: 'puller', notes: 'Medium 600–950g. Ex: APC 9×4.7, Gemfan 9047' },
+  { diameter_inch: 10, pitch_inch: 4.5, label: '10×4.5', type: 'puller', notes: 'Medium-large 800–1200g. Ex: APC 10×4.5E, Turnigy 10×4.5' },
+  { diameter_inch: 10, pitch_inch: 4.7, label: '10×4.7', type: 'puller', notes: 'Medium-large 850–1300g. Ex: APC 10×4.7E, T-Motor 10×4.7' },
+  { diameter_inch: 11, pitch_inch: 5.5, label: '11×5.5', type: 'puller', notes: 'Large 1000–1500g. Ex: APC 11×5.5E, Aeronaut 11×5.5' },
+  { diameter_inch: 12, pitch_inch: 6,   label: '12×6',   type: 'puller', notes: 'Large 1200–1800g. Ex: APC 12×6E, Xoar 12×6' },
+  { diameter_inch: 12, pitch_inch: 8,   label: '12×8',   type: 'puller', notes: 'Grande velocidade 1400–2000g. Ex: APC 12×8E' },
 ];
+
+// All pusher props — for flying wing / pusher layout (motor behind wing)
+const PROPS_PUSHER: PropSpec[] = [
+  { diameter_inch: 7,  pitch_inch: 4,   label: '7×4P',    type: 'pusher', notes: 'Pusher pequeno 300–500g. Ex: APC 7×4P, Gemfan 7040R' },
+  { diameter_inch: 8,  pitch_inch: 4.5, label: '8×4.5P',  type: 'pusher', notes: 'Pusher 450–700g. Ex: APC 8×4.5P, KP 8045P' },
+  { diameter_inch: 9,  pitch_inch: 4.7, label: '9×4.7P',  type: 'pusher', notes: 'Pusher médio 600–900g. Ex: APC 9×4.7P, Gemfan 9047R' },
+  { diameter_inch: 10, pitch_inch: 4.7, label: '10×4.7P', type: 'pusher', notes: 'Pusher médio-grande 800–1200g. Ex: APC 10×4.7P' },
+  { diameter_inch: 10, pitch_inch: 7,   label: '10×7P',   type: 'pusher', notes: 'Pusher rápido 900–1300g. Ex: APC 10×7P, Graupner 10×7P' },
+  { diameter_inch: 11, pitch_inch: 5.5, label: '11×5.5P', type: 'pusher', notes: 'Pusher grande 1100–1600g. Ex: APC 11×5.5P' },
+];
+
+const PROPS = [...PROPS_TRACTOR, ...PROPS_PUSHER];
+
+// Lookup map: PropellerType key → PropSpec
+export const PROP_BY_KEY: Record<string, PropSpec> = {
+  prop_6x4:    PROPS_TRACTOR[0],
+  prop_7x4:    PROPS_TRACTOR[1],
+  prop_8x4:    PROPS_TRACTOR[2],
+  prop_8x6:    PROPS_TRACTOR[3],
+  prop_9x47:   PROPS_TRACTOR[4],
+  prop_10x45:  PROPS_TRACTOR[5],
+  prop_10x47:  PROPS_TRACTOR[6],
+  prop_11x55:  PROPS_TRACTOR[7],
+  prop_12x6:   PROPS_TRACTOR[8],
+  prop_12x8:   PROPS_TRACTOR[9],
+  // Pusher
+  prop_7x4P:   PROPS_PUSHER[0],
+  prop_8x45P:  PROPS_PUSHER[1],
+  prop_9x47P:  PROPS_PUSHER[2],
+  prop_10x47P: PROPS_PUSHER[3],
+  prop_10x7P:  PROPS_PUSHER[4],
+  prop_11x55P: PROPS_PUSHER[5],
+};
+
+// Export lists for the UI selector
+export const TRACTOR_PROPS = PROPS_TRACTOR;
+export const PUSHER_PROPS  = PROPS_PUSHER;
 
 function selectMotor(powerRequired_W: number): MotorSpec {
   const headroom = 1.15;

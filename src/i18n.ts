@@ -109,6 +109,12 @@ const resources = {
       "dark_mode": "Dark Mode",
       "light_mode": "Light Mode",
       "legend": "Legend",
+      "propeller": "Propeller",
+      "prop_diameter_pitch": "Diameter × Pitch (inches)",
+      "prop_tractor_badge": "Tractor",
+      "prop_pusher_badge": "Pusher (P)",
+      "prop_tractor_hint": "Motor at nose, pulls aircraft",
+      "prop_pusher_hint": "Motor behind wing, pushes aircraft",
     }
   },
   pt: {
@@ -218,6 +224,12 @@ const resources = {
       "dark_mode": "Modo Escuro",
       "light_mode": "Modo Claro",
       "legend": "Legenda",
+      "propeller": "Hélice",
+      "prop_diameter_pitch": "Diâmetro × Passo (polegadas)",
+      "prop_tractor_badge": "Trator",
+      "prop_pusher_badge": "Pusher (P)",
+      "prop_tractor_hint": "Motor no nariz, puxa o avião",
+      "prop_pusher_hint": "Motor atrás da asa, empurra o avião",
     }
   }
 };

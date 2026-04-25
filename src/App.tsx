@@ -8,7 +8,7 @@ import Scene3D from './components/Scene3D';
 import AircraftTypeSelector from './components/AircraftTypeSelector';
 import AppLogo from './components/AppLogo';
 import { calculateMetrics, validateDesign } from './utils/calculations';
-import type { AircraftDimensions, AircraftType, AircraftPreset, AirfoilType, FuselageType } from './utils/calculations';
+import type { AircraftDimensions, AircraftType, AircraftPreset, AirfoilType, FuselageType, PropellerType } from './utils/calculations';
 import { exportToPDF } from './utils/pdfExport';
 import { useVersionCheck } from './hooks/useVersionCheck';
 import './App.css';
@@ -49,6 +49,7 @@ function App() {
   const [aircraftType, setAircraftType] = useState<AircraftType>('conventional');
   const [airfoil, setAirfoil] = useState<AirfoilType>('clarky');
   const [fuselageStyle, setFuselageStyle] = useState<FuselageType>('trainer');
+  const [propeller, setPropeller] = useState<PropellerType>('prop_9x47'); // default tractor
   const [isExporting, setIsExporting] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [viewMode, setViewMode] = useState<'2D' | '3D'>('2D');
@@ -112,11 +113,18 @@ function App() {
     setAircraftType('conventional');
     setAirfoil('clarky');
     setFuselageStyle('trainer');
+    setPropeller('prop_9x47');
   };
 
   const handlePresetSelect = (preset: AircraftPreset) => {
     setAircraftType(preset.type);
     setDimensions(preset.defaults);
+    // Auto-select a sensible default propeller for each aircraft type
+    if (preset.type === 'flying_wing') {
+      setPropeller('prop_9x47P');
+    } else {
+      setPropeller('prop_9x47');
+    }
   };
 
   const metrics = calculateMetrics(dimensions, aircraftType);
@@ -206,14 +214,16 @@ function App() {
             onAirfoilChange={setAirfoil}
             fuselageStyle={fuselageStyle}
             onFuselageStyleChange={setFuselageStyle}
+            propeller={propeller}
+            onPropellerChange={setPropeller}
           />
         </div>
 
         <div className="order-1 lg:order-2 w-full lg:flex-1 relative min-h-[400px] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-x-auto">
           {viewMode === '2D' ? (
-            <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} aircraftType={aircraftType} unit={unit} fuselageStyle={fuselageStyle} />
+            <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} aircraftType={aircraftType} unit={unit} fuselageStyle={fuselageStyle} propeller={propeller} />
           ) : (
-            <Scene3D dimensions={dimensions} aircraftType={aircraftType} unit={unit} airfoil={airfoil} fuselageStyle={fuselageStyle} />
+            <Scene3D dimensions={dimensions} aircraftType={aircraftType} unit={unit} airfoil={airfoil} fuselageStyle={fuselageStyle} propeller={propeller} />
           )}
         </div>
 

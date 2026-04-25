@@ -2,6 +2,19 @@ export type AircraftType = 'conventional' | 'flying_wing';
 export type AirfoilType = 'clarky' | 'naca4412' | 'naca0012' | 'mh45';
 export type FuselageType = 'trainer' | 'sport';
 
+// Tractor props (conventional) — format: DiameterxPitch inches
+// Pusher props (flying wing)    — suffix P indicates pusher (counter-rotating pitch)
+export type PropellerType =
+  | 'prop_6x4'    | 'prop_7x4'
+  | 'prop_8x4'    | 'prop_8x6'
+  | 'prop_9x47'   | 'prop_10x47'
+  | 'prop_10x45'  | 'prop_11x55'
+  | 'prop_12x6'   | 'prop_12x8'
+  // Pusher variants
+  | 'prop_7x4P'   | 'prop_8x45P'
+  | 'prop_9x47P'  | 'prop_10x47P'
+  | 'prop_10x7P'  | 'prop_11x55P';
+
 // Future: 'zagi' | 'delta' | 'canard'
 
 export interface AircraftPreset {
