@@ -5,7 +5,8 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import { Play, Pause } from 'lucide-react';
-import type { AircraftDimensions, AircraftType, AirfoilType, FuselageType } from '../utils/calculations';
+import type { AircraftDimensions, AircraftType, AirfoilType, FuselageType, PropellerType } from '../utils/calculations';
+import { PROP_BY_KEY } from '../utils/electricSystem';
 
 interface Scene3DProps {
   dimensions: AircraftDimensions;
@@ -13,6 +14,7 @@ interface Scene3DProps {
   unit: 'cm' | 'mm';
   airfoil: AirfoilType;
   fuselageStyle?: FuselageType;
+  propeller?: PropellerType;
 }
 
 import { getAirfoilCoordinates } from '../utils/airfoils';
@@ -21,7 +23,7 @@ interface AircraftMeshProps extends Scene3DProps {
   isRotating: boolean;
 }
 
-function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, fuselageStyle = 'trainer', isRotating }: AircraftMeshProps) {
+function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, fuselageStyle = 'trainer', propeller = 'prop_9x47', isRotating }: AircraftMeshProps) {
   const groupRef = useRef<THREE.Group>(null);
 
   useFrame((_, delta) => {
@@ -246,11 +248,41 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, fuselageS
               <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
             </lineSegments>
           </mesh>
-          {/* Propeller disc at the nose */}
-          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, noseTip + 0.1 * F]}>
-            <cylinderGeometry args={[fR * 2.5, fR * 2.5, 0.2 * F, 16]} />
-            <meshStandardMaterial color="#000000" transparent opacity={0.3} />
+          {/* Propeller disc at the nose — tractor */}
+          {(() => {
+            const spec = PROP_BY_KEY[propeller];
+            const propDiamCm = spec ? spec.diameter_inch * 2.54 : 22.86;
+            const propRadScaled = (propDiamCm / 2) * F;
+            return (
+              <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, noseTip + 0.15 * F]}>
+                <cylinderGeometry args={[propRadScaled, propRadScaled, 0.25 * F, 24]} />
+                <meshStandardMaterial color="#1a1a1a" transparent opacity={0.35} />
+              </mesh>
+            );
+          })()}
+        </group>
+      )}
+
+      {/* ── Flying-wing pusher motor + propeller at trailing edge ── */}
+      {aircraftType === 'flying_wing' && (
+        <group>
+          {/* Motor nacelle (small cylinder behind wing center) */}
+          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, wingLeZ - RC * F - 0.5 * F]}>
+            <cylinderGeometry args={[fR * 0.9, fR * 0.9, RC * F * 0.55, 12]} />
+            <meshStandardMaterial color={C.fuse} roughness={0.5} />
           </mesh>
+          {/* Pusher propeller disc behind the motor nacelle */}
+          {(() => {
+            const spec = PROP_BY_KEY[propeller];
+            const propDiamCm = spec ? spec.diameter_inch * 2.54 : 20.32;
+            const propRadScaled = (propDiamCm / 2) * F;
+            return (
+              <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, wingLeZ - RC * F - RC * F * 0.3]}>
+                <cylinderGeometry args={[propRadScaled, propRadScaled, 0.25 * F, 24]} />
+                <meshStandardMaterial color="#1a1a1a" transparent opacity={0.35} />
+              </mesh>
+            );
+          })()}
         </group>
       )}
 
@@ -361,7 +393,7 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, fuselageS
   );
 }
 
-export default function Scene3D({ dimensions, aircraftType, unit, airfoil, fuselageStyle }: Scene3DProps) {
+export default function Scene3D({ dimensions, aircraftType, unit, airfoil, fuselageStyle, propeller = 'prop_9x47' }: Scene3DProps) {
   const [isRotating, setIsRotating] = useState(true);
 
   const s = unit === 'mm' ? 0.1 : 1;
@@ -380,7 +412,7 @@ export default function Scene3D({ dimensions, aircraftType, unit, airfoil, fusel
         <ambientLight intensity={0.5} />
         <directionalLight position={[40, 60, 40]} intensity={1.3} castShadow />
         <directionalLight position={[-20, 10, -20]} intensity={0.25} />
-        <AircraftMesh dimensions={dimensions} aircraftType={aircraftType} unit={unit} airfoil={airfoil} fuselageStyle={fuselageStyle} isRotating={isRotating} />
+        <AircraftMesh dimensions={dimensions} aircraftType={aircraftType} unit={unit} airfoil={airfoil} fuselageStyle={fuselageStyle} propeller={propeller} isRotating={isRotating} />
         <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
         <Environment preset="sunset" />
       </Canvas>

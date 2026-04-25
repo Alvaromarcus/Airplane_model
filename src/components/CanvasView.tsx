@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AircraftDimensions, AircraftMetrics, AircraftType, FuselageType } from '../utils/calculations';
+import type { AircraftDimensions, AircraftMetrics, AircraftType, FuselageType, PropellerType } from '../utils/calculations';
+import { PROP_BY_KEY } from '../utils/electricSystem';
 
 interface CanvasViewProps {
   dimensions: AircraftDimensions;
@@ -9,9 +10,10 @@ interface CanvasViewProps {
   aircraftType: AircraftType;
   unit: 'cm' | 'mm';
   fuselageStyle?: FuselageType;
+  propeller?: PropellerType;
 }
 
-export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftType, fuselageStyle = 'trainer' }: CanvasViewProps) {
+export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftType, fuselageStyle = 'trainer', propeller = 'prop_9x47' }: CanvasViewProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -255,6 +257,58 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.restore();
+      }
+
+      // --- DRAW PROPELLER ---
+      const propSpec = PROP_BY_KEY[propeller];
+      // Prop diameter in inches → approximate in cm (1 inch = 2.54 cm)
+      const propDiamCm = propSpec ? propSpec.diameter_inch * 2.54 : 22.86; // default 9in
+      const propRadPx = (propDiamCm / 2) * scale;
+      const propColor = isDarkMode ? 'rgba(250,204,21,0.55)' : 'rgba(161,98,7,0.35)';
+      const propStroke = isDarkMode ? '#fbbf24' : '#92400e';
+
+      if (aircraftType === 'flying_wing') {
+        // Pusher: motor behind wing → draw at trailing edge center
+        const propCenterY = wingY + (dims.rootChord * scale) + propRadPx * 0.2; // just behind TE
+        ctx.beginPath();
+        ctx.arc(0, propCenterY, propRadPx, 0, Math.PI * 2);
+        ctx.fillStyle = propColor;
+        ctx.fill();
+        ctx.strokeStyle = propStroke;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Hub
+        ctx.beginPath();
+        ctx.arc(0, propCenterY, Math.max(3, propRadPx * 0.12), 0, Math.PI * 2);
+        ctx.fillStyle = propStroke;
+        ctx.fill();
+        // Label
+        ctx.font = '9px sans-serif';
+        ctx.fillStyle = isDarkMode ? '#fde68a' : '#78350f';
+        ctx.textAlign = 'center';
+        ctx.fillText(`⬆ ${propSpec?.label ?? ''} (pusher)`, 0, propCenterY + propRadPx + 10);
+        ctx.textAlign = 'left';
+      } else {
+        // Tractor: motor at nose → draw at top (y=0 in top-view coords)
+        const propCenterY = -propRadPx * 0.2; // just before nose
+        ctx.beginPath();
+        ctx.arc(0, propCenterY, propRadPx, 0, Math.PI * 2);
+        ctx.fillStyle = propColor;
+        ctx.fill();
+        ctx.strokeStyle = propStroke;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Hub
+        ctx.beginPath();
+        ctx.arc(0, propCenterY, Math.max(3, propRadPx * 0.12), 0, Math.PI * 2);
+        ctx.fillStyle = propStroke;
+        ctx.fill();
+        // Label
+        ctx.font = '9px sans-serif';
+        ctx.fillStyle = isDarkMode ? '#fde68a' : '#78350f';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${propSpec?.label ?? ''} (tractor)`, 0, propCenterY - propRadPx - 4);
+        ctx.textAlign = 'left';
       }
 
       // Draw Theoretical CG (Top View)
@@ -555,7 +609,7 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
     resizeCanvas(); // Initial draw
 
     return () => window.removeEventListener('resize', resizeCanvas);
-  }, [dimensions, metrics, t, isDarkMode, aircraftType]);
+  }, [dimensions, metrics, t, isDarkMode, aircraftType, propeller]);
 
   return (
     <div ref={containerRef} className="w-full h-full absolute inset-0">
