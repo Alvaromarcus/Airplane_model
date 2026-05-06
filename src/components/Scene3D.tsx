@@ -236,32 +236,81 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, fuselageS
   return (
     <group ref={groupRef}>
 
-      {/* ── Fuselage body (conventional only) ── */}
-      {aircraftType === 'conventional' && (
-        <group>
-          {/* Tapered Fuselage Tube */}
-          <mesh position={[0, 0, 0]}>
-            <primitive object={fuseGeo} attach="geometry" />
-            <meshStandardMaterial color={C.fuse} roughness={0.6} />
-            <lineSegments>
-              <edgesGeometry attach="geometry" args={[fuseGeo]} />
-              <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
-            </lineSegments>
-          </mesh>
-          {/* Propeller disc at the nose — tractor */}
-          {(() => {
-            const spec = PROP_BY_KEY[propeller];
-            const propDiamCm = spec ? spec.diameter_inch * 2.54 : 22.86;
-            const propRadScaled = (propDiamCm / 2) * F;
-            return (
-              <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, noseTip + 0.15 * F]}>
-                <cylinderGeometry args={[propRadScaled, propRadScaled, 0.25 * F, 24]} />
-                <meshStandardMaterial color="#1a1a1a" transparent opacity={0.35} />
+      {/* ── Fuselage body + tractor brushless motor (conventional only) ── */}
+      {aircraftType === 'conventional' && (() => {
+        // Motor dimensions — same proportions as the pusher, mounted at nose
+        const mR    = fR * 0.42;   // stator radius
+        const mH    = fR * 0.55;   // stator height
+        const bR    = fR * 0.52;   // bell radius (slightly wider than stator)
+        const bH    = fR * 0.40;   // bell height
+        const shR   = fR * 0.08;   // shaft radius
+        const shH   = fR * 0.35;   // shaft protrusion
+        const baseR = fR * 0.60;   // firewall / mounting base radius
+        const baseH = fR * 0.10;   // mounting base thickness
+
+        // Tractor: everything extends forward (positive Z) from the nose tip
+        const baseZ  = noseTip + baseH / 2;
+        const motorZ = baseZ + baseH / 2 + mH / 2;
+        const bellZ  = motorZ + mH / 2 + bH / 2;
+        const shaftZ = bellZ + bH / 2 + shH / 2;
+
+        const spec = PROP_BY_KEY[propeller];
+        const propDiamCm = spec ? spec.diameter_inch * 2.54 : 22.86;
+        const propRadScaled = (propDiamCm / 2) * F;
+        const propDiscZ = shaftZ + shH / 2 + 0.05 * F;
+
+        return (
+          <group>
+            {/* Tapered Fuselage Tube */}
+            <mesh position={[0, 0, 0]}>
+              <primitive object={fuseGeo} attach="geometry" />
+              <meshStandardMaterial color={C.fuse} roughness={0.6} />
+              <lineSegments>
+                <edgesGeometry attach="geometry" args={[fuseGeo]} />
+                <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
+              </lineSegments>
+            </mesh>
+
+            {/* Firewall / Mounting base plate */}
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, baseZ]}>
+              <cylinderGeometry args={[baseR, baseR, baseH, 16]} />
+              <meshStandardMaterial color="#2d3748" roughness={0.6} metalness={0.4} />
+            </mesh>
+
+            {/* Stator body (windings) */}
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, motorZ]}>
+              <cylinderGeometry args={[mR, mR, mH, 16]} />
+              <meshStandardMaterial color="#374151" roughness={0.5} metalness={0.5} />
+            </mesh>
+
+            {/* Ventilation ribs on stator */}
+            {[0.25, 0.5, 0.75].map((t, idx) => (
+              <mesh key={idx} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, motorZ + mH * (t - 0.5)]}>
+                <torusGeometry args={[mR + 0.01 * F, 0.025 * F, 6, 16]} />
+                <meshStandardMaterial color="#1f2937" roughness={0.4} metalness={0.6} />
               </mesh>
-            );
-          })()}
-        </group>
-      )}
+            ))}
+
+            {/* Bell / Rotor can — taper opens toward fuselage (outrunner style) */}
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, bellZ]}>
+              <cylinderGeometry args={[bR * 0.88, bR, bH, 16]} />
+              <meshStandardMaterial color="#4b5563" roughness={0.3} metalness={0.7} />
+            </mesh>
+
+            {/* Shaft — protrudes forward from the bell */}
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, shaftZ]}>
+              <cylinderGeometry args={[shR, shR, shH, 8]} />
+              <meshStandardMaterial color="#9ca3af" roughness={0.15} metalness={0.95} />
+            </mesh>
+
+            {/* Tractor propeller disc */}
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, propDiscZ]}>
+              <cylinderGeometry args={[propRadScaled, propRadScaled, 0.18 * F, 32]} />
+              <meshStandardMaterial color="#111827" transparent opacity={0.30} />
+            </mesh>
+          </group>
+        );
+      })()}
 
       {/* ── Flying-wing pusher brushless motor + propeller at trailing edge ── */}
       {aircraftType === 'flying_wing' && (() => {
