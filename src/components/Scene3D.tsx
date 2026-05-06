@@ -263,28 +263,71 @@ function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, fuselageS
         </group>
       )}
 
-      {/* ── Flying-wing pusher motor + propeller at trailing edge ── */}
-      {aircraftType === 'flying_wing' && (
-        <group>
-          {/* Motor nacelle (small cylinder behind wing center) */}
-          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, wingLeZ - RC * F - 0.5 * F]}>
-            <cylinderGeometry args={[fR * 0.9, fR * 0.9, RC * F * 0.55, 12]} />
-            <meshStandardMaterial color={C.fuse} roughness={0.5} />
-          </mesh>
-          {/* Pusher propeller disc behind the motor nacelle */}
-          {(() => {
-            const spec = PROP_BY_KEY[propeller];
-            const propDiamCm = spec ? spec.diameter_inch * 2.54 : 20.32;
-            const propRadScaled = (propDiamCm / 2) * F;
-            return (
-              <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, wingLeZ - RC * F - RC * F * 0.3]}>
-                <cylinderGeometry args={[propRadScaled, propRadScaled, 0.25 * F, 24]} />
-                <meshStandardMaterial color="#1a1a1a" transparent opacity={0.35} />
+      {/* ── Flying-wing pusher brushless motor + propeller at trailing edge ── */}
+      {aircraftType === 'flying_wing' && (() => {
+        // Motor dimensions — kept compact and realistic vs the wing scale
+        const mR  = fR * 0.42;          // stator radius
+        const mH  = fR * 0.55;          // stator height
+        const bR  = fR * 0.52;          // bell (rotor can) radius — slightly wider
+        const bH  = fR * 0.40;          // bell height
+        const shR = fR * 0.08;          // shaft radius
+        const shH = fR * 0.35;          // shaft protrusion length
+        const baseR = fR * 0.60;        // mounting base radius
+        const baseH = fR * 0.10;        // mounting base thickness
+
+        // Motor center Z: just behind the wing trailing edge
+        const motorZ = wingLeZ - RC * F - mH * 0.7;
+        const baseZ  = motorZ + mH / 2 + baseH / 2;
+        const bellZ  = motorZ - mH / 2 - bH / 2;
+        const shaftZ = bellZ - bH / 2 - shH / 2;
+
+        const spec = PROP_BY_KEY[propeller];
+        const propDiamCm = spec ? spec.diameter_inch * 2.54 : 20.32;
+        const propRadScaled = (propDiamCm / 2) * F;
+        const propDiscZ = shaftZ - shH / 2 - 0.05 * F;
+
+        return (
+          <group>
+            {/* Mounting base / motor plate */}
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, baseZ]}>
+              <cylinderGeometry args={[baseR, baseR, baseH, 16]} />
+              <meshStandardMaterial color="#2d3748" roughness={0.6} metalness={0.4} />
+            </mesh>
+
+            {/* Stator body (windings) */}
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, motorZ]}>
+              <cylinderGeometry args={[mR, mR, mH, 16]} />
+              <meshStandardMaterial color="#374151" roughness={0.5} metalness={0.5} />
+            </mesh>
+
+            {/* Ventilation ribs on stator (thin rings) */}
+            {[0.25, 0.5, 0.75].map((t, idx) => (
+              <mesh key={idx} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, motorZ + mH * (t - 0.5)]}>
+                <torusGeometry args={[mR + 0.01 * F, 0.025 * F, 6, 16]} />
+                <meshStandardMaterial color="#1f2937" roughness={0.4} metalness={0.6} />
               </mesh>
-            );
-          })()}
-        </group>
-      )}
+            ))}
+
+            {/* Bell / Rotor can (spins, slightly wider than stator) */}
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, bellZ]}>
+              <cylinderGeometry args={[bR, bR * 0.88, bH, 16]} />
+              <meshStandardMaterial color="#4b5563" roughness={0.3} metalness={0.7} />
+            </mesh>
+
+            {/* Shaft */}
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, shaftZ]}>
+              <cylinderGeometry args={[shR, shR, shH, 8]} />
+              <meshStandardMaterial color="#9ca3af" roughness={0.15} metalness={0.95} />
+            </mesh>
+
+            {/* Pusher propeller disc */}
+            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, propDiscZ]}>
+              <cylinderGeometry args={[propRadScaled, propRadScaled, 0.18 * F, 32]} />
+              <meshStandardMaterial color="#111827" transparent opacity={0.30} />
+            </mesh>
+          </group>
+        );
+      })()}
 
       {/* ── Right wing ── */}
       <group position={[0, 0, wingLeZ]} rotation={[0, 0, dihedralRad]}>
