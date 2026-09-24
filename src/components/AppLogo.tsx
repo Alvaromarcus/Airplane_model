@@ -1,34 +1,15 @@
 export default function AppLogo() {
   return (
-    <div className="flex items-center gap-2 select-none">
-      <svg
-        width="32" height="32" viewBox="0 0 32 32"
-        fill="none" xmlns="http://www.w3.org/2000/svg"
-        aria-hidden="true"
-      >
-        {/* Fuselage */}
-        <ellipse cx="16" cy="16" rx="2.5" ry="11"
-                 className="fill-blue-600 dark:fill-blue-400" />
-        {/* Main wing */}
-        <path d="M16 13 L2 18 L4 20 L16 17 L28 20 L30 18 Z"
-              className="fill-blue-500 dark:fill-blue-300" />
-        {/* Horizontal stabilizer */}
-        <path d="M16 24 L9 27 L10 28 L16 26 L22 28 L23 27 Z"
-              className="fill-blue-400 dark:fill-blue-200" />
-        {/* Vertical stabilizer dot */}
-        <rect x="15" y="5" width="2" height="5" rx="1"
-              className="fill-blue-700 dark:fill-blue-300" />
-      </svg>
-      <div className="flex flex-col leading-tight">
-        <span className="text-lg font-bold text-gray-800 dark:text-white
-                         tracking-tight">
-          AeroBuilder
-        </span>
-        <span className="text-xs font-medium text-blue-600
-                         dark:text-blue-400 -mt-0.5 tracking-wider">
-          CALC
-        </span>
-      </div>
-    </div>
+    <a href="./" className="flex items-center gap-2.5 select-none" aria-label="AeroBuilder">
+      <span className="grid place-items-center w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 shadow-sm shadow-sky-600/30">
+        <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <path d="M16 3.5c1.1 0 1.8 1.4 1.8 3.4v5.4l10.7 5.6v2.6l-10.7-2.9v5.2l3.3 2.4v2.1L16 26.2l-5.1 1.1v-2.1l3.3-2.4v-5.2L3.5 20.5v-2.6l10.7-5.6V6.9c0-2 .7-3.4 1.8-3.4z" fill="white" />
+        </svg>
+      </span>
+      <span className="flex flex-col leading-none">
+        <span className="text-[17px] font-bold tracking-tight text-slate-900 dark:text-white">AeroBuilder</span>
+        <span className="text-[10.5px] font-medium text-sky-700 dark:text-sky-400 tracking-wide mt-0.5">CG · STL · RC</span>
+      </span>
+    </a>
   );
 }

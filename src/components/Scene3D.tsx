@@ -249,13 +249,13 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
   const floorY = -((b.yMax - b.yMin) / 2) * layout.toCm - sizeCm * 0.08;
 
   const fallback = (
-    <div className="w-full h-full flex items-center justify-center p-6 text-center text-sm text-gray-500 dark:text-gray-400">
+    <div className="w-full h-full flex items-center justify-center p-6 text-center text-sm text-slate-500 dark:text-slate-400">
       {t('scene_error')}
     </div>
   );
 
   return (
-    <div className="w-full h-full absolute inset-0 bg-gradient-to-b from-slate-100 to-slate-200 dark:from-gray-800 dark:to-gray-900">
+    <div className="w-full h-full absolute inset-0 bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900">
       <SceneErrorBoundary fallback={fallback}>
         <Canvas
           key={layout.isFW ? 'fw' : 'conv'}
@@ -275,7 +275,7 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
       </SceneErrorBoundary>
 
       {/* Legend */}
-      <div className="absolute top-3 left-3 flex flex-wrap gap-x-3 gap-y-1 text-xs bg-white/80 dark:bg-gray-900/70 backdrop-blur rounded-md px-2 py-1.5 text-gray-700 dark:text-gray-300 shadow-sm">
+      <div className="absolute top-3 left-3 flex flex-wrap gap-x-3 gap-y-1 text-xs bg-white/80 dark:bg-slate-900/70 backdrop-blur rounded-md px-2 py-1.5 text-slate-700 dark:text-slate-300 shadow-sm">
         <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-sm" style={{ background: COLORS.aileron }} />{t(layout.isFW ? 'elevons' : 'control_surfaces_short')}</span>
         {showComponents && !showSections && balance && (
           <>
@@ -285,13 +285,13 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
             <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-sm" style={{ background: COMPONENT_COLORS.rx }} />RX</span>
           </>
         )}
-        <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-full bg-gray-900" />CG</span>
+        <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-full bg-slate-900 dark:bg-white" />CG</span>
         <span className="flex items-center gap-1"><i className="inline-block w-0 h-0 border-l-[6px] border-r-[6px] border-t-[10px] border-l-transparent border-r-transparent border-t-orange-500" />NP</span>
       </div>
-      <div className="absolute bottom-2 right-3 text-xs text-gray-400 dark:text-gray-500 pointer-events-none">
+      <div className="absolute bottom-2 right-3 text-xs text-slate-400 dark:text-slate-500 pointer-events-none">
         {t('drag_to_rotate')}
       </div>
-      <div className="absolute top-14 right-3 flex flex-col items-stretch gap-1 text-xs bg-white/85 dark:bg-gray-900/75 backdrop-blur rounded-md px-2 py-1.5 shadow-sm text-gray-700 dark:text-gray-300 select-none">
+      <div className="absolute top-14 right-3 flex flex-col items-stretch gap-1 text-xs bg-white/85 dark:bg-slate-900/75 backdrop-blur rounded-md px-2 py-1.5 shadow-sm text-slate-700 dark:text-slate-300 select-none">
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={showComponents} onChange={e => setShowComponents(e.target.checked)} className="accent-violet-600" />
           {t('show_components')}
@@ -303,7 +303,7 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
       </div>
       <button
         onClick={() => setIsRotating(!isRotating)}
-        className="absolute top-3 right-3 p-2 bg-white dark:bg-gray-800 rounded-full shadow-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        className="absolute top-3 right-3 p-2 bg-white dark:bg-slate-800 rounded-full shadow-md text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
         title={isRotating ? t('pause_rotation') : t('start_rotation')}
         aria-label={isRotating ? t('pause_rotation') : t('start_rotation')}
       >
