@@ -104,7 +104,7 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
                 <span className="font-medium">{formatNumber(metrics.mac)}</span>
               </li>
               <li className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">{t('cg_position')}:</span>
+                <span className="text-gray-600 dark:text-gray-400">{t(aircraftType === 'flying_wing' ? 'cg_position_fw' : 'cg_position')}:</span>
                 <span className="font-medium">{formatNumber(metrics.cgPosition)}</span>
               </li>
               <li className="flex justify-between">
@@ -119,16 +119,20 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
                 <span className="text-gray-600 dark:text-gray-400">{t('aspect_ratio')}:</span>
                 <span className="font-medium">{metrics.aspectRatio.toFixed(2)}</span>
               </li>
+              {aircraftType !== 'flying_wing' && (
+                <>
+                  <li className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">{t('tail_moment_arm')}:</span>
+                    <span className="font-medium">{formatNumber(metrics.tailMomentArm)}</span>
+                  </li>
+                  <li className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">{t('hstab_area')}:</span>
+                    <span className="font-medium">{formatNumber(metrics.hStabArea, true)}</span>
+                  </li>
+                </>
+              )}
               <li className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">{t('tail_moment_arm')}:</span>
-                <span className="font-medium">{formatNumber(metrics.tailMomentArm)}</span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">{t('hstab_area')}:</span>
-                <span className="font-medium">{formatNumber(metrics.hStabArea, true)}</span>
-              </li>
-              <li className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">{t('vstab_area')}:</span>
+                <span className="text-gray-600 dark:text-gray-400">{t(aircraftType === 'flying_wing' ? 'winglet_area' : 'vstab_area')}:</span>
                 <span className="font-medium">{formatNumber(metrics.vStabArea, true)}</span>
               </li>
             </ul>
@@ -190,16 +194,20 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
             <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3 text-sm text-blue-800 dark:text-blue-300 space-y-2">
               <div className="flex gap-2">
                 <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
-                <p>{t('ailerons_rec')}</p>
+                <p>{t(aircraftType === 'flying_wing' ? 'ailerons_rec_fw' : 'ailerons_rec')} — <b>{(metrics.aileronAreaRatio * 100).toFixed(1)}%</b></p>
               </div>
-              <div className="flex gap-2">
-                <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
-                <p>{t('elevator_rec')}</p>
-              </div>
-              <div className="flex gap-2">
-                <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
-                <p>{t('rudder_rec')}</p>
-              </div>
+              {aircraftType !== 'flying_wing' && (
+                <>
+                  <div className="flex gap-2">
+                    <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
+                    <p>{t('elevator_rec')} — <b>{(metrics.elevatorAreaRatio * 100).toFixed(0)}%</b></p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Info size={16} className="shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />
+                    <p>{t('rudder_rec')} — <b>{(metrics.rudderAreaRatio * 100).toFixed(0)}%</b></p>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

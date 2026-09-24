@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Moon, Sun } from 'lucide-react';
 import Sidebar from './components/Sidebar';
@@ -7,57 +7,95 @@ import CanvasView from './components/CanvasView';
 import Scene3D from './components/Scene3D';
 import AircraftTypeSelector from './components/AircraftTypeSelector';
 import AppLogo from './components/AppLogo';
-import { calculateMetrics, validateDesign } from './utils/calculations';
-import type { AircraftDimensions, AircraftType, AircraftPreset, AirfoilType, FuselageType, PropellerType } from './utils/calculations';
+import {
+  calculateMetrics, validateDesign, AIRCRAFT_PRESETS, DEFAULT_CONTROL_SURFACES,
+  LENGTH_KEYS, dimsInUnit, normalizeDims, sanitizeControls,
+} from './utils/calculations';
+import type { AircraftDimensions, AircraftType, AircraftPreset, AirfoilType, FuselageType, PropellerType, ControlSurfaces } from './utils/calculations';
+import { computeLayout } from './utils/geometry';
 import { exportToPDF } from './utils/pdfExport';
 import { useVersionCheck } from './hooks/useVersionCheck';
 import './App.css';
 
-const defaultDimensions: AircraftDimensions = {
-  wingspan: 100,
-  rootChord: 20,
-  tipChord: 15,
-  sweepOffset: 5,
-  dihedral: 5,
-  hStabSpan: 32,
-  hStabChord: 9,
-  vStabSpan: 15,
-  vStabChord: 10,
-  fuselageLength: 80,
-  noseLength: 15,
-  wingToTailDistance: 32,
+const defaultDimensions: AircraftDimensions = AIRCRAFT_PRESETS[0].defaults;
+
+const STORAGE_KEY = 'aerobuilder_state_v2';
+const LEGACY_DIMS_KEY = 'aerobuilder_dims';
+
+interface PersistedState {
+  dimensions: AircraftDimensions;
+  unit: 'cm' | 'mm';
+  aircraftType: AircraftType;
+  airfoil: AirfoilType;
+  fuselageStyle: FuselageType;
+  propeller: PropellerType;
+  controls: ControlSurfaces;
+  isDarkMode: boolean;
+}
+
+const DEFAULT_STATE: PersistedState = {
+  dimensions: defaultDimensions,
+  unit: 'cm',
+  aircraftType: 'conventional',
+  airfoil: 'clarky',
+  fuselageStyle: 'trainer',
+  propeller: 'prop_9x47',
+  controls: DEFAULT_CONTROL_SURFACES.conventional,
+  isDarkMode: false,
 };
+
+function loadState(): PersistedState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const p = JSON.parse(raw) as Partial<PersistedState>;
+      const type: AircraftType = p.aircraftType === 'flying_wing' ? 'flying_wing' : 'conventional';
+      const unit = p.unit === 'mm' ? 'mm' : 'cm';
+      const presetDims = dimsInUnit(AIRCRAFT_PRESETS.find(x => x.type === type)!.defaults, unit);
+      return {
+        ...DEFAULT_STATE,
+        ...p,
+        aircraftType: type,
+        unit,
+        dimensions: normalizeDims(p.dimensions, presetDims),
+        controls: sanitizeControls({ ...DEFAULT_CONTROL_SURFACES[type], ...(p.controls ?? {}) }),
+      };
+    }
+    // Older versions stored only the dimensions (always in cm, conventional)
+    const legacy = localStorage.getItem(LEGACY_DIMS_KEY);
+    if (legacy) {
+      return { ...DEFAULT_STATE, dimensions: normalizeDims(JSON.parse(legacy), defaultDimensions) };
+    }
+  } catch (e) {
+    console.error('Failed to load saved state', e);
+  }
+  return DEFAULT_STATE;
+}
 
 function App() {
   useVersionCheck();
   const { t, i18n } = useTranslation();
 
-  // Initialize state from localStorage or fallback to defaults
-  const [dimensions, setDimensions] = useState<AircraftDimensions>(() => {
-    const saved = localStorage.getItem('aerobuilder_dims');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Failed to parse saved dimensions', e);
-      }
-    }
-    return defaultDimensions;
-  });
-
-  const [unit, setUnit] = useState<'cm' | 'mm'>('cm');
-  const [aircraftType, setAircraftType] = useState<AircraftType>('conventional');
-  const [airfoil, setAirfoil] = useState<AirfoilType>('clarky');
-  const [fuselageStyle, setFuselageStyle] = useState<FuselageType>('trainer');
-  const [propeller, setPropeller] = useState<PropellerType>('prop_9x47'); // default tractor
+  const [initial] = useState(loadState);
+  const [dimensions, setDimensions] = useState<AircraftDimensions>(initial.dimensions);
+  const [unit, setUnit] = useState<'cm' | 'mm'>(initial.unit);
+  const [aircraftType, setAircraftType] = useState<AircraftType>(initial.aircraftType);
+  const [airfoil, setAirfoil] = useState<AirfoilType>(initial.airfoil);
+  const [fuselageStyle, setFuselageStyle] = useState<FuselageType>(initial.fuselageStyle);
+  const [propeller, setPropeller] = useState<PropellerType>(initial.propeller);
+  const [controls, setControls] = useState<ControlSurfaces>(initial.controls);
   const [isExporting, setIsExporting] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(initial.isDarkMode);
   const [viewMode, setViewMode] = useState<'2D' | '3D'>('2D');
 
-  // Persist dimensions whenever they change
+  // Persist the whole project (dimensions are meaningless without their unit/type)
   useEffect(() => {
-    localStorage.setItem('aerobuilder_dims', JSON.stringify(dimensions));
-  }, [dimensions]);
+    try {
+      const state: PersistedState = { dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.removeItem(LEGACY_DIMS_KEY);
+    } catch { /* storage unavailable (private mode) — ignore */ }
+  }, [dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -67,6 +105,13 @@ function App() {
     }
   }, [isDarkMode]);
 
+  const metrics = useMemo(() => calculateMetrics(dimensions, aircraftType, controls), [dimensions, aircraftType, controls]);
+  const validationChecks = useMemo(() => validateDesign(dimensions, metrics, aircraftType), [dimensions, metrics, aircraftType]);
+  const layout = useMemo(
+    () => computeLayout(dimensions, aircraftType, controls, metrics, unit, fuselageStyle, propeller),
+    [dimensions, aircraftType, controls, metrics, unit, fuselageStyle, propeller],
+  );
+
   const handleUnitToggle = (newUnit: 'cm' | 'mm') => {
     if (unit === newUnit) return;
 
@@ -74,11 +119,9 @@ function App() {
 
     setDimensions(prev => {
       const newDims = { ...prev };
-      // Multiply all dimensions by the multiplier, except for dihedral which is in degrees
-      (Object.keys(newDims) as (keyof AircraftDimensions)[]).forEach(key => {
-        if (key !== 'dihedral') {
-          newDims[key] = parseFloat((newDims[key] * multiplier).toFixed(2));
-        }
+      // Convert lengths only (dihedral is in degrees)
+      LENGTH_KEYS.forEach(key => {
+        newDims[key] = parseFloat((newDims[key] * multiplier).toFixed(2));
       });
       return newDims;
     });
@@ -90,16 +133,21 @@ function App() {
     setDimensions(prev => ({ ...prev, [key]: value }));
   };
 
+  const handleControlChange = (key: keyof ControlSurfaces, value: number) => {
+    setControls(prev => ({ ...prev, [key]: value }));
+  };
+
   const toggleLanguage = () => {
     const newLang = i18n.language === 'en' ? 'pt' : 'en';
     i18n.changeLanguage(newLang);
+    try { localStorage.setItem('aerobuilder_lang', newLang); } catch { /* ignore */ }
     document.documentElement.lang = newLang === 'pt' ? 'pt-BR' : 'en-US';
   };
 
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
-      await exportToPDF(dimensions, metrics, validationChecks, unit, i18n.language, t);
+      await exportToPDF(dimensions, metrics, validationChecks, unit, i18n.language, t, layout, controls, aircraftType, airfoil);
     } catch (error) {
       console.error("PDF Export failed", error);
     }
@@ -107,28 +155,30 @@ function App() {
   };
 
   const handleReset = () => {
-    localStorage.removeItem('aerobuilder_dims');
+    try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
     setDimensions(defaultDimensions);
     setUnit('cm');
     setAircraftType('conventional');
     setAirfoil('clarky');
     setFuselageStyle('trainer');
     setPropeller('prop_9x47');
+    setControls(DEFAULT_CONTROL_SURFACES.conventional);
   };
 
   const handlePresetSelect = (preset: AircraftPreset) => {
     setAircraftType(preset.type);
-    setDimensions(preset.defaults);
-    // Auto-select a sensible default propeller for each aircraft type
+    // Presets are authored in cm — convert to the unit currently in use
+    setDimensions(dimsInUnit(preset.defaults, unit));
+    setControls(DEFAULT_CONTROL_SURFACES[preset.type]);
+    // Auto-select sensible defaults for each aircraft type
     if (preset.type === 'flying_wing') {
       setPropeller('prop_9x47P');
+      setAirfoil('mh45');
     } else {
       setPropeller('prop_9x47');
+      setAirfoil('clarky');
     }
   };
-
-  const metrics = calculateMetrics(dimensions, aircraftType);
-  const validationChecks = validateDesign(dimensions, metrics, aircraftType);
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900 overflow-hidden font-sans transition-colors duration-200">
@@ -150,7 +200,7 @@ function App() {
             onClick={() => setViewMode(prev => prev === '2D' ? '3D' : '2D')}
             className="bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded transition-colors text-sm font-medium border border-indigo-200 dark:border-indigo-800 flex-shrink-0"
           >
-            {viewMode === '2D' ? '3D View' : '2D View'}
+            {viewMode === '2D' ? t('view_3d') : t('view_2d')}
           </button>
 
           {/* Unit select — hide label on mobile, show on sm+ */}
@@ -208,6 +258,9 @@ function App() {
           <Sidebar
             dimensions={dimensions}
             onChange={handleDimensionChange}
+            controls={controls}
+            onControlChange={handleControlChange}
+            metrics={metrics}
             unit={unit}
             aircraftType={aircraftType}
             airfoil={airfoil}
@@ -221,9 +274,9 @@ function App() {
 
         <div className="order-1 lg:order-2 w-full lg:flex-1 relative min-h-[400px] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-x-auto">
           {viewMode === '2D' ? (
-            <CanvasView dimensions={dimensions} metrics={metrics} isDarkMode={isDarkMode} aircraftType={aircraftType} unit={unit} fuselageStyle={fuselageStyle} propeller={propeller} />
+            <CanvasView layout={layout} isDarkMode={isDarkMode} airfoil={airfoil} />
           ) : (
-            <Scene3D dimensions={dimensions} aircraftType={aircraftType} unit={unit} airfoil={airfoil} fuselageStyle={fuselageStyle} propeller={propeller} />
+            <Scene3D layout={layout} airfoil={airfoil} isDarkMode={isDarkMode} />
           )}
         </div>
 

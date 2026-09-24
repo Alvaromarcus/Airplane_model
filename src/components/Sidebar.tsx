@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AircraftDimensions, AircraftType, AirfoilType, FuselageType, PropellerType } from '../utils/calculations';
+import type { AircraftDimensions, AircraftMetrics, AircraftType, AirfoilType, ControlSurfaces, FuselageType, PropellerType } from '../utils/calculations';
 import { TRACTOR_PROPS, PUSHER_PROPS } from '../utils/electricSystem';
 
 interface SidebarProps {
   dimensions: AircraftDimensions;
   onChange: (key: keyof AircraftDimensions, value: number) => void;
+  controls: ControlSurfaces;
+  onControlChange: (key: keyof ControlSurfaces, value: number) => void;
+  metrics: AircraftMetrics;
   unit: 'cm' | 'mm';
   aircraftType: AircraftType;
   airfoil: AirfoilType;
@@ -39,71 +42,114 @@ const PUSHER_KEY_MAP: { key: PropellerType; label: string; notes: string }[] = [
   { key: 'prop_11x55P', label: '11×5.5P', notes: PUSHER_PROPS[5].notes },
 ];
 
+const inputClass = 'w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white';
+
+interface NumberFieldProps {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  unitLabel: string;
+  min?: number;
+  max?: number;
+  step?: number;
+}
+
+/**
+ * Numeric input that keeps the raw text while typing (so "1." or "" are
+ * allowed mid-edit) and only reports valid, in-range numbers upward.
+ */
+function NumberField({ label, value, onChange, unitLabel, min = 0, max, step }: NumberFieldProps) {
+  const [text, setText] = useState(String(value));
+
+  // Sync when the value changes from outside (preset, unit toggle, reset)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setText(prev => (parseFloat(prev) === value ? prev : String(value)));
+  }, [value]);
+
+  const clamp = (n: number) => Math.min(max ?? Infinity, Math.max(min, n));
+
+  return (
+    <div className="mb-3">
+      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          inputMode="decimal"
+          min={min}
+          max={max}
+          step={step ?? 'any'}
+          value={text}
+          onChange={(e) => {
+            const raw = e.target.value;
+            setText(raw);
+            const num = parseFloat(raw);
+            if (!isNaN(num) && num >= min && (max === undefined || num <= max)) onChange(num);
+          }}
+          onBlur={() => {
+            const num = parseFloat(text);
+            if (isNaN(num) || text.trim() === '') {
+              setText(String(value));
+            } else if (clamp(num) !== num) {
+              onChange(clamp(num));
+              setText(String(clamp(num)));
+            }
+          }}
+          className={inputClass}
+        />
+        <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 w-6">{unitLabel}</span>
+      </div>
+    </div>
+  );
+}
+
+function DerivedInfo({ children }: { children: ReactNode }) {
+  return (
+    <div className="-mt-1 mb-3 px-2 py-1.5 rounded-md text-[11px] leading-snug bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-300">
+      {children}
+    </div>
+  );
+}
+
 export default function Sidebar({
-  dimensions, onChange, unit, aircraftType,
+  dimensions, onChange, controls, onControlChange, metrics, unit, aircraftType,
   airfoil, onAirfoilChange,
   fuselageStyle, onFuselageStyleChange,
   propeller, onPropellerChange,
 }: SidebarProps) {
   const { t } = useTranslation();
 
-  const [localValues, setLocalValues] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    (Object.keys(dimensions) as (keyof AircraftDimensions)[]).forEach(k => {
-      init[k] = String(dimensions[k]);
-    });
-    return init;
-  });
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLocalValues(prev => {
-      const next = { ...prev };
-      (Object.keys(dimensions) as (keyof AircraftDimensions)[]).forEach(k => {
-        const parsed = parseFloat(prev[k]);
-        if (!isNaN(parsed) && parsed !== dimensions[k]) {
-          next[k] = String(dimensions[k]);
-        }
-        if (isNaN(parsed)) {
-          next[k] = prev[k];
-        }
-      });
-      return next;
-    });
-  }, [dimensions]);
-
-  const renderInput = (label: string, valueKey: keyof AircraftDimensions, unitLabel?: string) => (
-    <div className="mb-3">
-      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-        {t(label)}
-      </label>
-      <div className="flex items-center gap-1">
-        <input
-          type="number"
-          value={localValues[valueKey] ?? ''}
-          onChange={(e) => {
-            const raw = e.target.value;
-            setLocalValues(prev => ({ ...prev, [valueKey]: raw }));
-            const num = parseFloat(raw);
-            if (!isNaN(num)) {
-              onChange(valueKey, num);
-            }
-          }}
-          onBlur={() => {
-            const raw = localValues[valueKey];
-            const num = parseFloat(raw);
-            if (isNaN(num) || raw.trim() === '') {
-              setLocalValues(prev => ({ ...prev, [valueKey]: String(dimensions[valueKey]) }));
-            }
-          }}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-        />
-        <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 w-6">
-          {unitLabel ?? unit}
-        </span>
-      </div>
-    </div>
+  const renderInput = (label: string, valueKey: keyof AircraftDimensions, unitLabel?: string, min = 0, max?: number) => (
+    <NumberField
+      label={t(label)}
+      value={dimensions[valueKey]}
+      onChange={(v) => onChange(valueKey, v)}
+      unitLabel={unitLabel ?? unit}
+      min={min}
+      max={max}
+    />
   );
+
+  const renderControl = (label: string, key: keyof ControlSurfaces, min: number, max: number) => (
+    <NumberField
+      label={t(label)}
+      value={controls[key]}
+      onChange={(v) => onControlChange(key, v)}
+      unitLabel="%"
+      min={min}
+      max={max}
+      step={1}
+    />
+  );
+
+  const fmt = (n: number) => (unit === 'mm' ? n.toFixed(0) : n.toFixed(1));
+  const semi = dimensions.wingspan / 2;
+  const chordAt = (f: number) => dimensions.rootChord + (dimensions.tipChord - dimensions.rootChord) * f;
+  const f0 = Math.min(controls.aileronStart, controls.aileronEnd) / 100;
+  const f1 = Math.max(controls.aileronStart, controls.aileronEnd) / 100;
+  const aileronLen = semi * (f1 - f0);
+  const aileronRootC = chordAt(f0) * controls.aileronChord / 100;
+  const aileronTipC = chordAt(f1) * controls.aileronChord / 100;
 
   const isFlyingWing = aircraftType === 'flying_wing';
   const propList = isFlyingWing ? PUSHER_KEY_MAP : TRACTOR_KEY_MAP;
@@ -147,8 +193,8 @@ export default function Sidebar({
               {renderInput('tip_chord', 'tipChord')}
             </div>
           </div>
-          {renderInput('sweep_angle', 'sweepOffset')}
-          {renderInput('dihedral', 'dihedral', '°')}
+          {renderInput('sweep_angle', 'sweepOffset', undefined, -1000)}
+          {renderInput('dihedral', 'dihedral', '°', -10, 30)}
         </div>
 
         {/* Propeller Section */}
@@ -240,6 +286,47 @@ export default function Sidebar({
           </div>
         </div>
 
+        {/* Control Surfaces Section */}
+        <div className="mb-6">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
+            <i className="inline-block w-2.5 h-2.5 rounded-sm bg-orange-500" />
+            {t('control_surfaces_title')}
+          </h3>
+          <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">
+            {isFlyingWing ? t('elevons') : t('ailerons')}
+          </h4>
+          <div className="flex gap-2">
+            <div className="flex-1">{renderControl('cs_start', 'aileronStart', 0, 95)}</div>
+            <div className="flex-1">{renderControl('cs_end', 'aileronEnd', 5, 100)}</div>
+          </div>
+          {renderControl('cs_chord', 'aileronChord', 5, 50)}
+          <DerivedInfo>
+            {t('cs_length')}: <b>{fmt(aileronLen)} {unit}</b> {t('cs_each')} · {t('cs_chord_short')}: <b>{fmt(aileronRootC)}→{fmt(aileronTipC)} {unit}</b>
+            <br />
+            {(metrics.aileronAreaRatio * 100).toFixed(1)}% {t('cs_of_wing')}
+          </DerivedInfo>
+
+          {!isFlyingWing && (
+            <>
+              <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2 mt-4">{t('elevator')}</h4>
+              {renderControl('cs_chord_stab', 'elevatorChord', 0, 60)}
+              <DerivedInfo>
+                {t('cs_length')}: <b>{fmt(dimensions.hStabSpan)} {unit}</b> · {t('cs_chord_short')}: <b>{fmt(dimensions.hStabChord * controls.elevatorChord / 100)} {unit}</b>
+                <br />
+                {(metrics.elevatorAreaRatio * 100).toFixed(0)}% {t('cs_of_stab')}
+              </DerivedInfo>
+
+              <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2 mt-4">{t('rudder')}</h4>
+              {renderControl('cs_chord_fin', 'rudderChord', 0, 60)}
+              <DerivedInfo>
+                {t('cs_length')}: <b>{fmt(dimensions.vStabSpan)} {unit}</b> · {t('cs_chord_short')}: <b>{fmt(dimensions.vStabChord * controls.rudderChord / 100)} {unit}</b>
+                <br />
+                {(metrics.rudderAreaRatio * 100).toFixed(0)}% {t('cs_of_fin')}
+              </DerivedInfo>
+            </>
+          )}
+        </div>
+
         {/* Fuselage Section */}
         {aircraftType !== 'flying_wing' && (
           <div className="mb-6">
@@ -260,6 +347,10 @@ export default function Sidebar({
               </select>
             </div>
             {renderInput('total_length', 'fuselageLength')}
+            <div className="flex gap-2">
+              <div className="flex-1">{renderInput('fuselage_width', 'fuselageWidth')}</div>
+              <div className="flex-1">{renderInput('fuselage_height', 'fuselageHeight')}</div>
+            </div>
             {renderInput('nose_length', 'noseLength')}
             {renderInput('wing_to_tail', 'wingToTailDistance')}
           </div>

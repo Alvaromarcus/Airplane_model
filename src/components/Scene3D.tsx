@@ -1,520 +1,209 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-nocheck
-import { useRef, useState } from 'react';
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Environment } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { Play, Pause } from 'lucide-react';
-import type { AircraftDimensions, AircraftType, AirfoilType, FuselageType, PropellerType } from '../utils/calculations';
-import { PROP_BY_KEY } from '../utils/electricSystem';
+import { useTranslation } from 'react-i18next';
+import type { AirfoilType } from '../utils/calculations';
+import type { Layout } from '../utils/geometry';
+import { buildAircraftParts, disposeParts, type PartMesh } from '../utils/mesh';
 
 interface Scene3DProps {
-  dimensions: AircraftDimensions;
-  aircraftType: AircraftType;
-  unit: 'cm' | 'mm';
+  layout: Layout;
   airfoil: AirfoilType;
-  fuselageStyle?: FuselageType;
-  propeller?: PropellerType;
+  isDarkMode: boolean;
 }
 
-import { getAirfoilCoordinates } from '../utils/airfoils';
+const COLORS: Record<PartMesh['kind'], string> = {
+  wing: '#0284c7',
+  aileron: '#f97316',
+  hstab: '#db2777',
+  elevator: '#f97316',
+  fin: '#eab308',
+  rudder: '#f97316',
+  winglet: '#eab308',
+  fuselage: '#6b7280',
+};
 
-interface AircraftMeshProps extends Scene3DProps {
-  isRotating: boolean;
+/** Keeps a WebGL / loader failure from blanking the whole application. */
+class SceneErrorBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(err: unknown) { console.error('3D view failed', err); }
+  render() { return this.state.failed ? this.props.fallback : this.props.children; }
 }
 
-function AircraftMesh({ dimensions: dims, aircraftType, unit, airfoil, fuselageStyle = 'trainer', propeller = 'prop_9x47', isRotating }: AircraftMeshProps) {
-  const groupRef = useRef<THREE.Group>(null);
-
-  useFrame((_, delta) => {
-    if (groupRef.current && isRotating) {
-      groupRef.current.rotation.y += delta * 0.25;
-    }
-  });
-
-  // Normalize all dims to cm
-  const s = unit === 'mm' ? 0.1 : 1;
-  const WS  = Math.max(dims.wingspan * s, 1);
-  const RC  = Math.max(dims.rootChord * s, 0.5);
-  const TC  = Math.max(dims.tipChord * s, 0.1);
-  const SW  = dims.sweepOffset * s;
-  const FL  = Math.max(dims.fuselageLength * s, 1);
-  const NL  = Math.max(dims.noseLength * s, 0.1);
-  const HS  = Math.max(dims.hStabSpan * s, 0.1);
-  const HC  = Math.max(dims.hStabChord * s, 0.1);
-  const VS  = Math.max(dims.vStabSpan * s, 0.1);
-  const VC  = Math.max(dims.vStabChord * s, 0.1);
-  const WTT = dims.wingToTailDistance * s;
-
-  // Scale factor: fit longest dimension into ~60 units
-  const maxDim = Math.max(WS, FL);
-  const F = 50 / maxDim;
-
-  // Fuselage cross-section radius
-  const fR = Math.max(2.5 * F, 1);
-  // Wing thickness
-  const thick = Math.max(1.5 * F, 0.5);
-
-  // ─── Z positions (nose = positive Z, tail = negative Z) ───
-  // We place the origin at the nose tip for simplicity,
-  // then shift everything so the model is centered.
-  const totalLength = FL * F;
-  const noseTip     =  totalLength / 2;   // +Z
-
-  // Wing LE Z position (measured from nose tip, going back)
-  const wingLeZ = noseTip - NL * F;
-
-  // Tail group Z
-  const tailLeZ  = noseTip - (NL + RC + WTT) * F;
-  
-  const dihedralRad = (dims.dihedral || 0) * (Math.PI / 180);
-
-  // ─── Build tapered wing geometry (right half only) ───
-  const createWingGeometry = (span: number, rootC: number, tipC: number, sweep: number, airfoilType: AirfoilType | 'sym_tail', csStartFrac: number | null, csEndFrac: number | null, csChordFrac: number | null) => {
-    const hw = (span / 2) * F;
-    const pts = getAirfoilCoordinates(airfoilType).map(p => new THREE.Vector2(p.x, p.y));
-    
-    const shape = new THREE.Shape(pts);
-    const geo = new THREE.ExtrudeGeometry(shape, {
-      depth: hw,
-      bevelEnabled: false,
-      steps: csStartFrac !== null ? 40 : 1
-    });
-
-    const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      let x = pos.getX(i); 
-      const y = pos.getY(i); 
-      const z = pos.getZ(i); 
-
-      const spanFrac = z / hw;
-      
-      if (csStartFrac !== null && csEndFrac !== null && csChordFrac !== null) {
-        if (spanFrac >= csStartFrac - 0.001 && spanFrac <= csEndFrac + 0.001) {
-          const cutX = - (1 - csChordFrac) + 0.02; // leaves a physical gap of 2%
-          if (x < cutX) {
-            x = cutX; 
-          }
-        }
-      }
-
-      const localChord = (rootC * F) + ((tipC * F) - (rootC * F)) * spanFrac;
-      const localSweep = (sweep * F) * spanFrac;
-
-      const finalX = z;
-      const finalY = (-x) * localChord + localSweep;
-      const finalZ = y * localChord * 0.8; 
-
-      pos.setXYZ(i, finalX, finalY, finalZ);
-    }
-    geo.computeVertexNormals();
-    return geo;
-  };
-
-  const aileronStart = aircraftType === 'flying_wing' ? 0.35 : 0.5;
-  const aileronEnd = aircraftType === 'flying_wing' ? 1.0 : 0.95;
-
-  const wingGeo  = createWingGeometry(WS, RC, TC, SW, airfoil, aileronStart, aileronEnd, 0.25);
-  const hStabGeo = createWingGeometry(HS, HC, HC * 0.75, HC * 0.25, 'sym_tail', 0.0, 1.0, 0.3);
-  const vStabGeo = createWingGeometry(VS * 2, VC, VC * 0.6,  VC * 0.4, 'sym_tail', 0.0, 1.0, 0.4);
-  const wingletGeo = createWingGeometry(VS * 2, VC, VC * 0.4, VC * 0.6, 'sym_tail', null, null, null);
-
-  const createControlSurfaceGeo = (span: number, rootC: number, tipC: number, sweep: number, startFrac: number, endFrac: number, chordFrac: number) => {
-    const hw = (span / 2) * F;
-    
-    const zStart = hw * startFrac;
-    const zEnd = hw * endFrac;
-
-    const lcStart = (rootC * F) + ((tipC * F) - (rootC * F)) * startFrac;
-    const lcEnd = (rootC * F) + ((tipC * F) - (rootC * F)) * endFrac;
-
-    const swStart = (sweep * F) * startFrac;
-    const swEnd = (sweep * F) * endFrac;
-
-    const teYStart = 1 * lcStart + swStart;
-    const teYEnd = 1 * lcEnd + swEnd;
-
-    const hingeYStart = (1 - chordFrac) * lcStart + swStart;
-    const hingeYEnd = (1 - chordFrac) * lcEnd + swEnd;
-
-    const shape = new THREE.Shape();
-    shape.moveTo(zStart, hingeYStart);
-    shape.lineTo(zEnd, hingeYEnd);
-    shape.lineTo(zEnd, teYEnd);
-    shape.lineTo(zStart, teYStart);
-    shape.lineTo(zStart, hingeYStart);
-
-    const geo = new THREE.ExtrudeGeometry(shape, { depth: F * 0.04, bevelEnabled: false });
-    geo.translate(0, 0, -F * 0.02);
-
-    return geo;
-  };
-
-  const aileronGeo = createControlSurfaceGeo(WS, RC, TC, SW, aileronStart, aileronEnd, 0.25);
-  const elevatorGeo = createControlSurfaceGeo(HS, HC, HC * 0.75, HC * 0.25, 0.0, 1.0, 0.3);
-  const rudderGeo = createControlSurfaceGeo(VS * 2, VC, VC * 0.6, VC * 0.4, 0.0, 1.0, 0.4);
-
-  // Colors
-  const C = {
-    fuse:  '#5a6270',
-    nose:  '#374151',
-    wing:  '#0284c7',
-    hStab: '#db2777',
-    vStab: '#ca8a04',
-  };
-
-  const createFuselageGeo = () => {
-    // Sport fuse is a bit more streamlined, trainer is boxy
-    const isSport = fuselageStyle === 'sport';
-    const widthFactor = isSport ? 1.0 : 1.2;
-    const heightFactor = isSport ? 1.2 : 1.5;
-    
-    // Add more depthSegments for sport canopy
-    const segments = isSport ? 4 : 2;
-    const geo = new THREE.BoxGeometry(fR * widthFactor, fR * heightFactor, totalLength, 1, 1, segments);
-    const pos = geo.attributes.position;
-    const wingTeZ = noseTip - (NL + RC) * F;
-    const wingLeZ = noseTip - NL * F;
-    
-    for (let i = 0; i < pos.count; i++) {
-      let x = pos.getX(i);
-      let y = pos.getY(i);
-      let z = pos.getZ(i);
-
-      if (isSport) {
-        // More complex shape for sport
-        const zFraction = (noseTip - z) / totalLength; // 0 to 1
-        
-        if (zFraction < 0.2) {
-          // Nose section - make it slightly pointed
-          z = noseTip - zFraction * (NL * F);
-          if (z === noseTip) {
-            x *= 0.5; // narrow nose
-            y *= 0.5;
-          }
-        } else if (zFraction >= 0.2 && zFraction < 0.6) {
-          // Canopy/Wing section
-          z = wingLeZ - (zFraction - 0.2) * 2.5 * (RC * F);
-          if (y > 0) {
-             y *= 1.2; // bubble canopy
-          }
-        } else {
-          // Tail section
-          z = wingTeZ - (zFraction - 0.6) * 2.5 * (totalLength - NL * F - RC * F);
-          // Taper to tail
-          const tailFrac = Math.max(0, (wingTeZ - z) / (totalLength - NL * F - RC * F));
-          x *= (1 - 0.7 * tailFrac);
-          y *= (1 - 0.5 * tailFrac);
-        }
-      } else {
-        // Trainer shape (classic flat bottom taper)
-        if (Math.abs(z - 0) < 0.01) {
-          z = wingTeZ; 
-        }
-
-        if (z < wingTeZ - 0.01) {
-          x *= 0.3; 
-          y *= 0.6; 
-          // move y up to keep bottom flat
-          if (y < 0) {
-            y += (fR * heightFactor / 2) * 0.4;
-          }
-        }
-      }
-      
-      pos.setXYZ(i, x, y, z);
-    }
-    geo.computeVertexNormals();
-    return geo;
-  };
-
-  const fuseGeo = createFuselageGeo();
-
-  // Wing rotation: lays the shape flat (chord goes towards -Z, span along X)
-  const wingRot: [number, number, number] = [-Math.PI / 2, 0, 0];
-
+function PartMeshes({ parts, mirror }: { parts: PartMesh[]; mirror?: boolean }) {
   return (
-    <group ref={groupRef}>
-
-      {/* ── Fuselage body + tractor brushless motor (conventional only) ── */}
-      {aircraftType === 'conventional' && (() => {
-        // Motor dimensions — same proportions as the pusher, mounted at nose
-        const mR    = fR * 0.42;   // stator radius
-        const mH    = fR * 0.55;   // stator height
-        const bR    = fR * 0.52;   // bell radius (slightly wider than stator)
-        const bH    = fR * 0.40;   // bell height
-        const shR   = fR * 0.08;   // shaft radius
-        const shH   = fR * 0.35;   // shaft protrusion
-        const baseR = fR * 0.60;   // firewall / mounting base radius
-        const baseH = fR * 0.10;   // mounting base thickness
-
-        // Tractor: everything extends forward (positive Z) from the nose tip
-        const baseZ  = noseTip + baseH / 2;
-        const motorZ = baseZ + baseH / 2 + mH / 2;
-        const bellZ  = motorZ + mH / 2 + bH / 2;
-        const shaftZ = bellZ + bH / 2 + shH / 2;
-
-        const spec = PROP_BY_KEY[propeller];
-        const propDiamCm = spec ? spec.diameter_inch * 2.54 : 22.86;
-        const propRadScaled = (propDiamCm / 2) * F;
-        const propDiscZ = shaftZ + shH / 2 + 0.05 * F;
-
-        return (
-          <group>
-            {/* Tapered Fuselage Tube */}
-            <mesh position={[0, 0, 0]}>
-              <primitive object={fuseGeo} attach="geometry" />
-              <meshStandardMaterial color={C.fuse} roughness={0.6} />
-              <lineSegments>
-                <edgesGeometry attach="geometry" args={[fuseGeo]} />
-                <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
-              </lineSegments>
-            </mesh>
-
-            {/* Firewall / Mounting base plate */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, baseZ]}>
-              <cylinderGeometry args={[baseR, baseR, baseH, 16]} />
-              <meshStandardMaterial color="#2d3748" roughness={0.6} metalness={0.4} />
-            </mesh>
-
-            {/* Stator body (windings) */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, motorZ]}>
-              <cylinderGeometry args={[mR, mR, mH, 16]} />
-              <meshStandardMaterial color="#374151" roughness={0.5} metalness={0.5} />
-            </mesh>
-
-            {/* Ventilation ribs on stator */}
-            {[0.25, 0.5, 0.75].map((t, idx) => (
-              <mesh key={idx} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, motorZ + mH * (t - 0.5)]}>
-                <torusGeometry args={[mR + 0.01 * F, 0.025 * F, 6, 16]} />
-                <meshStandardMaterial color="#1f2937" roughness={0.4} metalness={0.6} />
-              </mesh>
-            ))}
-
-            {/* Bell / Rotor can — taper opens toward fuselage (outrunner style) */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, bellZ]}>
-              <cylinderGeometry args={[bR * 0.88, bR, bH, 16]} />
-              <meshStandardMaterial color="#4b5563" roughness={0.3} metalness={0.7} />
-            </mesh>
-
-            {/* Shaft — protrudes forward from the bell */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, shaftZ]}>
-              <cylinderGeometry args={[shR, shR, shH, 8]} />
-              <meshStandardMaterial color="#9ca3af" roughness={0.15} metalness={0.95} />
-            </mesh>
-
-            {/* Tractor propeller disc */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, propDiscZ]}>
-              <cylinderGeometry args={[propRadScaled, propRadScaled, 0.18 * F, 32]} />
-              <meshStandardMaterial color="#111827" transparent opacity={0.30} />
-            </mesh>
-          </group>
-        );
-      })()}
-
-      {/* ── Flying-wing pusher brushless motor + propeller at trailing edge ── */}
-      {aircraftType === 'flying_wing' && (() => {
-        // Motor dimensions — kept compact and realistic vs the wing scale
-        const mR  = fR * 0.42;          // stator radius
-        const mH  = fR * 0.55;          // stator height
-        const bR  = fR * 0.52;          // bell (rotor can) radius — slightly wider
-        const bH  = fR * 0.40;          // bell height
-        const shR = fR * 0.08;          // shaft radius
-        const shH = fR * 0.35;          // shaft protrusion length
-        const baseR = fR * 0.60;        // mounting base radius
-        const baseH = fR * 0.10;        // mounting base thickness
-
-        // Motor center Z: just behind the wing trailing edge
-        const motorZ = wingLeZ - RC * F - mH * 0.7;
-        const baseZ  = motorZ + mH / 2 + baseH / 2;
-        const bellZ  = motorZ - mH / 2 - bH / 2;
-        const shaftZ = bellZ - bH / 2 - shH / 2;
-
-        const spec = PROP_BY_KEY[propeller];
-        const propDiamCm = spec ? spec.diameter_inch * 2.54 : 20.32;
-        const propRadScaled = (propDiamCm / 2) * F;
-        const propDiscZ = shaftZ - shH / 2 - 0.05 * F;
-
-        return (
-          <group>
-            {/* Mounting base / motor plate */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, baseZ]}>
-              <cylinderGeometry args={[baseR, baseR, baseH, 16]} />
-              <meshStandardMaterial color="#2d3748" roughness={0.6} metalness={0.4} />
-            </mesh>
-
-            {/* Stator body (windings) */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, motorZ]}>
-              <cylinderGeometry args={[mR, mR, mH, 16]} />
-              <meshStandardMaterial color="#374151" roughness={0.5} metalness={0.5} />
-            </mesh>
-
-            {/* Ventilation ribs on stator (thin rings) */}
-            {[0.25, 0.5, 0.75].map((t, idx) => (
-              <mesh key={idx} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, motorZ + mH * (t - 0.5)]}>
-                <torusGeometry args={[mR + 0.01 * F, 0.025 * F, 6, 16]} />
-                <meshStandardMaterial color="#1f2937" roughness={0.4} metalness={0.6} />
-              </mesh>
-            ))}
-
-            {/* Bell / Rotor can (spins, slightly wider than stator) */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, bellZ]}>
-              <cylinderGeometry args={[bR, bR * 0.88, bH, 16]} />
-              <meshStandardMaterial color="#4b5563" roughness={0.3} metalness={0.7} />
-            </mesh>
-
-            {/* Shaft */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, shaftZ]}>
-              <cylinderGeometry args={[shR, shR, shH, 8]} />
-              <meshStandardMaterial color="#9ca3af" roughness={0.15} metalness={0.95} />
-            </mesh>
-
-            {/* Pusher propeller disc */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, propDiscZ]}>
-              <cylinderGeometry args={[propRadScaled, propRadScaled, 0.18 * F, 32]} />
-              <meshStandardMaterial color="#111827" transparent opacity={0.30} />
-            </mesh>
-          </group>
-        );
-      })()}
-
-      {/* ── Right wing ── */}
-      <group position={[0, 0, wingLeZ]} rotation={[0, 0, dihedralRad]}>
-        <mesh rotation={wingRot}>
-          <primitive object={wingGeo} />
-          <meshStandardMaterial color={C.wing} roughness={0.35} side={THREE.DoubleSide} />
-          <mesh>
-            <primitive object={aileronGeo} attach="geometry" />
-            <meshStandardMaterial color={C.wing} roughness={0.4} side={THREE.DoubleSide} />
-            <lineSegments>
-              <edgesGeometry attach="geometry" args={[aileronGeo]} />
-              <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
-            </lineSegments>
-          </mesh>
+    <group scale={mirror ? [-1, 1, 1] : [1, 1, 1]}>
+      {parts.map(p => (
+        <mesh key={p.id} geometry={p.geometry} castShadow receiveShadow>
+          <meshStandardMaterial
+            color={COLORS[p.kind]}
+            roughness={p.kind === 'fuselage' ? 0.55 : 0.4}
+            metalness={0.05}
+            side={THREE.DoubleSide}
+          />
         </mesh>
-        {/* Flying wing winglets */}
-        {aircraftType === 'flying_wing' && (
-          <group position={[(WS / 2) * F, -VS * F * 0.2, -SW * F - TC * F * 0.2]} rotation={[0, 0, Math.PI / 2]}>
-            <mesh rotation={wingRot}>
-              <primitive object={wingletGeo} />
-              <meshStandardMaterial color={C.vStab} roughness={0.4} side={THREE.DoubleSide} />
-            </mesh>
-          </group>
-        )}
-      </group>
+      ))}
+    </group>
+  );
+}
 
-      {/* ── Left wing (mirror on X axis) ── */}
-      <group position={[0, 0, wingLeZ]} rotation={[0, 0, -dihedralRad]}>
-        <mesh rotation={wingRot} scale={[-1, 1, 1]}>
-          <primitive object={wingGeo.clone()} />
-          <meshStandardMaterial color={C.wing} roughness={0.35} side={THREE.DoubleSide} />
-          <mesh>
-            <primitive object={aileronGeo} attach="geometry" />
-            <meshStandardMaterial color={C.wing} roughness={0.4} side={THREE.DoubleSide} />
-            <lineSegments>
-              <edgesGeometry attach="geometry" args={[aileronGeo]} />
-              <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
-            </lineSegments>
+function Powertrain({ L }: { L: Layout }) {
+  const m = L.motor;
+  const p = L.prop;
+  const y = p.y;
+  // All cylinders are built along Y and rotated to lie along Z
+  const rot: [number, number, number] = [Math.PI / 2, 0, 0];
+  const statorS = m.mountS + m.dir * m.length * 0.35;
+  const bellS = m.mountS + m.dir * m.length * 0.75;
+  const shaftS = m.mountS + m.dir * m.length * 1.1;
+  const R = m.diameter / 2;
+  const bladeLen = p.diameter / 2;
+  const bladeW = p.diameter * 0.08;
+  const bladeT = p.diameter * 0.012;
+  return (
+    <group>
+      {/* Mount plate */}
+      <mesh rotation={rot} position={[0, y, -m.mountS]}>
+        <cylinderGeometry args={[R * 1.15, R * 1.15, m.length * 0.08, 24]} />
+        <meshStandardMaterial color="#2d3748" roughness={0.6} metalness={0.4} />
+      </mesh>
+      {/* Stator */}
+      <mesh rotation={rot} position={[0, y, -statorS]}>
+        <cylinderGeometry args={[R * 0.85, R * 0.85, m.length * 0.5, 24]} />
+        <meshStandardMaterial color="#374151" roughness={0.5} metalness={0.5} />
+      </mesh>
+      {/* Bell (rotor can) */}
+      <mesh rotation={rot} position={[0, y, -bellS]}>
+        <cylinderGeometry args={[R, R, m.length * 0.5, 24]} />
+        <meshStandardMaterial color="#9ca3af" roughness={0.25} metalness={0.8} />
+      </mesh>
+      {/* Shaft */}
+      <mesh rotation={rot} position={[0, y, -shaftS]}>
+        <cylinderGeometry args={[R * 0.12, R * 0.12, m.length * 0.6, 12]} />
+        <meshStandardMaterial color="#d1d5db" roughness={0.15} metalness={0.95} />
+      </mesh>
+      {/* Propeller: two blades + translucent disc showing the swept area */}
+      <group position={[0, y, -p.s]}>
+        {[-1, 1].map(side => (
+          <mesh key={side} position={[side * bladeLen * 0.5, 0, 0]} rotation={[0, 0, 0]} scale={[bladeLen * 0.5, bladeW / 2, bladeT]}>
+            <sphereGeometry args={[1, 16, 8]} />
+            <meshStandardMaterial color="#111827" roughness={0.5} />
           </mesh>
+        ))}
+        <mesh>
+          <sphereGeometry args={[R * 0.35, 12, 8]} />
+          <meshStandardMaterial color="#9ca3af" metalness={0.8} roughness={0.2} />
         </mesh>
-        {/* Flying wing winglets */}
-        {aircraftType === 'flying_wing' && (
-          <group position={[-(WS / 2) * F, -VS * F * 0.2, -SW * F - TC * F * 0.2]} rotation={[0, 0, Math.PI / 2]}>
-            <mesh rotation={wingRot}>
-              <primitive object={wingletGeo.clone()} />
-              <meshStandardMaterial color={C.vStab} roughness={0.4} side={THREE.DoubleSide} />
-            </mesh>
-          </group>
-        )}
+        <mesh rotation={rot}>
+          <cylinderGeometry args={[bladeLen, bladeLen, p.diameter * 0.002, 48]} />
+          <meshStandardMaterial color="#111827" transparent opacity={0.12} depthWrite={false} />
+        </mesh>
       </group>
+    </group>
+  );
+}
 
-      {/* ── Conventional tail surfaces ── */}
-      {aircraftType === 'conventional' && (
-        <group>
-          {/* H-Stab right */}
-          <mesh rotation={wingRot} position={[0, 0, tailLeZ]}>
-            <primitive object={hStabGeo} />
-            <meshStandardMaterial color={C.hStab} roughness={0.4} side={THREE.DoubleSide} />
-            <mesh>
-              <primitive object={elevatorGeo} attach="geometry" />
-              <meshStandardMaterial color={C.hStab} roughness={0.4} side={THREE.DoubleSide} />
-              <lineSegments>
-                <edgesGeometry attach="geometry" args={[elevatorGeo]} />
-                <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
-              </lineSegments>
-            </mesh>
-          </mesh>
-          {/* H-Stab left */}
-          <mesh rotation={wingRot} position={[0, 0, tailLeZ]} scale={[-1, 1, 1]}>
-            <primitive object={hStabGeo.clone()} />
-            <meshStandardMaterial color={C.hStab} roughness={0.4} side={THREE.DoubleSide} />
-            <mesh>
-              <primitive object={elevatorGeo} attach="geometry" />
-              <meshStandardMaterial color={C.hStab} roughness={0.4} side={THREE.DoubleSide} />
-              <lineSegments>
-                <edgesGeometry attach="geometry" args={[elevatorGeo]} />
-                <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
-              </lineSegments>
-            </mesh>
-          </mesh>
-
-          {/* V-Stab (vertical fin) */}
-          <group position={[0, fR * 1.5 / 2, tailLeZ]} rotation={[0, 0, Math.PI / 2]}>
-            <mesh rotation={wingRot} position={[0, -thick * 0.7 / 2, 0]}>
-              <primitive object={vStabGeo.clone()} />
-              <meshStandardMaterial color={C.vStab} roughness={0.4} side={THREE.DoubleSide} />
-              <mesh>
-                <primitive object={rudderGeo} attach="geometry" />
-                <meshStandardMaterial color={C.vStab} roughness={0.4} side={THREE.DoubleSide} />
-                <lineSegments>
-                  <edgesGeometry attach="geometry" args={[rudderGeo]} />
-                  <lineBasicMaterial color={C.nose} linewidth={1} opacity={0.3} transparent />
-                </lineSegments>
-              </mesh>
-            </mesh>
-          </group>
-        </group>
-      )}
-
-      {/* ── Ground shadow ── */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -fR * 4, 0]}>
-        <planeGeometry args={[WS * F * 1.4, FL * F * 1.4]} />
-        <meshStandardMaterial color="#000" transparent opacity={0.07} />
+function BalanceMarkers({ L }: { L: Layout }) {
+  // CG shown as a sphere with a vertical post at the wing root
+  const y = L.wing.mountY;
+  const r = Math.max(L.wing.rootChord * 0.035, 0.4);
+  return (
+    <group>
+      <mesh position={[0, y + r * 3, -L.cgS]}>
+        <sphereGeometry args={[r, 16, 12]} />
+        <meshStandardMaterial color="#111827" />
+      </mesh>
+      <mesh position={[0, y + r * 1.5, -L.cgS]}>
+        <cylinderGeometry args={[r * 0.15, r * 0.15, r * 3, 8]} />
+        <meshStandardMaterial color="#111827" />
+      </mesh>
+      <mesh position={[0, y + r * 3, -L.npS]} rotation={[Math.PI, 0, 0]}>
+        <coneGeometry args={[r * 0.9, r * 1.8, 12]} />
+        <meshStandardMaterial color="#f97316" />
       </mesh>
     </group>
   );
 }
 
-export default function Scene3D({ dimensions, aircraftType, unit, airfoil, fuselageStyle, propeller = 'prop_9x47' }: Scene3DProps) {
-  const [isRotating, setIsRotating] = useState(true);
+function Aircraft({ L, airfoil, isRotating }: { L: Layout; airfoil: AirfoilType; isRotating: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  useFrame((_, delta) => {
+    if (groupRef.current && isRotating) groupRef.current.rotation.y += delta * 0.25;
+  });
 
-  const s = unit === 'mm' ? 0.1 : 1;
-  const span = Math.max(dimensions.wingspan * s, 1);
-  const len  = Math.max(dimensions.fuselageLength * s, 1);
-  const maxD = Math.max(span, len);
-  const dist = (50 / maxD) * maxD * 1.8;
+  const parts = useMemo(() => buildAircraftParts(L, airfoil), [L, airfoil]);
+  useEffect(() => () => disposeParts(parts), [parts]);
+
+  // Centre the model on the origin (stations run along −Z)
+  const midS = (L.bounds.sMin + L.bounds.sMax) / 2;
+  const midY = (L.bounds.yMin + L.bounds.yMax) / 2;
 
   return (
-    <div className="w-full h-full absolute inset-0 bg-gray-50 dark:bg-gray-800">
-      <Canvas
-        camera={{ position: [dist * 0.7, dist * 0.5, dist * 0.9], fov: 38 }}
-        shadows
-      >
-        <color attach="background" args={['transparent']} />
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[40, 60, 40]} intensity={1.3} castShadow />
-        <directionalLight position={[-20, 10, -20]} intensity={0.25} />
-        <AircraftMesh dimensions={dimensions} aircraftType={aircraftType} unit={unit} airfoil={airfoil} fuselageStyle={fuselageStyle} propeller={propeller} isRotating={isRotating} />
-        <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
-        <Environment preset="sunset" />
-      </Canvas>
+    <group ref={groupRef} scale={L.toCm}>
+      <group position={[0, -midY, midS]}>
+        <PartMeshes parts={parts.right} />
+        <PartMeshes parts={parts.right} mirror />
+        <PartMeshes parts={parts.center} />
+        <Powertrain L={L} />
+        <BalanceMarkers L={L} />
+      </group>
+    </group>
+  );
+}
+
+export default function Scene3D({ layout, airfoil, isDarkMode }: Scene3DProps) {
+  const { t } = useTranslation();
+  const [isRotating, setIsRotating] = useState(true);
+
+  // Everything is rendered in centimetres
+  const b = layout.bounds;
+  const sizeCm = Math.max(b.xMax * 2, b.sMax - b.sMin, 10) * layout.toCm;
+  const dist = sizeCm * 1.35;
+  const floorY = -((b.yMax - b.yMin) / 2) * layout.toCm - sizeCm * 0.08;
+
+  const fallback = (
+    <div className="w-full h-full flex items-center justify-center p-6 text-center text-sm text-gray-500 dark:text-gray-400">
+      {t('scene_error')}
+    </div>
+  );
+
+  return (
+    <div className="w-full h-full absolute inset-0 bg-gradient-to-b from-slate-100 to-slate-200 dark:from-gray-800 dark:to-gray-900">
+      <SceneErrorBoundary fallback={fallback}>
+        <Canvas
+          key={layout.isFW ? 'fw' : 'conv'}
+          camera={{ position: [dist * 0.75, dist * 0.45, dist * 0.8], fov: 38, near: 0.5, far: sizeCm * 20 }}
+          shadows
+        >
+          <hemisphereLight args={[isDarkMode ? '#cbd5e1' : '#ffffff', '#475569', 0.9]} />
+          <directionalLight position={[sizeCm, sizeCm * 1.5, sizeCm * 0.8]} intensity={1.6} castShadow />
+          <directionalLight position={[-sizeCm, sizeCm * 0.3, -sizeCm]} intensity={0.35} />
+          <Aircraft L={layout} airfoil={airfoil} isRotating={isRotating} />
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
+            <circleGeometry args={[sizeCm * 0.9, 64]} />
+            <meshStandardMaterial color={isDarkMode ? '#1f2937' : '#e2e8f0'} transparent opacity={0.6} />
+          </mesh>
+          <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
+        </Canvas>
+      </SceneErrorBoundary>
+
+      {/* Legend */}
+      <div className="absolute top-3 left-3 flex flex-wrap gap-x-3 gap-y-1 text-xs bg-white/80 dark:bg-gray-900/70 backdrop-blur rounded-md px-2 py-1.5 text-gray-700 dark:text-gray-300 shadow-sm">
+        <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-sm" style={{ background: COLORS.aileron }} />{t(layout.isFW ? 'elevons' : 'control_surfaces_short')}</span>
+        <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-full bg-gray-900" />CG</span>
+        <span className="flex items-center gap-1"><i className="inline-block w-0 h-0 border-l-[6px] border-r-[6px] border-t-[10px] border-l-transparent border-r-transparent border-t-orange-500" />NP</span>
+      </div>
       <div className="absolute bottom-2 right-3 text-xs text-gray-400 dark:text-gray-500 pointer-events-none">
-        Drag to rotate · Scroll to zoom
+        {t('drag_to_rotate')}
       </div>
       <button
         onClick={() => setIsRotating(!isRotating)}
-        className="absolute top-4 right-4 p-2 bg-white dark:bg-gray-800 rounded-full shadow-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-        title={isRotating ? "Pause rotation" : "Start rotation"}
+        className="absolute top-3 right-3 p-2 bg-white dark:bg-gray-800 rounded-full shadow-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        title={isRotating ? t('pause_rotation') : t('start_rotation')}
+        aria-label={isRotating ? t('pause_rotation') : t('start_rotation')}
       >
         {isRotating ? <Pause size={20} /> : <Play size={20} />}
       </button>

@@ -15,7 +15,47 @@ export type PropellerType =
   | 'prop_9x47P'  | 'prop_10x47P'
   | 'prop_10x7P'  | 'prop_11x55P';
 
-// Future: 'zagi' | 'delta' | 'canard'
+// Future: 'delta' | 'canard'
+
+/**
+ * Control-surface layout. All values are percentages so they stay valid when
+ * the user rescales the aircraft or toggles cm/mm.
+ *  - aileronStart / aileronEnd: % of the semi-span, measured from the root
+ *  - aileronChord / elevatorChord / rudderChord: % of the local chord
+ * On a flying wing the "aileron" fields describe the elevons.
+ */
+export interface ControlSurfaces {
+  aileronStart: number;
+  aileronEnd: number;
+  aileronChord: number;
+  elevatorChord: number;
+  rudderChord: number;
+}
+
+export const DEFAULT_CONTROL_SURFACES: Record<AircraftType, ControlSurfaces> = {
+  conventional: { aileronStart: 50, aileronEnd: 95, aileronChord: 25, elevatorChord: 30, rudderChord: 40 },
+  flying_wing:  { aileronStart: 25, aileronEnd: 95, aileronChord: 22, elevatorChord: 0,  rudderChord: 0 },
+};
+
+/** Clamp control-surface values into physically meaningful ranges. */
+export function sanitizeControls(c: ControlSurfaces): ControlSurfaces {
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : lo));
+  const start = clamp(c.aileronStart, 0, 95);
+  const end = clamp(c.aileronEnd, start + 5, 100);
+  return {
+    aileronStart: start,
+    aileronEnd: end,
+    aileronChord: clamp(c.aileronChord, 5, 50),
+    elevatorChord: clamp(c.elevatorChord, 0, 60),
+    rudderChord: clamp(c.rudderChord, 0, 60),
+  };
+}
+
+/** CG target as a fraction of MAC for each layout. */
+export const CG_FRACTION: Record<AircraftType, number> = {
+  conventional: 0.28,
+  flying_wing: 0.18,
+};
 
 export interface AircraftPreset {
   type: AircraftType;
@@ -43,6 +83,8 @@ export const AIRCRAFT_PRESETS: AircraftPreset[] = [
       fuselageLength: 80,
       noseLength: 15,
       wingToTailDistance: 32,
+      fuselageWidth: 7,
+      fuselageHeight: 8,
     },
   },
   {
@@ -60,9 +102,11 @@ export const AIRCRAFT_PRESETS: AircraftPreset[] = [
       hStabChord: 0,
       vStabSpan: 8,
       vStabChord: 6,
-      fuselageLength: 45,
-      noseLength: 5,
+      fuselageLength: 30,
+      noseLength: 0,
       wingToTailDistance: 0,
+      fuselageWidth: 0,
+      fuselageHeight: 0,
     },
   },
 ];
@@ -83,6 +127,37 @@ export interface AircraftDimensions {
   fuselageLength: number;
   noseLength: number;
   wingToTailDistance: number;
+
+  fuselageWidth: number;   // max cross-section width
+  fuselageHeight: number;  // max cross-section height
+}
+
+/** Keys of AircraftDimensions that are lengths (converted on cm/mm toggle). */
+export const LENGTH_KEYS: (keyof AircraftDimensions)[] = [
+  'wingspan', 'rootChord', 'tipChord', 'sweepOffset',
+  'hStabSpan', 'hStabChord', 'vStabSpan', 'vStabChord',
+  'fuselageLength', 'noseLength', 'wingToTailDistance',
+  'fuselageWidth', 'fuselageHeight',
+];
+
+/** Converts a preset/default (always authored in cm) to the given unit. */
+export function dimsInUnit(dimsCm: AircraftDimensions, unit: 'cm' | 'mm'): AircraftDimensions {
+  if (unit === 'cm') return { ...dimsCm };
+  const out = { ...dimsCm };
+  LENGTH_KEYS.forEach(k => { out[k] = parseFloat((dimsCm[k] * 10).toFixed(2)); });
+  return out;
+}
+
+/** Fills any missing/invalid field (e.g. data saved by an older version). */
+export function normalizeDims(raw: Partial<AircraftDimensions> | null | undefined, fallback: AircraftDimensions): AircraftDimensions {
+  const out = { ...fallback };
+  if (raw) {
+    (Object.keys(fallback) as (keyof AircraftDimensions)[]).forEach(k => {
+      const v = Number(raw[k]);
+      if (Number.isFinite(v)) out[k] = v;
+    });
+  }
+  return out;
 }
 
 export interface AircraftMetrics {
@@ -102,6 +177,14 @@ export interface AircraftMetrics {
   tailVolumeCoefficient: number;  // Vbar
   sweepRatio: number;   // sweepOffset / (wingspan / 2)  — dimensionless
   taperRatio: number;   // tipChord / rootChord           — dimensionless (same as lambda)
+  cgFraction: number;   // CG target as fraction of MAC used for cgPosition
+
+  aileronArea: number;       // both ailerons / elevons
+  aileronAreaRatio: number;  // aileronArea / wingArea
+  elevatorArea: number;
+  elevatorAreaRatio: number; // elevatorArea / hStabArea
+  rudderArea: number;
+  rudderAreaRatio: number;   // rudderArea / vStabArea
 }
 
 export type StatusLevel = 'stable' | 'warning' | 'unstable';
@@ -115,7 +198,8 @@ export interface ValidationCheck {
 
 export function calculateMetrics(
   dims: AircraftDimensions,
-  aircraftType: AircraftType = 'conventional'
+  aircraftType: AircraftType = 'conventional',
+  controls: ControlSurfaces = DEFAULT_CONTROL_SURFACES[aircraftType]
 ): AircraftMetrics {
   const safeWingspan   = Math.max(dims.wingspan, 0.1);
   const safeRootChord  = Math.max(dims.rootChord, 0.1);
@@ -127,8 +211,12 @@ export function calculateMetrics(
 
   // Basic rectangular area for stabs (assuming mostly rectangular/simple shape for calculation ease,
   // but if we want more precision, we can use span * chord)
-  const hStabArea = dims.hStabSpan * dims.hStabChord;
-  const vStabArea = dims.vStabSpan * dims.vStabChord;
+  const isFW = aircraftType === 'flying_wing';
+  const hStabArea = isFW ? 0 : Math.max(dims.hStabSpan, 0) * Math.max(dims.hStabChord, 0);
+  // Flying wing: two winglets (root chord VC, tip chord 0.5·VC)
+  const vStabArea = isFW
+    ? 2 * Math.max(dims.vStabSpan, 0) * Math.max(dims.vStabChord, 0) * 0.75
+    : Math.max(dims.vStabSpan, 0) * Math.max(dims.vStabChord, 0);
 
   // Mean Aerodynamic Chord (MAC) calculation for a swept tapered wing
   // Taper ratio (lambda)
@@ -145,7 +233,7 @@ export function calculateMetrics(
   const macLeOffset = yMac * sweepAngleTan;
 
   // Theoretical CG from root leading edge
-  const cgFraction = aircraftType === 'flying_wing' ? 0.18 : 0.28;
+  const cgFraction = CG_FRACTION[aircraftType];
   const cgPosition = macLeOffset + (mac * cgFraction);
 
   const aspectRatio = (safeWingspan * safeWingspan) / wingArea;
@@ -205,7 +293,16 @@ export function calculateMetrics(
   // Formula: SM = (NP - CG) / MAC * 100
   const staticMargin = ((neutralPoint - cgPosition) / mac) * 100;
 
-  const tailVolumeCoefficient = (hStabArea * tailMomentArm) / (wingArea * mac);
+  const tailVolumeCoefficient = isFW ? 0 : (hStabArea * tailMomentArm) / (wingArea * mac);
+
+  // ── Control surface areas (both sides) ──
+  const c = sanitizeControls(controls);
+  const halfSpan = safeWingspan / 2;
+  const f0 = c.aileronStart / 100, f1 = c.aileronEnd / 100;
+  const chordAt = (f: number) => safeRootChord + (safeTipChord - safeRootChord) * f;
+  const aileronArea = 2 * halfSpan * (f1 - f0) * ((chordAt(f0) + chordAt(f1)) / 2) * (c.aileronChord / 100);
+  const elevatorArea = hStabArea * (c.elevatorChord / 100);
+  const rudderArea = isFW ? 0 : vStabArea * (c.rudderChord / 100);
 
   return {
     wingArea,
@@ -222,7 +319,14 @@ export function calculateMetrics(
     downwashGradient,
     tailVolumeCoefficient,
     sweepRatio: dims.sweepOffset / (safeWingspan / 2),
-    taperRatio: lambda
+    taperRatio: lambda,
+    cgFraction,
+    aileronArea,
+    aileronAreaRatio: aileronArea / wingArea,
+    elevatorArea,
+    elevatorAreaRatio: hStabArea > 0 ? elevatorArea / hStabArea : 0,
+    rudderArea,
+    rudderAreaRatio: vStabArea > 0 ? rudderArea / vStabArea : 0,
   };
 }
 
@@ -262,6 +366,29 @@ export function validateDesign(
     if (vStabRatio < 0.08) {
       checks.push({ id: 'vstab_small', level: 'unstable', messageKey: 'vstab_area_small', fixKey: 'fix_vstab_small' });
     }
+
+    // Tail must sit on the fuselage
+    const tailTe = dims.noseLength + dims.rootChord + dims.wingToTailDistance + dims.hStabChord;
+    if (tailTe > dims.fuselageLength * 1.02) {
+      checks.push({ id: 'tail_beyond_fuse', level: 'warning', messageKey: 'tail_beyond_fuse', fixKey: 'fix_tail_beyond_fuse' });
+    }
+
+    // Elevator / rudder sizing
+    if (metrics.elevatorAreaRatio > 0 && (metrics.elevatorAreaRatio < 0.2 || metrics.elevatorAreaRatio > 0.45)) {
+      checks.push({ id: 'elevator_size', level: 'warning', messageKey: 'elevator_size', fixKey: 'fix_elevator_size' });
+    }
+    if (metrics.rudderAreaRatio > 0 && (metrics.rudderAreaRatio < 0.25 || metrics.rudderAreaRatio > 0.55)) {
+      checks.push({ id: 'rudder_size', level: 'warning', messageKey: 'rudder_size', fixKey: 'fix_rudder_size' });
+    }
+  }
+
+  // Aileron / elevon sizing (total area vs wing area)
+  if (aircraftType === 'conventional') {
+    if (metrics.aileronAreaRatio < 0.06 || metrics.aileronAreaRatio > 0.16) {
+      checks.push({ id: 'aileron_size', level: 'warning', messageKey: 'aileron_size', fixKey: 'fix_aileron_size' });
+    }
+  } else if (metrics.aileronAreaRatio < 0.08 || metrics.aileronAreaRatio > 0.22) {
+    checks.push({ id: 'elevon_size', level: 'warning', messageKey: 'elevon_size', fixKey: 'fix_elevon_size' });
   }
 
   if (aircraftType === 'flying_wing') {

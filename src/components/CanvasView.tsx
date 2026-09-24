@@ -1,19 +1,18 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AircraftDimensions, AircraftMetrics, AircraftType, FuselageType, PropellerType } from '../utils/calculations';
-import { PROP_BY_KEY } from '../utils/electricSystem';
+import type { AirfoilType } from '../utils/calculations';
+import { aileronOutline, type Layout } from '../utils/geometry';
+import { getAirfoil, airfoilSegment } from '../utils/airfoils';
 
 interface CanvasViewProps {
-  dimensions: AircraftDimensions;
-  metrics: AircraftMetrics;
+  layout: Layout;
   isDarkMode: boolean;
-  aircraftType: AircraftType;
-  unit: 'cm' | 'mm';
-  fuselageStyle?: FuselageType;
-  propeller?: PropellerType;
+  airfoil: AirfoilType;
 }
 
-export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftType, fuselageStyle = 'trainer', propeller = 'prop_9x47' }: CanvasViewProps) {
+type Pt = [number, number];
+
+export default function CanvasView({ layout: L, isDarkMode, airfoil }: CanvasViewProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -22,598 +21,379 @@ export default function CanvasView({ dimensions, metrics, isDarkMode, aircraftTy
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const resizeCanvas = () => {
-      canvas.width = container.clientWidth;
-      canvas.height = container.clientHeight;
-      draw();
+    const C = {
+      grid: isDarkMode ? '#374151' : '#e5e7eb',
+      fuseFill: isDarkMode ? '#4b5563' : '#f3f4f6',
+      fuseStroke: isDarkMode ? '#9ca3af' : '#6b7280',
+      wingFill: isDarkMode ? '#0369a1' : '#e0f2fe',
+      wingStroke: isDarkMode ? '#38bdf8' : '#0284c7',
+      hFill: isDarkMode ? '#be185d' : '#fce7f3',
+      hStroke: isDarkMode ? '#f472b6' : '#db2777',
+      vFill: isDarkMode ? '#a16207' : '#fef08a',
+      vStroke: isDarkMode ? '#fde047' : '#ca8a04',
+      csFill: isDarkMode ? 'rgba(249,115,22,0.55)' : 'rgba(249,115,22,0.4)',
+      csStroke: isDarkMode ? '#fb923c' : '#ea580c',
+      propFill: isDarkMode ? 'rgba(250,204,21,0.25)' : 'rgba(161,98,7,0.15)',
+      propStroke: isDarkMode ? '#fbbf24' : '#92400e',
+      motor: isDarkMode ? '#9ca3af' : '#4b5563',
+      text: isDarkMode ? '#d1d5db' : '#374151',
+      dim: isDarkMode ? '#9ca3af' : '#6b7280',
     };
 
     const draw = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const dpr = window.devicePixelRatio || 1;
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+      canvas.width = Math.round(cw * dpr);
+      canvas.height = Math.round(ch * dpr);
+      canvas.style.width = `${cw}px`;
+      canvas.style.height = `${ch}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cw, ch);
 
-      const dims = dimensions;
+      const b = L.bounds;
+      const sLen = b.sMax - b.sMin;
+      const span = b.xMax * 2;
+      const yLen = Math.max(b.yMax - b.yMin, span * 0.05);
 
-      // Calculate drawing scale to fit in canvas
-      // We need to fit two views: Top view (top half) and Side view (bottom half)
-      const maxAircraftLength = Math.max(
-        dims.fuselageLength,
-        dims.noseLength + dims.rootChord + dims.wingToTailDistance + dims.hStabChord
+      const PAD = 36, GAP = 48, LABEL = 22;
+      const availW = cw - PAD * 2;
+      const availH = ch - PAD * 2;
+
+      // Arrangement A: three views stacked. Arrangement B: top view left, side/front right.
+      const scaleA = Math.min(availW / Math.max(span, sLen), (availH - 2 * GAP - 3 * LABEL) / (sLen + 2 * yLen));
+      const scaleB = Math.min(
+        (availW - GAP) / (span + Math.max(sLen, span)),
+        Math.min((availH - LABEL) / sLen, (availH - GAP - 2 * LABEL) / (2 * yLen)),
       );
-      const maxAircraftWidth = dims.wingspan;
+      const useB = scaleB > scaleA * 1.15;
+      const k = Math.max(useB ? scaleB : scaleA, 0.0001);
 
-      const topViewBoxHeight = maxAircraftLength;
-      const topViewBoxWidth = maxAircraftWidth;
+      // View origins (screen position of each view's reference point)
+      let topO: Pt, sideO: Pt, frontO: Pt;
+      if (!useB) {
+        const cx = cw / 2;
+        topO = [cx, PAD + LABEL - b.sMin * k];
+        const sideTop = PAD + LABEL + sLen * k + GAP + LABEL;
+        sideO = [cx - (sLen * k) / 2 - b.sMin * k, sideTop + b.yMax * k];
+        const frontTop = sideTop + yLen * k + GAP + LABEL;
+        frontO = [cx, frontTop + b.yMax * k];
+      } else {
+        const leftW = span * k;
+        topO = [PAD + leftW / 2, PAD + LABEL - b.sMin * k];
+        const rightX = PAD + leftW + GAP;
+        const rightW = cw - PAD - rightX;
+        sideO = [rightX + (rightW - sLen * k) / 2 - b.sMin * k, PAD + LABEL + b.yMax * k];
+        frontO = [rightX + rightW / 2, PAD + LABEL + yLen * k + GAP + LABEL + b.yMax * k];
+      }
 
-      const sideViewBoxHeight = dims.vStabSpan + 20; // arbitrary height for side view
-      const sideViewBoxWidth = maxAircraftLength;
+      // Projections
+      const top = (x: number, s: number): Pt => [topO[0] + x * k, topO[1] + s * k];
+      const side = (s: number, y: number): Pt => [sideO[0] + s * k, sideO[1] - y * k];
+      const front = (x: number, y: number): Pt => [frontO[0] + x * k, frontO[1] - y * k];
 
-      const tipYOffset = (dims.wingspan / 2) * Math.tan(dims.dihedral * Math.PI / 180);
-      const frontViewBoxHeight = tipYOffset + 20;
-      const frontViewBoxWidth = dims.wingspan;
+      const poly = (pts: Pt[], fill?: string, stroke?: string, lw = 1.5, dash?: number[]) => {
+        if (pts.length < 2) return;
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+        ctx.closePath();
+        if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+        if (stroke) {
+          ctx.strokeStyle = stroke; ctx.lineWidth = lw;
+          ctx.setLineDash(dash ?? []); ctx.stroke(); ctx.setLineDash([]);
+        }
+      };
+      const mirror = (pts: [number, number][]): [number, number][] => pts.map(([x, s]) => [-x, s]);
 
-      const totalRequiredHeight = topViewBoxHeight + sideViewBoxHeight + frontViewBoxHeight + 100; // padding between views
-      const totalRequiredWidth = Math.max(topViewBoxWidth, sideViewBoxWidth, frontViewBoxWidth);
+      const w = L.wing;
+      const wingAf = getAirfoil(airfoil);
+      const tailAf = getAirfoil('sym_tail');
 
-      // Padding around the canvas
-      const paddingPixels = 40;
-      const availableWidth = canvas.width - paddingPixels * 2;
-      const availableHeight = canvas.height - paddingPixels * 2;
+      // ─────────────── TOP VIEW ───────────────
+      // Centre line
+      ctx.beginPath();
+      const [clx, cly0] = top(0, b.sMin);
+      const [, cly1] = top(0, b.sMax);
+      ctx.moveTo(clx, cly0); ctx.lineTo(clx, cly1);
+      ctx.strokeStyle = C.grid; ctx.setLineDash([5, 5]); ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
 
-      const scaleX = availableWidth / totalRequiredWidth;
-      const scaleY = availableHeight / totalRequiredHeight;
-      const scale = Math.min(scaleX, scaleY);
-
-      const cx = canvas.width / 2;
-
-      // Top View Center Y
-      const topCy = paddingPixels + (topViewBoxHeight * scale) / 2;
-
-      ctx.save();
-
-      // --- DRAW TOP VIEW ---
-      ctx.translate(cx, topCy - (maxAircraftLength * scale) / 2);
-
-      // Define colors based on theme
-      const colors = {
-        gridLine: isDarkMode ? '#374151' : '#e5e7eb', // gray-700 : gray-200
-        fuselageFill: isDarkMode ? '#4b5563' : '#f3f4f6', // gray-600 : gray-100
-        fuselageStroke: isDarkMode ? '#9ca3af' : '#6b7280', // gray-400 : gray-500
-        wingFill: isDarkMode ? '#0369a1' : '#e0f2fe', // sky-700 : sky-100
-        wingStroke: isDarkMode ? '#38bdf8' : '#0284c7', // sky-400 : sky-600
-        hStabFill: isDarkMode ? '#be185d' : '#fce7f3', // pink-700 : pink-100
-        hStabStroke: isDarkMode ? '#f472b6' : '#db2777', // pink-400 : pink-600
-        vStabFill: isDarkMode ? '#a16207' : '#fef08a', // yellow-700 : yellow-200
-        vStabStroke: isDarkMode ? '#fde047' : '#ca8a04', // yellow-400 : yellow-600
-        text: isDarkMode ? '#d1d5db' : '#374151', // gray-300 : gray-700
+      // Wing (drawn first; fuselage on top of it for a high wing looks wrong, so wing last for trainer)
+      const wingHalf: [number, number][] = [[0, w.leAt(0)], [w.halfSpan, w.leAt(1)], [w.halfSpan, w.teAt(1)], [0, w.teAt(0)]];
+      const drawWingTop = () => {
+        poly([...wingHalf, ...mirror(wingHalf).reverse()].map(([x, s]) => top(x, s)), C.wingFill, C.wingStroke, 2);
+        const ail = aileronOutline(L);
+        poly(ail.map(([x, s]) => top(x, s)), C.csFill, C.csStroke, 1.2);
+        poly(mirror(ail).map(([x, s]) => top(x, s)), C.csFill, C.csStroke, 1.2);
       };
 
-      // Draw Grid / Centerline
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(0, maxAircraftLength * scale);
-      ctx.strokeStyle = colors.gridLine;
-      ctx.setLineDash([5, 5]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      const wingY = dims.noseLength * scale;
-
-      // Draw Fuselage / Nacelle
-      ctx.fillStyle = colors.fuselageFill;
-      ctx.strokeStyle = colors.fuselageStroke;
-      ctx.lineWidth = 2;
-
-      if (aircraftType === 'flying_wing') {
-        const nacelleWidth = 10;
-        const nacelleLength = (dims.rootChord * 0.6) * scale;
-        const nacelleX = -nacelleWidth / 2;
-        const nacelleY = wingY + (dims.rootChord * 0.2) * scale;
-        ctx.fillRect(nacelleX, nacelleY, nacelleWidth, nacelleLength);
-        ctx.strokeRect(nacelleX, nacelleY, nacelleWidth, nacelleLength);
-      } else {
-        const isSport = fuselageStyle === 'sport';
-        const wFront = isSport ? 14 / 2 : 14 / 2;
-        const wTail = (14 * 0.3) / 2;
-        const noseY = 0;
-        const wingLeY = dims.noseLength * scale;
-        const wingTeY = wingY + (dims.rootChord * scale);
-        const tailY = dims.fuselageLength * scale;
-
-        ctx.beginPath();
-        if (isSport) {
-           // Pointed nose, widens to canopy, then tapers
-           ctx.moveTo(0, noseY);
-           ctx.lineTo(wFront * 1.2, wingLeY * 0.5); // widest at canopy
-           ctx.lineTo(wFront, wingTeY);
-           ctx.lineTo(wTail, tailY);
-           ctx.lineTo(-wTail, tailY);
-           ctx.lineTo(-wFront, wingTeY);
-           ctx.lineTo(-wFront * 1.2, wingLeY * 0.5);
-        } else {
-           // Flat boxy nose
-           ctx.moveTo(-wFront, noseY);
-           ctx.lineTo(wFront, noseY);
-           ctx.lineTo(wFront, wingTeY);
-           ctx.lineTo(wTail, tailY);
-           ctx.lineTo(-wTail, tailY);
-           ctx.lineTo(-wFront, wingTeY);
+      const drawFuselageTop = () => {
+        if (!L.fuselage) return;
+        const fz = L.fuselage;
+        const n = 40;
+        const right: Pt[] = [];
+        const left: Pt[] = [];
+        for (let i = 0; i <= n; i++) {
+          const s = (i / n) * fz.length;
+          const sec = fz.section(s);
+          right.push(top(sec.w / 2, s));
+          left.unshift(top(-sec.w / 2, s));
         }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
+        poly([...right, ...left], C.fuseFill, C.fuseStroke, 2);
+      };
 
-      // Draw Wing
-      ctx.fillStyle = colors.wingFill;
-      ctx.strokeStyle = colors.wingStroke;
+      const drawTailTop = () => {
+        if (L.hStab) {
+          const h = L.hStab;
+          const hs = h.span / 2;
+          poly([top(-hs, h.leS), top(hs, h.leS), top(hs, h.leS + h.rootChord), top(-hs, h.leS + h.rootChord)], C.hFill, C.hStroke, 2);
+          if (h.hingeFrac > 0) {
+            const hy = h.leS + h.rootChord * (1 - h.hingeFrac);
+            poly([top(-hs, hy), top(hs, hy), top(hs, h.leS + h.rootChord), top(-hs, h.leS + h.rootChord)], C.csFill, C.csStroke, 1.2);
+          }
+        }
+        if (L.fin) {
+          const f = L.fin;
+          const tw = Math.max(f.rootChord * 0.08, 0.3 * (1 / L.toCm)) / 2;
+          poly([top(-tw, f.leS), top(tw, f.leS), top(tw, f.leS + f.rootChord), top(-tw, f.leS + f.rootChord)], C.vFill, C.vStroke, 1.2);
+        }
+        if (L.winglet && L.winglet.span > 0) {
+          const g = L.winglet;
+          const tw = Math.max(g.rootChord * 0.08, 0.2 * (1 / L.toCm)) / 2;
+          [1, -1].forEach(sgn => {
+            const x = sgn * w.halfSpan;
+            poly([top(x - tw, g.leS), top(x + tw, g.leS), top(x + tw, g.leS + g.rootChord), top(x - tw, g.leS + g.rootChord)], C.vFill, C.vStroke, 1.2);
+          });
+        }
+      };
 
-      ctx.beginPath();
-      // Right Wing
-      ctx.moveTo(0, wingY); // Root LE
-      ctx.lineTo((dims.wingspan / 2) * scale, wingY + (dims.sweepOffset * scale)); // Tip LE
-      ctx.lineTo((dims.wingspan / 2) * scale, wingY + (dims.sweepOffset * scale) + (dims.tipChord * scale)); // Tip TE
-      ctx.lineTo(0, wingY + (dims.rootChord * scale)); // Root TE
-      // Left Wing
-      ctx.lineTo(-(dims.wingspan / 2) * scale, wingY + (dims.sweepOffset * scale) + (dims.tipChord * scale)); // Tip TE
-      ctx.lineTo(-(dims.wingspan / 2) * scale, wingY + (dims.sweepOffset * scale)); // Tip LE
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+      const drawPowerTop = () => {
+        const m = L.motor, p = L.prop;
+        const s0 = m.mountS, s1 = m.mountS + m.dir * m.length;
+        poly([top(-m.diameter / 2, s0), top(m.diameter / 2, s0), top(m.diameter / 2, s1), top(-m.diameter / 2, s1)], C.motor, C.motor, 1);
+        // The propeller disc is perpendicular to the flight path: seen edge-on from above
+        const half = p.diameter / 2;
+        const th = Math.max(p.diameter * 0.03, 2 / k);
+        poly([top(-half, p.s - th / 2), top(half, p.s - th / 2), top(half, p.s + th / 2), top(-half, p.s + th / 2)], C.propFill, C.propStroke, 1.2);
+        ctx.font = '10px sans-serif'; ctx.fillStyle = C.propStroke;
+        const [lx, ly] = top(half, p.s);
+        ctx.fillText(`${p.label}″ ${m.pusher ? '(pusher)' : '(tractor)'}`, lx + 6, ly + 3);
+      };
 
-      if (aircraftType === 'flying_wing') {
-        // Draw elevon hint: dashed line along the trailing edge at 75% span
-        const elevonStartX = (dims.wingspan * 0.35 / 2) * scale;
-        const elevonEndX   = (dims.wingspan / 2) * scale;
-        // TE of right wing at elevonStartX:
-        const teYAtStart = wingY + (dims.rootChord * scale)
-                           + (dims.sweepOffset * scale * (elevonStartX / ((dims.wingspan/2)*scale)));
-        // (approximate linear interpolation along TE)
-        ctx.save();
-        ctx.setLineDash([4, 3]);
-        ctx.strokeStyle = isDarkMode ? '#60a5fa' : '#2563eb';
-        ctx.lineWidth = 1.5;
-        // Right elevon
-        ctx.beginPath();
-        ctx.moveTo(elevonStartX, teYAtStart - (dims.tipChord * 0.25 * scale));
-        ctx.lineTo(elevonEndX,
-          wingY + (dims.sweepOffset * scale) + (dims.tipChord * scale) - (dims.tipChord * 0.25 * scale));
-        ctx.stroke();
-        // Left elevon (mirror)
-        ctx.beginPath();
-        ctx.moveTo(-elevonStartX, teYAtStart - (dims.tipChord * 0.25 * scale));
-        ctx.lineTo(-elevonEndX,
-          wingY + (dims.sweepOffset * scale) + (dims.tipChord * scale) - (dims.tipChord * 0.25 * scale));
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.restore();
+      if (L.fuselage && L.fuselage.style === 'trainer') {
+        drawFuselageTop(); drawTailTop(); drawWingTop();
       } else {
-        // Draw Aileron hint: dashed line
-        const aileronStartX = (dims.wingspan * 0.5 / 2) * scale;
-        const aileronEndX   = (dims.wingspan * 0.95 / 2) * scale;
-        
-        const spanFractionStart = aileronStartX / ((dims.wingspan / 2) * scale);
-        const spanFractionEnd = aileronEndX / ((dims.wingspan / 2) * scale);
-
-        const teYAtStart = wingY + (dims.rootChord * scale) + spanFractionStart * (dims.sweepOffset * scale + dims.tipChord * scale - dims.rootChord * scale);
-        const teYAtEnd = wingY + (dims.rootChord * scale) + spanFractionEnd * (dims.sweepOffset * scale + dims.tipChord * scale - dims.rootChord * scale);
-
-        const localChordStart = (dims.rootChord * scale) + spanFractionStart * (dims.tipChord * scale - dims.rootChord * scale);
-        const localChordEnd = (dims.rootChord * scale) + spanFractionEnd * (dims.tipChord * scale - dims.rootChord * scale);
-
-        const hingeYStart = teYAtStart - localChordStart * 0.25;
-        const hingeYEnd = teYAtEnd - localChordEnd * 0.25;
-
-        ctx.save();
-        ctx.setLineDash([4, 3]);
-        ctx.strokeStyle = isDarkMode ? '#60a5fa' : '#2563eb';
-        ctx.lineWidth = 1.5;
-        // Right aileron
-        ctx.beginPath();
-        ctx.moveTo(aileronStartX, teYAtStart);
-        ctx.lineTo(aileronStartX, hingeYStart);
-        ctx.lineTo(aileronEndX, hingeYEnd);
-        ctx.lineTo(aileronEndX, teYAtEnd);
-        ctx.stroke();
-
-        // Left aileron (mirror)
-        ctx.beginPath();
-        ctx.moveTo(-aileronStartX, teYAtStart);
-        ctx.lineTo(-aileronStartX, hingeYStart);
-        ctx.lineTo(-aileronEndX, hingeYEnd);
-        ctx.lineTo(-aileronEndX, teYAtEnd);
-        ctx.stroke();
-
-        ctx.setLineDash([]);
-        ctx.restore();
-
-        // Draw Horizontal Stabilizer
-        const hStabY = wingY + (dims.rootChord * scale) + (dims.wingToTailDistance * scale);
-        ctx.fillStyle = colors.hStabFill;
-        ctx.strokeStyle = colors.hStabStroke;
-
-        ctx.beginPath();
-        ctx.rect(
-          -(dims.hStabSpan / 2) * scale,
-          hStabY,
-          dims.hStabSpan * scale,
-          dims.hStabChord * scale
-        );
-        ctx.fill();
-        ctx.stroke();
-
-        // Draw Elevator hint: dashed line
-        const elevatorHingeY = hStabY + dims.hStabChord * scale * 0.7;
-        ctx.save();
-        ctx.setLineDash([4, 3]);
-        ctx.strokeStyle = isDarkMode ? '#f472b6' : '#db2777'; // hStabStroke
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(-(dims.hStabSpan / 2) * scale, elevatorHingeY);
-        ctx.lineTo((dims.hStabSpan / 2) * scale, elevatorHingeY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.restore();
+        drawWingTop(); drawTailTop(); drawFuselageTop();
       }
+      drawPowerTop();
 
-      // --- DRAW PROPELLER ---
-      const propSpec = PROP_BY_KEY[propeller];
-      // Prop diameter in inches → approximate in cm (1 inch = 2.54 cm)
-      const propDiamCm = propSpec ? propSpec.diameter_inch * 2.54 : 22.86; // default 9in
-      const propRadPx = (propDiamCm / 2) * scale;
-      const propColor = isDarkMode ? 'rgba(250,204,21,0.55)' : 'rgba(161,98,7,0.35)';
-      const propStroke = isDarkMode ? '#fbbf24' : '#92400e';
+      // CG / NP
+      const [cgx, cgy] = top(0, L.cgS);
+      drawCG(ctx, cgx, cgy, 6, isDarkMode);
+      const [npx, npy] = top(0, L.npS);
+      drawNP(ctx, npx, npy, 6, isDarkMode);
 
-      if (aircraftType === 'flying_wing') {
-        // Pusher: motor behind wing → draw at trailing edge center
-        const propCenterY = wingY + (dims.rootChord * scale) + propRadPx * 0.2; // just behind TE
-        ctx.beginPath();
-        ctx.arc(0, propCenterY, propRadPx, 0, Math.PI * 2);
-        ctx.fillStyle = propColor;
-        ctx.fill();
-        ctx.strokeStyle = propStroke;
-        ctx.lineWidth = 1.5;
+      // Wingspan dimension line
+      {
+        const yDim = top(0, b.sMin)[1] - 10;
+        const [x0] = top(-w.halfSpan, 0);
+        const [x1] = top(w.halfSpan, 0);
+        ctx.strokeStyle = C.dim; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x0, yDim); ctx.lineTo(x1, yDim);
+        ctx.moveTo(x0, yDim - 4); ctx.lineTo(x0, yDim + 4); ctx.moveTo(x1, yDim - 4); ctx.lineTo(x1, yDim + 4);
         ctx.stroke();
-        // Hub
-        ctx.beginPath();
-        ctx.arc(0, propCenterY, Math.max(3, propRadPx * 0.12), 0, Math.PI * 2);
-        ctx.fillStyle = propStroke;
-        ctx.fill();
-        // Label
-        ctx.font = '9px sans-serif';
-        ctx.fillStyle = isDarkMode ? '#fde68a' : '#78350f';
-        ctx.textAlign = 'center';
-        ctx.fillText(`⬆ ${propSpec?.label ?? ''} (pusher)`, 0, propCenterY + propRadPx + 10);
-        ctx.textAlign = 'left';
-      } else {
-        // Tractor: motor at nose → draw at top (y=0 in top-view coords)
-        const propCenterY = -propRadPx * 0.2; // just before nose
-        ctx.beginPath();
-        ctx.arc(0, propCenterY, propRadPx, 0, Math.PI * 2);
-        ctx.fillStyle = propColor;
-        ctx.fill();
-        ctx.strokeStyle = propStroke;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        // Hub
-        ctx.beginPath();
-        ctx.arc(0, propCenterY, Math.max(3, propRadPx * 0.12), 0, Math.PI * 2);
-        ctx.fillStyle = propStroke;
-        ctx.fill();
-        // Label
-        ctx.font = '9px sans-serif';
-        ctx.fillStyle = isDarkMode ? '#fde68a' : '#78350f';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${propSpec?.label ?? ''} (tractor)`, 0, propCenterY - propRadPx - 4);
+        const unitLbl = L.unit;
+        ctx.font = '10px sans-serif'; ctx.fillStyle = C.dim; ctx.textAlign = 'center';
+        ctx.fillText(`${(w.halfSpan * 2).toFixed(L.unit === 'mm' ? 0 : 1)} ${unitLbl}`, (x0 + x1) / 2, yDim - 4);
         ctx.textAlign = 'left';
       }
 
-      // Draw Theoretical CG (Top View)
-      const cgY = (dims.noseLength + metrics.cgPosition) * scale;
-      drawCGCircle(ctx, 0, cgY, 6);
-
-      // Draw Neutral Point (NP)
-      const npY = (dims.noseLength + metrics.neutralPoint) * scale;
-      drawNPMarker(ctx, 0, npY, 6);
-
-      ctx.restore();
-
-      // --- DRAW SIDE VIEW ---
-      const sideCy = paddingPixels + topViewBoxHeight * scale + 40;
-      ctx.save();
-      ctx.translate(cx, sideCy);
-
-      // Fuselage Side Profile (simple rectangle for now)
-      const fuselageHeightSide = 14;
-      ctx.fillStyle = colors.fuselageFill;
-      ctx.strokeStyle = colors.fuselageStroke;
-      if (aircraftType === 'flying_wing') {
-        const nacelleH = 10;
-        const nacelleW = (dims.rootChord * 0.6) * scale;
-        const nacelleStartX = -(maxAircraftLength * scale) / 2
-                              + (dims.noseLength * scale)
-                              + (dims.rootChord * 0.2) * scale;
-        ctx.fillRect(nacelleStartX, 0, nacelleW, nacelleH);
-        ctx.strokeRect(nacelleStartX, 0, nacelleW, nacelleH);
-      } else {
-        const isSport = fuselageStyle === 'sport';
-        const noseX = -(maxAircraftLength * scale) / 2;
-        const wingLeX = noseX + (dims.noseLength) * scale;
-        const wingTeX = noseX + (dims.noseLength + dims.rootChord) * scale;
-        const tailX = noseX + dims.fuselageLength * scale;
-        
-        const hFront = fuselageHeightSide * (isSport ? 1.2 : 1.0);
-        const hTail = fuselageHeightSide * 0.6;
-        const tailYStart = (hFront - hTail) / 2;
-        
-        ctx.beginPath();
-        if (isSport) {
-           // Bubble canopy profile
-           ctx.moveTo(noseX, hFront * 0.6); // Pointed nose center
-           ctx.lineTo(noseX + (dims.noseLength * scale * 0.2), hFront * 0.8); // bottom contour
-           ctx.lineTo(wingTeX, hFront); // flat bottom under wing
-           ctx.lineTo(tailX, hFront - tailYStart); // taper to tail
-           ctx.lineTo(tailX, tailYStart); // tail top
-           ctx.lineTo(wingTeX, 0); // taper back up
-           // Canopy bubble
-           ctx.quadraticCurveTo(wingLeX * 0.8, -hFront * 0.2, noseX, hFront * 0.6);
-        } else {
-           // Trainer profile
-           ctx.moveTo(noseX, 0);
-           ctx.lineTo(noseX, hFront);
-           ctx.lineTo(wingTeX, hFront);
-           ctx.lineTo(tailX, hFront - tailYStart);
-           ctx.lineTo(tailX, tailYStart);
-           ctx.lineTo(wingTeX, 0);
+      // ─────────────── SIDE VIEW ───────────────
+      if (L.fuselage) {
+        const fz = L.fuselage;
+        const n = 40;
+        const topLine: Pt[] = [];
+        const bottom: Pt[] = [];
+        for (let i = 0; i <= n; i++) {
+          const s = (i / n) * fz.length;
+          const sec = fz.section(s);
+          topLine.push(side(s, sec.yc + sec.h / 2));
+          bottom.unshift(side(s, sec.yc - sec.h / 2));
         }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+        poly([...topLine, ...bottom], C.fuseFill, C.fuseStroke, 2);
       }
 
-      // Vertical Stabilizer
-      ctx.fillStyle = colors.vStabFill;
-      ctx.strokeStyle = colors.vStabStroke;
+      // Wing root airfoil (to scale)
+      const rootSec = airfoilSegment(wingAf, 0, 1, 40).map(([cx, ty]) => side(w.leAt(0) + cx * w.rootChord, w.mountY + ty * w.rootChord));
+      poly(rootSec, C.wingFill, C.wingStroke, 1.5);
+      // Tip airfoil outline (dashed) shows sweep + dihedral
+      const tipSec = airfoilSegment(wingAf, 0, 1, 40).map(([cx, ty]) => side(w.leAt(1) + cx * w.tipChord, w.yAt(1) + ty * w.tipChord));
+      poly(tipSec, undefined, C.wingStroke, 1, [3, 3]);
 
-      if (aircraftType === 'flying_wing') {
-        const wingletRootX = -(maxAircraftLength * scale) / 2 + (dims.noseLength + dims.sweepOffset) * scale;
-        const rootC = dims.vStabChord * scale;
-        const tipC = dims.vStabChord * 0.4 * scale;
-        const spanH = dims.vStabSpan * scale;
-        const sweepW = dims.vStabChord * 0.6 * scale;
+      if (L.hStab) {
+        const h = L.hStab;
+        const sec = airfoilSegment(tailAf, 0, 1, 30).map(([cx, ty]) => side(h.leS + cx * h.rootChord, h.y + ty * h.rootChord));
+        poly(sec, C.hFill, C.hStroke, 1.5);
+        if (h.hingeFrac > 0) {
+          const e = airfoilSegment(tailAf, 1 - h.hingeFrac, 1, 12).map(([cx, ty]) => side(h.leS + cx * h.rootChord, h.y + ty * h.rootChord));
+          poly(e, C.csFill, C.csStroke, 1);
+        }
+      }
+      if (L.fin) {
+        const f = L.fin;
+        const pts: Pt[] = [side(f.leS, f.y), side(f.leS + f.sweep, f.y + f.span), side(f.leS + f.sweep + f.tipChord, f.y + f.span), side(f.leS + f.rootChord, f.y)];
+        poly(pts, C.vFill, C.vStroke, 2);
+        if (f.hingeFrac > 0) {
+          const hs = f.leS + f.rootChord * (1 - f.hingeFrac);
+          poly([side(hs, f.y), side(hs, f.y + f.span), side(f.leS + f.rootChord, f.y + f.span), side(f.leS + f.rootChord, f.y)], C.csFill, C.csStroke, 1.2);
+        }
+      }
+      if (L.winglet && L.winglet.span > 0) {
+        const g = L.winglet;
+        poly([side(g.leS, g.y), side(g.leS + g.sweep, g.y + g.span), side(g.leS + g.sweep + g.tipChord, g.y + g.span), side(g.leS + g.rootChord, g.y)], C.vFill, C.vStroke, 2);
+      }
+      {
+        const m = L.motor, p = L.prop;
+        const s0 = m.mountS, s1 = m.mountS + m.dir * m.length;
+        poly([side(s0, p.y - m.diameter / 2), side(s1, p.y - m.diameter / 2), side(s1, p.y + m.diameter / 2), side(s0, p.y + m.diameter / 2)], C.motor, C.motor, 1);
+        const th = Math.max(p.diameter * 0.03, 2 / k);
+        poly([side(p.s - th / 2, p.y - p.diameter / 2), side(p.s + th / 2, p.y - p.diameter / 2), side(p.s + th / 2, p.y + p.diameter / 2), side(p.s - th / 2, p.y + p.diameter / 2)], C.propFill, C.propStroke, 1.2);
+      }
+      {
+        const [x, y] = side(L.cgS, w.mountY);
+        drawCG(ctx, x, y, 6, isDarkMode);
+      }
 
-        const startY = spanH * 0.2; // 20% below the wing
+      // ─────────────── FRONT VIEW ───────────────
+      // Propeller disc (seen face-on)
+      {
+        const p = L.prop;
+        const [px, py] = front(0, p.y);
+        ctx.beginPath(); ctx.arc(px, py, (p.diameter / 2) * k, 0, Math.PI * 2);
+        ctx.fillStyle = C.propFill; ctx.fill();
+        ctx.strokeStyle = C.propStroke; ctx.lineWidth = 1; ctx.setLineDash([4, 3]); ctx.stroke(); ctx.setLineDash([]);
+      }
+      if (L.fuselage) {
+        const fz = L.fuselage;
+        // Largest section (under the wing)
+        const sec = fz.section(w.leS + w.rootChord * 0.5);
+        const expo = fz.style === 'trainer' ? 6 : 2.4;
+        const pts: Pt[] = [];
+        for (let i = 0; i < 48; i++) {
+          const th = (2 * Math.PI * i) / 48;
+          const c = Math.cos(th), s = Math.sin(th);
+          pts.push(front((sec.w / 2) * Math.sign(c) * Math.abs(c) ** (2 / expo), sec.yc + (sec.h / 2) * Math.sign(s) * Math.abs(s) ** (2 / expo)));
+        }
+        poly(pts, C.fuseFill, C.fuseStroke, 2);
+      }
+      if (L.fin) {
+        const f = L.fin;
+        const tw = Math.max(f.rootChord * 0.08, 0.3 / L.toCm) / 2;
+        poly([front(-tw, f.y), front(tw, f.y), front(tw, f.y + f.span), front(-tw, f.y + f.span)], C.vFill, C.vStroke, 1.2);
+      }
+      if (L.hStab) {
+        const h = L.hStab;
+        const tw = Math.max(h.rootChord * 0.08, 0.3 / L.toCm) / 2;
+        poly([front(-h.span / 2, h.y - tw), front(h.span / 2, h.y - tw), front(h.span / 2, h.y + tw), front(-h.span / 2, h.y + tw)], C.hFill, C.hStroke, 1.2);
+      }
+      {
+        // Wing thickness envelope following the dihedral
+        const upMax = Math.max(...[0.2, 0.3, 0.4].map(x => wingAf.upper(x)));
+        const loMin = Math.min(...[0.2, 0.3, 0.4].map(x => wingAf.lower(x)));
+        const rightW: Pt[] = [
+          front(0, w.yAt(0) + upMax * w.chordAt(0)), front(w.halfSpan, w.yAt(1) + upMax * w.chordAt(1)),
+          front(w.halfSpan, w.yAt(1) + loMin * w.chordAt(1)), front(0, w.yAt(0) + loMin * w.chordAt(0)),
+        ];
+        const leftW: Pt[] = rightW.map(([x, y]) => [2 * frontO[0] - x, y] as Pt);
+        poly(rightW, C.wingFill, C.wingStroke, 1.5);
+        poly(leftW, C.wingFill, C.wingStroke, 1.5);
+      }
+      if (L.winglet && L.winglet.span > 0) {
+        const g = L.winglet;
+        const tw = Math.max(g.rootChord * 0.08, 0.2 / L.toCm) / 2;
+        [1, -1].forEach(sgn => {
+          const x = sgn * w.halfSpan;
+          poly([front(x - tw, g.y), front(x + tw, g.y), front(x + tw, g.y + g.span), front(x - tw, g.y + g.span)], C.vFill, C.vStroke, 1.2);
+        });
+      }
+      {
+        const m = L.motor;
+        const [mx, my] = front(0, L.prop.y);
+        ctx.beginPath(); ctx.arc(mx, my, (m.diameter / 2) * k, 0, Math.PI * 2);
+        ctx.fillStyle = C.motor; ctx.fill();
+      }
 
-        ctx.beginPath();
-        ctx.moveTo(wingletRootX, startY);
-        ctx.lineTo(wingletRootX + sweepW, startY - spanH);
-        ctx.lineTo(wingletRootX + sweepW + tipC, startY - spanH);
-        ctx.lineTo(wingletRootX + rootC, startY);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
+      // ─────────────── Labels & legend ───────────────
+      ctx.font = '13px sans-serif';
+      ctx.fillStyle = C.text;
+      const label = (txt: string, x: number, y: number) => ctx.fillText(txt, x, y);
+      if (!useB) {
+        label(t('top_view'), PAD, PAD + 12);
+        label(t('side_view'), PAD, sideO[1] - b.yMax * k - 10);
+        label(t('front_view'), PAD, frontO[1] - b.yMax * k - 10);
       } else {
-        // Align with the back of the fuselage
-        const vStabX = -(maxAircraftLength * scale) / 2 + (dims.fuselageLength * scale) - (dims.vStabChord * scale);
-
-        ctx.beginPath();
-        ctx.moveTo(vStabX, 0);
-        ctx.lineTo(vStabX, -dims.vStabSpan * scale);
-        ctx.lineTo(vStabX + (dims.vStabChord * scale), -dims.vStabSpan * scale);
-        ctx.lineTo(vStabX + (dims.vStabChord * scale), 0);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-
-        // Draw Rudder hint: dashed line
-        const rudderHingeX = vStabX + dims.vStabChord * scale * 0.6;
-        ctx.save();
-        ctx.setLineDash([4, 3]);
-        ctx.strokeStyle = isDarkMode ? '#fde047' : '#ca8a04'; // vStabStroke
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(rudderHingeX, 0);
-        ctx.lineTo(rudderHingeX, -dims.vStabSpan * scale);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.restore();
-
-        // Horizontal Stabilizer (Side view representation)
-        const hStabY = wingY + (dims.rootChord * scale) + (dims.wingToTailDistance * scale);
-        ctx.fillStyle = colors.hStabFill;
-        ctx.strokeStyle = colors.hStabStroke;
-        const hStabSideX = -(maxAircraftLength * scale) / 2 + hStabY;
-        ctx.fillRect(hStabSideX, fuselageHeightSide / 2 - 2, dims.hStabChord * scale, 4);
-        ctx.strokeRect(hStabSideX, fuselageHeightSide / 2 - 2, dims.hStabChord * scale, 4);
+        label(t('top_view'), PAD, PAD + 12);
+        const rightX = PAD + span * k + GAP;
+        label(t('side_view'), rightX, PAD + 12);
+        label(t('front_view'), rightX, frontO[1] - b.yMax * k - 10);
       }
 
-      // Wing position indicator on fuselage (Enhanced profile)
-      const wingSideX = -(maxAircraftLength * scale) / 2 + wingY;
-      ctx.fillStyle = colors.wingFill;
-      ctx.strokeStyle = colors.wingStroke;
-      ctx.beginPath();
-      ctx.moveTo(wingSideX, 0);
-      ctx.quadraticCurveTo(wingSideX + (dims.rootChord * scale) * 0.25, -6, wingSideX + (dims.rootChord * scale), 0);
-      ctx.fill();
-      ctx.stroke();
-
-      // CG on side view
-      const cgSideX = -(maxAircraftLength * scale) / 2 + cgY;
-      drawCGCircle(ctx, cgSideX, fuselageHeightSide / 2, 6);
-
-      ctx.restore();
-
-      // --- DRAW FRONT VIEW ---
-      const frontCy = sideCy + sideViewBoxHeight * scale + 40;
-      ctx.save();
-      ctx.translate(cx, frontCy);
-
-      // Fuselage Front Profile
-      const fuselageWidthFront = 12;
-      const fuselageHeightFront = 12;
-      ctx.fillStyle = colors.fuselageFill;
-      ctx.strokeStyle = colors.fuselageStroke;
-      ctx.fillRect(
-        -fuselageWidthFront / 2,
-        0,
-        fuselageWidthFront,
-        fuselageHeightFront
-      );
-      ctx.strokeRect(
-        -fuselageWidthFront / 2,
-        0,
-        fuselageWidthFront,
-        fuselageHeightFront
-      );
-
-      // Vertical Stabilizer Front Profile
-      ctx.fillStyle = colors.vStabFill;
-      ctx.strokeStyle = colors.vStabStroke;
-
-      if (aircraftType === 'flying_wing') {
-        const tipX = (dims.wingspan / 2) * scale;
-        const tipY = fuselageHeightFront / 2 - (tipYOffset * scale);
-        const spanH = dims.vStabSpan * scale;
-        const wingletW = 3;
-        const startY = spanH * 0.2; // 20% below wing
-
-        // Right winglet
-        ctx.fillRect(tipX - wingletW / 2, tipY - spanH + startY, wingletW, spanH);
-        ctx.strokeRect(tipX - wingletW / 2, tipY - spanH + startY, wingletW, spanH);
-
-        // Left winglet
-        ctx.fillRect(-tipX - wingletW / 2, tipY - spanH + startY, wingletW, spanH);
-        ctx.strokeRect(-tipX - wingletW / 2, tipY - spanH + startY, wingletW, spanH);
-      } else {
-        const vStabWidthFront = 4;
-        ctx.fillRect(
-          -vStabWidthFront / 2,
-          -dims.vStabSpan * scale,
-          vStabWidthFront,
-          dims.vStabSpan * scale
-        );
-        ctx.strokeRect(
-          -vStabWidthFront / 2,
-          -dims.vStabSpan * scale,
-          vStabWidthFront,
-          dims.vStabSpan * scale
-        );
-      }
-
-      // Wing Dihedral Front Profile
-      ctx.strokeStyle = colors.wingStroke;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-
-      // Right Wing
-      ctx.moveTo(fuselageWidthFront / 2, fuselageHeightFront / 2);
-      ctx.lineTo((dims.wingspan / 2) * scale, fuselageHeightFront / 2 - (tipYOffset * scale));
-
-      // Left Wing
-      ctx.moveTo(-fuselageWidthFront / 2, fuselageHeightFront / 2);
-      ctx.lineTo(-(dims.wingspan / 2) * scale, fuselageHeightFront / 2 - (tipYOffset * scale));
-
-      ctx.stroke();
-      ctx.lineWidth = 1; // reset
-
-      ctx.restore();
-
-      // Draw labels
-      ctx.font = '14px sans-serif';
-      ctx.fillStyle = colors.text;
-      ctx.fillText(t('top_view'), 40, 40);
-      ctx.fillText(t('side_view'), 40, sideCy - 20);
-      ctx.fillText(t('front_view'), 40, frontCy - 20);
-
-      // --- LEGEND ---
-      const legendX = 10;
-      const legendY = canvas.height - 70;
-      ctx.font = '11px sans-serif';
-      ctx.fillStyle = colors.text;
-      ctx.fillText(t('legend') ?? 'Legend', legendX, legendY);
-
-      // CG symbol
-      drawCGCircle(ctx, legendX + 6, legendY + 14, 6);
-      ctx.fillStyle = colors.text;
-      ctx.font = '10px sans-serif';
-      ctx.fillText('CG', legendX + 16, legendY + 18);
-
-      // NP symbol
-      drawNPMarker(ctx, legendX + 6, legendY + 32, 6);
-      ctx.fillStyle = colors.text;
-      ctx.fillText('NP', legendX + 16, legendY + 36);
+      const lx = 10, ly = ch - 64;
+      ctx.font = '11px sans-serif'; ctx.fillStyle = C.text;
+      ctx.fillText(t('legend'), lx, ly);
+      drawCG(ctx, lx + 6, ly + 14, 6, isDarkMode);
+      ctx.fillStyle = C.text; ctx.font = '10px sans-serif';
+      ctx.fillText('CG', lx + 16, ly + 18);
+      drawNP(ctx, lx + 6, ly + 32, 6, isDarkMode);
+      ctx.fillStyle = C.text;
+      ctx.fillText('NP', lx + 16, ly + 36);
+      ctx.fillStyle = C.csFill; ctx.fillRect(lx, ly + 44, 12, 10);
+      ctx.strokeStyle = C.csStroke; ctx.strokeRect(lx, ly + 44, 12, 10);
+      ctx.fillStyle = C.text;
+      ctx.fillText(t(L.isFW ? 'elevons' : 'control_surfaces_short'), lx + 16, ly + 53);
     };
 
-    const drawCGCircle = (ctx: CanvasRenderingContext2D, x: number, y: number, radius: number) => {
-      ctx.save();
-      ctx.translate(x, y);
-
-      // Outer circle
-      ctx.beginPath();
-      ctx.strokeStyle = isDarkMode ? 'white' : 'black';
-      ctx.arc(0, 0, radius, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Quadrants
-      ctx.fillStyle = isDarkMode ? 'white' : 'black';
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(0, 0, radius, 0, Math.PI / 2);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(0, 0, radius, Math.PI, Math.PI * 1.5);
-      ctx.fill();
-
-      ctx.fillStyle = isDarkMode ? 'black' : 'white';
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(0, 0, radius, Math.PI / 2, Math.PI);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(0, 0, radius, Math.PI * 1.5, Math.PI * 2);
-      ctx.fill();
-
-      ctx.restore();
-    };
-
-    const drawNPMarker = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number) => {
-      ctx.save();
-      ctx.translate(x, y);
-
-      // Downward-pointing triangle for NP
-      ctx.beginPath();
-      ctx.fillStyle = '#f97316'; // orange-500
-      ctx.moveTo(0, size);
-      ctx.lineTo(-size, -size);
-      ctx.lineTo(size, -size);
-      ctx.closePath();
-      ctx.fill();
-
-      // NP Label
-      ctx.font = '10px sans-serif';
-      ctx.fillStyle = isDarkMode ? '#d1d5db' : '#374151'; // matches colors.text
-      ctx.fillText('NP', size + 4, size / 2);
-
-      ctx.restore();
-    };
-
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas(); // Initial draw
-
-    return () => window.removeEventListener('resize', resizeCanvas);
-  }, [dimensions, metrics, t, isDarkMode, aircraftType, propeller]);
+    const ro = new ResizeObserver(() => draw());
+    ro.observe(container);
+    draw();
+    return () => ro.disconnect();
+  }, [L, t, isDarkMode, airfoil]);
 
   return (
     <div ref={containerRef} className="w-full h-full absolute inset-0">
       <canvas ref={canvasRef} className="block w-full h-full" />
     </div>
   );
+}
+
+function drawCG(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, dark: boolean) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  ctx.strokeStyle = dark ? 'white' : 'black';
+  ctx.lineWidth = 1;
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.stroke();
+  const quad = (a0: number, a1: number, fill: string) => {
+    ctx.fillStyle = fill; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, r, a0, a1); ctx.fill();
+  };
+  const fg = dark ? 'white' : 'black', bg = dark ? 'black' : 'white';
+  quad(0, Math.PI / 2, fg); quad(Math.PI, Math.PI * 1.5, fg);
+  quad(Math.PI / 2, Math.PI, bg); quad(Math.PI * 1.5, Math.PI * 2, bg);
+  ctx.restore();
+}
+
+function drawNP(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, dark: boolean) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  ctx.fillStyle = '#f97316';
+  ctx.moveTo(0, size); ctx.lineTo(-size, -size); ctx.lineTo(size, -size); ctx.closePath(); ctx.fill();
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = dark ? '#d1d5db' : '#374151';
+  ctx.fillText('NP', size + 4, size / 2);
+  ctx.restore();
 }
