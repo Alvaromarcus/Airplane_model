@@ -12,6 +12,7 @@
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.0",
+    "fflate": "^0.8.3",
     "i18next": "^26.0.4",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.8.0",

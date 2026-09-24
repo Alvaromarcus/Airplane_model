@@ -7,11 +7,32 @@ import { useTranslation } from 'react-i18next';
 import type { AirfoilType } from '../utils/calculations';
 import type { Layout } from '../utils/geometry';
 import { buildAircraftParts, disposeParts, type PartMesh } from '../utils/mesh';
+import { buildPrintPlan, type PrintSettings } from '../utils/printParts';
 
 interface Scene3DProps {
   layout: Layout;
   airfoil: AirfoilType;
   isDarkMode: boolean;
+  printSettings: PrintSettings;
+}
+
+const KIND_OFFSET: Record<string, number> = { wing: 0, aileron: 5, hstab: 2, elevator: 1, fin: 3, rudder: 1, winglet: 6, fuselage: 7 };
+const SECTION_COLORS = ['#0ea5e9', '#f97316', '#22c55e', '#a855f7', '#eab308', '#ef4444', '#14b8a6', '#ec4899'];
+
+/** Print sections (mm) drawn in their assembled position, alternating colours. */
+function PrintSections({ L, airfoil, settings }: { L: Layout; airfoil: AirfoilType; settings: PrintSettings }) {
+  const plan = useMemo(() => buildPrintPlan(L, airfoil, settings), [L, airfoil, settings]);
+  useEffect(() => () => plan.sections.forEach(s => s.geometry.dispose()), [plan]);
+  const mmToLayout = 1 / (L.toCm * 10);
+  return (
+    <group scale={mmToLayout}>
+      {plan.sections.map(s => (
+        <mesh key={s.name} geometry={s.geometry}>
+          <meshStandardMaterial color={SECTION_COLORS[(s.index + (s.name.endsWith('b') ? 4 : 0) + KIND_OFFSET[s.kind]) % SECTION_COLORS.length]} roughness={0.5} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+    </group>
+  );
 }
 
 const COLORS: Record<PartMesh['kind'], string> = {
@@ -128,7 +149,7 @@ function BalanceMarkers({ L }: { L: Layout }) {
   );
 }
 
-function Aircraft({ L, airfoil, isRotating }: { L: Layout; airfoil: AirfoilType; isRotating: boolean }) {
+function Aircraft({ L, airfoil, isRotating, sections, printSettings }: { L: Layout; airfoil: AirfoilType; isRotating: boolean; sections: boolean; printSettings: PrintSettings }) {
   const groupRef = useRef<THREE.Group>(null);
   useFrame((_, delta) => {
     if (groupRef.current && isRotating) groupRef.current.rotation.y += delta * 0.25;
@@ -144,9 +165,15 @@ function Aircraft({ L, airfoil, isRotating }: { L: Layout; airfoil: AirfoilType;
   return (
     <group ref={groupRef} scale={L.toCm}>
       <group position={[0, -midY, midS]}>
-        <PartMeshes parts={parts.right} />
-        <PartMeshes parts={parts.right} mirror />
-        <PartMeshes parts={parts.center} />
+        {sections ? (
+          <PrintSections L={L} airfoil={airfoil} settings={printSettings} />
+        ) : (
+          <>
+            <PartMeshes parts={parts.right} />
+            <PartMeshes parts={parts.right} mirror />
+            <PartMeshes parts={parts.center} />
+          </>
+        )}
         <Powertrain L={L} />
         <BalanceMarkers L={L} />
       </group>
@@ -154,9 +181,10 @@ function Aircraft({ L, airfoil, isRotating }: { L: Layout; airfoil: AirfoilType;
   );
 }
 
-export default function Scene3D({ layout, airfoil, isDarkMode }: Scene3DProps) {
+export default function Scene3D({ layout, airfoil, isDarkMode, printSettings }: Scene3DProps) {
   const { t } = useTranslation();
   const [isRotating, setIsRotating] = useState(true);
+  const [showSections, setShowSections] = useState(false);
 
   // Everything is rendered in centimetres
   const b = layout.bounds;
@@ -181,7 +209,7 @@ export default function Scene3D({ layout, airfoil, isDarkMode }: Scene3DProps) {
           <hemisphereLight args={[isDarkMode ? '#cbd5e1' : '#ffffff', '#475569', 0.9]} />
           <directionalLight position={[sizeCm, sizeCm * 1.5, sizeCm * 0.8]} intensity={1.6} castShadow />
           <directionalLight position={[-sizeCm, sizeCm * 0.3, -sizeCm]} intensity={0.35} />
-          <Aircraft L={layout} airfoil={airfoil} isRotating={isRotating} />
+          <Aircraft L={layout} airfoil={airfoil} isRotating={isRotating} sections={showSections} printSettings={printSettings} />
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
             <circleGeometry args={[sizeCm * 0.9, 64]} />
             <meshStandardMaterial color={isDarkMode ? '#1f2937' : '#e2e8f0'} transparent opacity={0.6} />
@@ -199,6 +227,10 @@ export default function Scene3D({ layout, airfoil, isDarkMode }: Scene3DProps) {
       <div className="absolute bottom-2 right-3 text-xs text-gray-400 dark:text-gray-500 pointer-events-none">
         {t('drag_to_rotate')}
       </div>
+      <label className="absolute top-14 right-3 flex items-center gap-2 text-xs bg-white/85 dark:bg-gray-900/75 backdrop-blur rounded-md px-2 py-1.5 shadow-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+        <input type="checkbox" checked={showSections} onChange={e => setShowSections(e.target.checked)} className="accent-emerald-600" />
+        {t('show_print_sections')}
+      </label>
       <button
         onClick={() => setIsRotating(!isRotating)}
         className="absolute top-3 right-3 p-2 bg-white dark:bg-gray-800 rounded-full shadow-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"

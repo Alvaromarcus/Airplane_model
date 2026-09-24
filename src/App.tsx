@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Moon, Sun } from 'lucide-react';
+import { Moon, Sun, Printer } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import FlightAssistant from './components/FlightAssistant';
 import CanvasView from './components/CanvasView';
@@ -13,6 +13,8 @@ import {
 } from './utils/calculations';
 import type { AircraftDimensions, AircraftType, AircraftPreset, AirfoilType, FuselageType, PropellerType, ControlSurfaces } from './utils/calculations';
 import { computeLayout } from './utils/geometry';
+import { DEFAULT_PRINT_SETTINGS, type PrintSettings } from './utils/printParts';
+import StlExportDialog from './components/StlExportDialog';
 import { exportToPDF } from './utils/pdfExport';
 import { useVersionCheck } from './hooks/useVersionCheck';
 import './App.css';
@@ -31,6 +33,7 @@ interface PersistedState {
   propeller: PropellerType;
   controls: ControlSurfaces;
   isDarkMode: boolean;
+  printSettings: PrintSettings;
 }
 
 const DEFAULT_STATE: PersistedState = {
@@ -42,6 +45,7 @@ const DEFAULT_STATE: PersistedState = {
   propeller: 'prop_9x47',
   controls: DEFAULT_CONTROL_SURFACES.conventional,
   isDarkMode: false,
+  printSettings: DEFAULT_PRINT_SETTINGS,
 };
 
 function loadState(): PersistedState {
@@ -59,6 +63,7 @@ function loadState(): PersistedState {
         unit,
         dimensions: normalizeDims(p.dimensions, presetDims),
         controls: sanitizeControls({ ...DEFAULT_CONTROL_SURFACES[type], ...(p.controls ?? {}) }),
+        printSettings: { ...DEFAULT_PRINT_SETTINGS, ...(p.printSettings ?? {}) },
       };
     }
     // Older versions stored only the dimensions (always in cm, conventional)
@@ -87,15 +92,17 @@ function App() {
   const [isExporting, setIsExporting] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(initial.isDarkMode);
   const [viewMode, setViewMode] = useState<'2D' | '3D'>('2D');
+  const [printSettings, setPrintSettings] = useState<PrintSettings>(initial.printSettings);
+  const [stlOpen, setStlOpen] = useState(false);
 
   // Persist the whole project (dimensions are meaningless without their unit/type)
   useEffect(() => {
     try {
-      const state: PersistedState = { dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode };
+      const state: PersistedState = { dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode, printSettings };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       localStorage.removeItem(LEGACY_DIMS_KEY);
     } catch { /* storage unavailable (private mode) — ignore */ }
-  }, [dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode]);
+  }, [dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode, printSettings]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -231,6 +238,16 @@ function App() {
             {t('reset')}
           </button>
 
+          {/* STL export for 3D printing */}
+          <button
+            onClick={() => setStlOpen(true)}
+            className="flex-shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded transition-colors text-sm font-medium flex items-center gap-1.5"
+            title={t('stl_title')}
+          >
+            <Printer size={14} aria-hidden="true" />
+            <span>STL</span>
+          </button>
+
           {/* PDF export — always fully visible, icon + text on mobile */}
           <button
             onClick={handleExportPDF}
@@ -276,7 +293,7 @@ function App() {
           {viewMode === '2D' ? (
             <CanvasView layout={layout} isDarkMode={isDarkMode} airfoil={airfoil} />
           ) : (
-            <Scene3D layout={layout} airfoil={airfoil} isDarkMode={isDarkMode} />
+            <Scene3D layout={layout} airfoil={airfoil} isDarkMode={isDarkMode} printSettings={printSettings} />
           )}
         </div>
 
@@ -291,6 +308,14 @@ function App() {
           />
         </div>
       </main>
+      <StlExportDialog
+        open={stlOpen}
+        onClose={() => setStlOpen(false)}
+        layout={layout}
+        airfoil={airfoil}
+        settings={printSettings}
+        onSettingsChange={setPrintSettings}
+      />
       <footer className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 p-2 text-center text-xs text-gray-500 dark:text-gray-400 transition-colors duration-200 z-20">
         {t('developed_by')} <a href="https://www.linkedin.com/in/alvaromarcus/" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Alvaro Marcus</a>
       </footer>
