@@ -101,61 +101,61 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
         const v = parseFloat(e.target.value);
         if (Number.isFinite(v) && v >= 100 && v <= 1000) onSettingsChange({ ...settings, [key]: v });
       }}
-      className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+      className="w-full px-2 py-1.5 border border-slate-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
     />
   );
   const presetIdx = BED_PRESETS.findIndex(p => p.x === settings.bedX && p.y === settings.bedY && p.z === settings.bedZ);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/40" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="stl-title">
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl bg-white dark:bg-gray-800 shadow-2xl text-gray-800 dark:text-gray-100" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl bg-white dark:bg-slate-800 shadow-2xl text-slate-800 dark:text-slate-100" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
           <h2 id="stl-title" className="text-lg font-semibold flex items-center gap-2"><Printer size={20} /> {t('stl_title')}</h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700" aria-label={t('close')}><X size={20} /></button>
+          <button onClick={onClose} className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700" aria-label={t('close')}><X size={20} /></button>
         </div>
 
         <div className="p-4 space-y-4 text-sm">
-          <p className="text-gray-600 dark:text-gray-300 leading-relaxed">{t('stl_intro')}</p>
+          <p className="text-slate-600 dark:text-slate-300 leading-relaxed">{t('stl_intro')}</p>
 
           {/* Bed */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">{t('stl_bed')}</label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">{t('stl_bed')}</label>
             <select
               value={presetIdx}
               onChange={e => {
                 const p = BED_PRESETS[Number(e.target.value)];
                 if (p) onSettingsChange({ ...settings, bedX: p.x, bedY: p.y, bedZ: p.z });
               }}
-              className="w-full mb-2 px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-800"
+              className="w-full mb-2 px-2 py-1.5 border border-slate-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800"
             >
               {presetIdx < 0 && <option value={-1}>{t('stl_bed_custom')}</option>}
               {BED_PRESETS.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}
             </select>
             <div className="grid grid-cols-3 gap-2 items-center">
-              <div><span className="text-xs text-gray-500">X (mm)</span>{num('bedX')}</div>
-              <div><span className="text-xs text-gray-500">Y (mm)</span>{num('bedY')}</div>
-              <div><span className="text-xs text-gray-500">Z (mm)</span>{num('bedZ')}</div>
+              <div><span className="text-xs text-slate-500">X (mm)</span>{num('bedX')}</div>
+              <div><span className="text-xs text-slate-500">Y (mm)</span>{num('bedY')}</div>
+              <div><span className="text-xs text-slate-500">Z (mm)</span>{num('bedZ')}</div>
             </div>
           </div>
 
           {/* Summary */}
-          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
             {!result ? (
-              <p className="text-gray-500">{t('stl_computing')}</p>
+              <p className="text-slate-500">{t('stl_computing')}</p>
             ) : (
               <>
                 <div className="flex items-baseline justify-between mb-2">
                   <span className="font-semibold">{t('stl_parts_total', { count: result.oriented.length })}</span>
-                  <span className="text-xs text-gray-500">{t('stl_tallest', { h: Math.round(tallest) })}</span>
+                  <span className="text-xs text-slate-500">{t('stl_tallest', { h: Math.round(tallest) })}</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5 mb-3">
                   {Object.entries(byKind).map(([k, n]) => (
-                    <span key={k} className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-xs">{t(KIND_KEYS[k] ?? k)}: {n}</span>
+                    <span key={k} className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-xs">{t(KIND_KEYS[k] ?? k)}: {n}</span>
                   ))}
                 </div>
                 {pockets.length > 0 && (
                   <>
-                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{t('stl_cutouts')}</div>
+                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">{t('stl_cutouts')}</div>
                     <div className="flex flex-wrap gap-1.5 mb-3">
                       {pockets.map(p => (
                         <span key={p.id} className="px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-900/30 text-violet-800 dark:text-violet-300 text-xs">{t('cut_' + p.id)}</span>
@@ -163,9 +163,9 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
                     </div>
                   </>
                 )}
-                <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{t('stl_spars')}</div>
+                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">{t('stl_spars')}</div>
                 {result.plan.spars.length === 0 ? (
-                  <p className="text-xs text-gray-500">—</p>
+                  <p className="text-xs text-slate-500">—</p>
                 ) : (
                   <ul className="text-xs space-y-0.5">
                     {result.plan.spars.map(sp => (
@@ -193,7 +193,7 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
             </div>
           )}
 
-          <details className="text-xs text-gray-600 dark:text-gray-300">
+          <details className="text-xs text-slate-600 dark:text-slate-300">
             <summary className="cursor-pointer font-semibold">{t('stl_how_title')}</summary>
             <ul className="list-disc pl-5 mt-2 space-y-1">
               <li>{t('stl_how_1')}</li>
@@ -204,8 +204,8 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
           </details>
         </div>
 
-        <div className="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700">
-          <button onClick={onClose} className="px-3 py-1.5 rounded-md text-sm border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700">{t('close')}</button>
+        <div className="flex justify-end gap-2 p-4 border-t border-slate-200 dark:border-slate-700">
+          <button onClick={onClose} className="px-3 py-1.5 rounded-md text-sm border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">{t('close')}</button>
           <button
             onClick={download}
             disabled={busy || !result}

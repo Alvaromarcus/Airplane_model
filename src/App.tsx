@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Moon, Sun, Printer } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import FlightAssistant from './components/FlightAssistant';
 import CanvasView from './components/CanvasView';
 import Scene3D from './components/Scene3D';
-import AircraftTypeSelector from './components/AircraftTypeSelector';
-import AppLogo from './components/AppLogo';
+import Header from './components/Header';
+import KpiBar from './components/KpiBar';
+import WelcomeModal from './components/WelcomeModal';
+import { projectFromUrl, shareUrl } from './utils/share';
 import {
   calculateMetrics, validateDesign, AIRCRAFT_PRESETS, DEFAULT_CONTROL_SURFACES,
   LENGTH_KEYS, dimsInUnit, normalizeDims, sanitizeControls,
@@ -53,9 +54,11 @@ const DEFAULT_STATE: PersistedState = {
 
 function loadState(): PersistedState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const p = JSON.parse(raw) as Partial<PersistedState>;
+    // A shared link (#p=...) takes precedence over what this browser saved
+    const fromUrl = projectFromUrl<Partial<PersistedState>>();
+    const raw = fromUrl ? null : localStorage.getItem(STORAGE_KEY);
+    if (fromUrl || raw) {
+      const p = (fromUrl ?? JSON.parse(raw!)) as Partial<PersistedState>;
       const type: AircraftType = p.aircraftType === 'flying_wing' ? 'flying_wing' : 'conventional';
       const unit = p.unit === 'mm' ? 'mm' : 'cm';
       const presetDims = dimsInUnit(AIRCRAFT_PRESETS.find(x => x.type === type)!.defaults, unit);
@@ -98,6 +101,20 @@ function App() {
   const [viewMode, setViewMode] = useState<'2D' | '3D'>('2D');
   const [printSettings, setPrintSettings] = useState<PrintSettings>(initial.printSettings);
   const [stlOpen, setStlOpen] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(() => {
+    try { return !localStorage.getItem('aerobuilder_welcome_seen') && !projectFromUrl(); } catch { return false; }
+  });
+  const closeWelcome = () => {
+    setWelcomeOpen(false);
+    try { localStorage.setItem('aerobuilder_welcome_seen', '1'); } catch { /* ignore */ }
+  };
+
+  // A shared link was loaded: drop the hash so later edits don't look like the shared version
+  useEffect(() => {
+    if (window.location.hash.includes('p=')) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, []);
   const [components, setComponents] = useState<ComponentSettings>(initial.components);
 
   // Persist the whole project (dimensions are meaningless without their unit/type)
@@ -187,6 +204,17 @@ function App() {
     setComponents(DEFAULT_COMPONENTS);
   };
 
+  const handleShare = async (): Promise<boolean> => {
+    const url = shareUrl({ dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, printSettings, components });
+    try {
+      await navigator.clipboard.writeText(url);
+      return true;
+    } catch {
+      window.prompt(t('share_hint'), url);
+      return false;
+    }
+  };
+
   const handlePresetSelect = (preset: AircraftPreset) => {
     setAircraftType(preset.type);
     // Presets are authored in cm — convert to the unit currently in use
@@ -203,90 +231,28 @@ function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900 overflow-hidden font-sans transition-colors duration-200">
-      <header className="bg-white dark:bg-gray-800 shadow-sm z-10 flex flex-wrap gap-2 justify-between items-center p-4 transition-colors duration-200 flex-shrink-0">
-        <AppLogo />
-
-        <div className="flex items-center gap-1 sm:gap-3 flex-wrap justify-end">
-          {/* Dark mode toggle — icon only, always visible */}
-          <button
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-colors flex-shrink-0"
-            title={isDarkMode ? t('light_mode') : t('dark_mode')}
-          >
-            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
-
-          {/* View toggle */}
-          <button
-            onClick={() => setViewMode(prev => prev === '2D' ? '3D' : '2D')}
-            className="bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded transition-colors text-sm font-medium border border-indigo-200 dark:border-indigo-800 flex-shrink-0"
-          >
-            {viewMode === '2D' ? t('view_3d') : t('view_2d')}
-          </button>
-
-          {/* Unit select — hide label on mobile, show on sm+ */}
-          <div className="flex items-center gap-1 text-sm">
-            <span className="hidden sm:inline font-medium text-gray-600 dark:text-gray-300">{t('units')}:</span>
-            <select
-              value={unit}
-              onChange={(e) => handleUnitToggle(e.target.value as 'cm' | 'mm')}
-              className="border border-gray-300 dark:border-gray-600 rounded px-1.5 py-1 bg-white dark:bg-gray-700 text-gray-800 dark:text-white text-sm"
-            >
-              <option value="cm">{t('cm')}</option>
-              <option value="mm">{t('mm')}</option>
-            </select>
-          </div>
-
-          {/* Language toggle */}
-          <button
-            onClick={toggleLanguage}
-            className="hidden sm:block bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 px-2 py-1 rounded text-xs font-medium transition-colors"
-          >
-            {i18n.language === 'en' ? 'PT-BR' : 'EN'}
-          </button>
-
-          <button
-            onClick={handleReset}
-            className="hidden sm:block bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 px-2 py-1 rounded transition-colors text-xs font-medium border border-red-200 dark:border-red-800"
-          >
-            {t('reset')}
-          </button>
-
-          {/* STL export for 3D printing */}
-          <button
-            onClick={() => setStlOpen(true)}
-            className="flex-shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded transition-colors text-sm font-medium flex items-center gap-1.5"
-            title={t('stl_title')}
-          >
-            <Printer size={14} aria-hidden="true" />
-            <span>STL</span>
-          </button>
-
-          {/* PDF export — always fully visible, icon + text on mobile */}
-          <button
-            onClick={handleExportPDF}
-            disabled={isExporting}
-            className="flex-shrink-0 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-3 py-1.5 rounded transition-colors text-sm font-medium flex items-center gap-1.5"
-          >
-            {/* Inline PDF icon */}
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M4 0h6l4 4v11a1 1 0 01-1 1H3a1 1 0 01-1-1V1a1 1 0 011-1zm6 1v3h3L10 1zM5 9h6v1H5V9zm0 2h6v1H5v-1zm0-4h3v1H5V7z"/>
-            </svg>
-            <span className="sm:hidden">PDF</span>
-            <span className="hidden sm:inline">
-              {isExporting ? t('export_loading') : t('export_pdf')}
-            </span>
-          </button>
-        </div>
-      </header>
-
-      <div className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-2 overflow-x-auto flex-shrink-0">
-        <AircraftTypeSelector selectedType={aircraftType} onSelect={handlePresetSelect} />
-      </div>
+    <div className="flex flex-col h-screen bg-slate-100 dark:bg-slate-950 overflow-hidden font-sans text-slate-900 dark:text-slate-100 transition-colors duration-200">
+      <Header
+        aircraftType={aircraftType}
+        onPreset={handlePresetSelect}
+        viewMode={viewMode}
+        onViewMode={setViewMode}
+        unit={unit}
+        onUnit={handleUnitToggle}
+        isDarkMode={isDarkMode}
+        onToggleDark={() => setIsDarkMode(!isDarkMode)}
+        onToggleLanguage={toggleLanguage}
+        onReset={handleReset}
+        onExportPDF={handleExportPDF}
+        isExporting={isExporting}
+        onOpenSTL={() => setStlOpen(true)}
+        onShare={handleShare}
+        onHelp={() => setWelcomeOpen(true)}
+      />
+      <KpiBar metrics={metrics} checks={validationChecks} balance={balance} layout={layout} unit={unit} />
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden relative">
-        <div className="order-3 lg:order-1 w-full lg:w-64 flex-shrink-0 z-10">
+        <div className="order-2 lg:order-1 w-full lg:w-72 flex-shrink-0 z-10">
           <Sidebar
             dimensions={dimensions}
             onChange={handleDimensionChange}
@@ -304,7 +270,7 @@ function App() {
           />
         </div>
 
-        <div className="order-1 lg:order-2 w-full lg:flex-1 relative min-h-[400px] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-x-auto">
+        <div className="order-1 lg:order-2 w-full lg:flex-1 relative min-h-[420px] border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 overflow-x-auto bg-white dark:bg-slate-900">
           {viewMode === '2D' ? (
             <CanvasView layout={layout} isDarkMode={isDarkMode} airfoil={airfoil} balance={balance} />
           ) : (
@@ -312,7 +278,7 @@ function App() {
           )}
         </div>
 
-        <div className="order-2 lg:order-3 w-full lg:w-80 flex-shrink-0">
+        <div className="order-3 lg:order-3 w-full lg:w-80 flex-shrink-0">
           <FlightAssistant
             metrics={metrics}
             checks={validationChecks}
@@ -336,8 +302,13 @@ function App() {
         onSettingsChange={setPrintSettings}
         pockets={pockets}
       />
-      <footer className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 p-2 text-center text-xs text-gray-500 dark:text-gray-400 transition-colors duration-200 z-20">
-        {t('developed_by')} <a href="https://www.linkedin.com/in/alvaromarcus/" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Alvaro Marcus</a>
+      <WelcomeModal open={welcomeOpen} onClose={closeWelcome} />
+      <footer className="flex-shrink-0 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 z-20">
+        <span>{t('developed_by')} <a href="https://www.linkedin.com/in/alvaromarcus/" target="_blank" rel="noopener noreferrer" className="text-sky-700 dark:text-sky-400 hover:underline">Alvaro Marcus</a></span>
+        <span aria-hidden="true">·</span>
+        <a href="https://github.com/Alvaromarcus/Airplane_model" target="_blank" rel="noopener noreferrer" className="hover:underline">GitHub</a>
+        <span aria-hidden="true">·</span>
+        <span>{t('footer_disclaimer')}</span>
       </footer>
     </div>
   );

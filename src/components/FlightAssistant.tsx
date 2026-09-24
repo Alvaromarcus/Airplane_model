@@ -51,11 +51,11 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
   }
 
   return (
-    <aside className="w-full lg:w-80 bg-white dark:bg-gray-800 shadow-md z-20 flex flex-col h-auto lg:h-full border-t lg:border-t-0 lg:border-l border-gray-200 dark:border-gray-700 overflow-y-auto transition-colors duration-200">
+    <aside className="w-full lg:w-80 bg-white dark:bg-slate-800 shadow-md z-20 flex flex-col h-auto lg:h-full border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-700 overflow-y-auto transition-colors duration-200">
 
       {/* Header */}
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between flex-shrink-0">
-        <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{t('flight_assistant')}</h2>
+      <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between flex-shrink-0">
+        <h2 className="text-lg font-semibold text-slate-800 dark:text-white">{t('flight_assistant')}</h2>
         <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold border ${overallStatusColor}`}>
           <StatusIcon size={14} />
           {t(overallStatusText)}
@@ -63,14 +63,14 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
       </div>
 
       {/* Tab bar */}
-      <div className="flex border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+      <div className="flex border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
         <button
           onClick={() => setActiveTab('analysis')}
           className={[
             'flex-1 py-2.5 text-xs font-medium transition-colors',
             activeTab === 'analysis'
               ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300',
           ].join(' ')}
         >
           {lang === 'pt' ? 'Aero' : 'Aero'}
@@ -81,7 +81,7 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
             'flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors',
             activeTab === 'electric'
               ? 'border-b-2 border-amber-500 text-amber-600 dark:text-amber-400'
-              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300',
           ].join(' ')}
         >
           <Zap size={12} />
@@ -93,7 +93,7 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
             'flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors',
             activeTab === 'balance'
               ? 'border-b-2 border-violet-500 text-violet-600 dark:text-violet-400'
-              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300',
           ].join(' ')}
         >
           <Scale size={12} />
@@ -103,55 +103,55 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
 
       {/* Tab content */}
       {activeTab === 'analysis' ? (
-        <div className="p-4 space-y-6 text-gray-800 dark:text-gray-200">
+        <div className="p-4 space-y-6 text-slate-800 dark:text-slate-200">
           {/* Metrics Section */}
           <div>
-            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 dark:border-slate-700">
               {t('metrics')}
             </h3>
             <ul className="space-y-2 text-sm">
               <li className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">{t('wing_area')}:</span>
+                <span className="text-slate-600 dark:text-slate-400">{t('wing_area')}:</span>
                 <span className="font-medium">{formatNumber(metrics.wingArea, true)}</span>
               </li>
               <li className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">{t('half_wing_area')}:</span>
+                <span className="text-slate-600 dark:text-slate-400">{t('half_wing_area')}:</span>
                 <span className="font-medium">{formatNumber(metrics.halfWingArea, true)}</span>
               </li>
               <li className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">{t('mac')}:</span>
+                <span className="text-slate-600 dark:text-slate-400">{t('mac')}:</span>
                 <span className="font-medium">{formatNumber(metrics.mac)}</span>
               </li>
               <li className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">{t(aircraftType === 'flying_wing' ? 'cg_position_fw' : 'cg_position')}:</span>
+                <span className="text-slate-600 dark:text-slate-400">{t(aircraftType === 'flying_wing' ? 'cg_position_fw' : 'cg_position')}:</span>
                 <span className="font-medium">{formatNumber(metrics.cgPosition)}</span>
               </li>
               <li className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">{t('neutral_point')}:</span>
+                <span className="text-slate-600 dark:text-slate-400">{t('neutral_point')}:</span>
                 <span className="font-medium">{formatNumber(metrics.neutralPoint)}</span>
               </li>
               <li className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">{t('static_margin')}:</span>
+                <span className="text-slate-600 dark:text-slate-400">{t('static_margin')}:</span>
                 <span className="font-medium">{metrics.staticMargin.toFixed(1)}%</span>
               </li>
               <li className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">{t('aspect_ratio')}:</span>
+                <span className="text-slate-600 dark:text-slate-400">{t('aspect_ratio')}:</span>
                 <span className="font-medium">{metrics.aspectRatio.toFixed(2)}</span>
               </li>
               {aircraftType !== 'flying_wing' && (
                 <>
                   <li className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">{t('tail_moment_arm')}:</span>
+                    <span className="text-slate-600 dark:text-slate-400">{t('tail_moment_arm')}:</span>
                     <span className="font-medium">{formatNumber(metrics.tailMomentArm)}</span>
                   </li>
                   <li className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">{t('hstab_area')}:</span>
+                    <span className="text-slate-600 dark:text-slate-400">{t('hstab_area')}:</span>
                     <span className="font-medium">{formatNumber(metrics.hStabArea, true)}</span>
                   </li>
                 </>
               )}
               <li className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">{t(aircraftType === 'flying_wing' ? 'winglet_area' : 'vstab_area')}:</span>
+                <span className="text-slate-600 dark:text-slate-400">{t(aircraftType === 'flying_wing' ? 'winglet_area' : 'vstab_area')}:</span>
                 <span className="font-medium">{formatNumber(metrics.vStabArea, true)}</span>
               </li>
             </ul>
@@ -165,7 +165,7 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
           {/* Warnings Section */}
           {checks.length > 0 && (
             <div>
-              <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 dark:border-slate-700">
                 {t('analysis')}
               </h3>
               <div className="space-y-3">
@@ -207,7 +207,7 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
 
           {/* Control surfaces guidelines */}
           <div>
-            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 dark:border-slate-700">
               {t('control_surfaces')}
             </h3>
             <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded p-3 text-sm text-blue-800 dark:text-blue-300 space-y-2">

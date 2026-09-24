@@ -375,6 +375,7 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil, balance }: 
         label(t('front_view'), rightX, frontO[1] - b.yMax * k - 10);
       }
 
+      if (cw < 560) return; // compact screens: the legend would cover the drawing
       const lx = 10, ly = ch - (balance ? 80 : 64);
       ctx.font = '11px sans-serif'; ctx.fillStyle = C.text;
       ctx.fillText(t('legend'), lx, ly);

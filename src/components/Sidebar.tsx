@@ -2,6 +2,8 @@ import { useState, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AircraftDimensions, AircraftMetrics, AircraftType, AirfoilType, ControlSurfaces, FuselageType, PropellerType } from '../utils/calculations';
 import { TRACTOR_PROPS, PUSHER_PROPS } from '../utils/electricSystem';
+import { Plane, Fan, Wind, SlidersHorizontal, Box } from 'lucide-react';
+import Section from './ui/Section';
 
 interface SidebarProps {
   dimensions: AircraftDimensions;
@@ -42,7 +44,7 @@ const PUSHER_KEY_MAP: { key: PropellerType; label: string; notes: string }[] = [
   { key: 'prop_11x55P', label: '11×5.5P', notes: PUSHER_PROPS[5].notes },
 ];
 
-const inputClass = 'w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white';
+const inputClass = 'w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white';
 
 interface NumberFieldProps {
   label: string;
@@ -71,7 +73,7 @@ function NumberField({ label, value, onChange, unitLabel, min = 0, max, step }: 
 
   return (
     <div className="mb-3">
-      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">{label}</label>
       <div className="flex items-center gap-1">
         <input
           type="number"
@@ -97,7 +99,7 @@ function NumberField({ label, value, onChange, unitLabel, min = 0, max, step }: 
           }}
           className={inputClass}
         />
-        <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 w-6">{unitLabel}</span>
+        <span className="text-xs text-slate-500 dark:text-slate-400 flex-shrink-0 w-6">{unitLabel}</span>
       </div>
     </div>
   );
@@ -158,25 +160,23 @@ export default function Sidebar({
   const selectedPropInfo = propList.find(p => p.key === propeller);
 
   return (
-    <aside className="w-full h-auto lg:h-full bg-white dark:bg-gray-800 shadow-md z-20 flex flex-col overflow-y-auto border-r border-gray-200 dark:border-gray-700 transition-colors duration-200">
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-        <h2 className="text-lg font-semibold text-gray-800 dark:text-white">{t('sidebar_title')}</h2>
+    <aside className="w-full h-auto lg:h-full bg-white dark:bg-slate-900 z-20 flex flex-col overflow-y-auto border-r border-slate-200 dark:border-slate-700 transition-colors duration-200">
+      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/60 backdrop-blur sticky top-0 z-10">
+        <h2 className="text-sm font-semibold text-slate-800 dark:text-white">{t('sidebar_title')}</h2>
+        <p className="text-[11px] text-slate-500 dark:text-slate-400">{t('sidebar_subtitle')}</p>
       </div>
 
-      <div className="p-4">
+      <div>
         {/* Wing Section */}
-        <div className="mb-6">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
-            {t('wing')}
-          </h3>
+        <Section title={t('wing')} icon={<Plane size={16} />}>
           <div className="mb-3">
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
               {t('airfoil_profile')}
             </label>
             <select
               value={airfoil}
               onChange={(e) => onAirfoilChange(e.target.value as AirfoilType)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
             >
               <option value="clarky">{t('airfoil_clarky')}</option>
               <option value="naca4412">{t('airfoil_naca4412')}</option>
@@ -195,13 +195,10 @@ export default function Sidebar({
           </div>
           {renderInput('sweep_angle', 'sweepOffset', undefined, -1000)}
           {renderInput('dihedral', 'dihedral', '°', -10, 30)}
-        </div>
+        </Section>
 
         {/* Propeller Section */}
-        <div className="mb-6">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
-            {t('propeller')}
-          </h3>
+        <Section title={t('propeller')} icon={<Fan size={16} />}>
 
           {/* Pusher/Tractor badge */}
           <div className="flex items-center gap-2 mb-2">
@@ -220,20 +217,20 @@ export default function Sidebar({
                 {t('prop_tractor_badge')}
               </span>
             )}
-            <span className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
               {isFlyingWing ? t('prop_pusher_hint') : t('prop_tractor_hint')}
             </span>
           </div>
 
           <div className="mb-2">
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
               {t('prop_diameter_pitch')}
             </label>
             <select
               id="propeller-select"
               value={propeller}
               onChange={(e) => onPropellerChange(e.target.value as PropellerType)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
             >
               {propList.map(p => (
                 <option key={p.key} value={p.key}>
@@ -253,13 +250,10 @@ export default function Sidebar({
               {selectedPropInfo.notes}
             </div>
           )}
-        </div>
+        </Section>
 
         {/* Tail Section */}
-        <div className="mb-6">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
-            {t('tail')}
-          </h3>
+        <Section title={t('tail')} icon={<Wind size={16} />}>
           {aircraftType !== 'flying_wing' && (
             <div className="flex gap-2">
               <div className="flex-1">
@@ -284,15 +278,11 @@ export default function Sidebar({
               )}
             </div>
           </div>
-        </div>
+        </Section>
 
         {/* Control Surfaces Section */}
-        <div className="mb-6">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
-            <i className="inline-block w-2.5 h-2.5 rounded-sm bg-orange-500" />
-            {t('control_surfaces_title')}
-          </h3>
-          <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">
+        <Section title={t('control_surfaces_title')} icon={<SlidersHorizontal size={16} />}>
+          <h4 className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">
             {isFlyingWing ? t('elevons') : t('ailerons')}
           </h4>
           <div className="flex gap-2">
@@ -308,7 +298,7 @@ export default function Sidebar({
 
           {!isFlyingWing && (
             <>
-              <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2 mt-4">{t('elevator')}</h4>
+              <h4 className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-4">{t('elevator')}</h4>
               {renderControl('cs_chord_stab', 'elevatorChord', 0, 60)}
               <DerivedInfo>
                 {t('cs_length')}: <b>{fmt(dimensions.hStabSpan)} {unit}</b> · {t('cs_chord_short')}: <b>{fmt(dimensions.hStabChord * controls.elevatorChord / 100)} {unit}</b>
@@ -316,7 +306,7 @@ export default function Sidebar({
                 {(metrics.elevatorAreaRatio * 100).toFixed(0)}% {t('cs_of_stab')}
               </DerivedInfo>
 
-              <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2 mt-4">{t('rudder')}</h4>
+              <h4 className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2 mt-4">{t('rudder')}</h4>
               {renderControl('cs_chord_fin', 'rudderChord', 0, 60)}
               <DerivedInfo>
                 {t('cs_length')}: <b>{fmt(dimensions.vStabSpan)} {unit}</b> · {t('cs_chord_short')}: <b>{fmt(dimensions.vStabChord * controls.rudderChord / 100)} {unit}</b>
@@ -325,22 +315,19 @@ export default function Sidebar({
               </DerivedInfo>
             </>
           )}
-        </div>
+        </Section>
 
         {/* Fuselage Section */}
         {aircraftType !== 'flying_wing' && (
-          <div className="mb-6">
-            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200 dark:border-gray-700">
-              {t('fuselage')}
-            </h3>
+          <Section title={t('fuselage')} icon={<Box size={16} />}>
             <div className="mb-3">
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                 {t('fuselage_type')}
               </label>
               <select
                 value={fuselageStyle}
                 onChange={(e) => onFuselageStyleChange(e.target.value as FuselageType)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
               >
                 <option value="trainer">{t('fuselage_trainer')}</option>
                 <option value="sport">{t('fuselage_sport')}</option>
@@ -353,11 +340,11 @@ export default function Sidebar({
             </div>
             {renderInput('nose_length', 'noseLength')}
             {renderInput('wing_to_tail', 'wingToTailDistance')}
-          </div>
+          </Section>
         )}
 
         {aircraftType === 'flying_wing' && (
-          <div className="mb-6 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300">
+          <div className="m-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300">
             {t('flying_wing_fuselage_note')}
           </div>
         )}
