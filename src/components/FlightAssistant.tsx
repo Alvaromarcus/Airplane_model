@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, CheckCircle2, Info, Zap } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Zap, Scale } from 'lucide-react';
 import type { AircraftMetrics, ValidationCheck, AircraftType } from '../utils/calculations';
 import type { AircraftDimensions } from '../utils/calculations';
 import PerformanceChart from './PerformanceChart';
 import ElectricSystemAdvisor from './ElectricSystemAdvisor';
+import MassBalancePanel from './MassBalancePanel';
+import type { BalanceResult, ComponentSettings } from '../utils/components';
+import type { Layout } from '../utils/geometry';
 
 interface FlightAssistantProps {
   metrics: AircraftMetrics;
@@ -13,12 +16,16 @@ interface FlightAssistantProps {
   isDarkMode: boolean;
   aircraftType: AircraftType;
   dimensions: AircraftDimensions;
+  balance: BalanceResult | null;
+  components: ComponentSettings;
+  onComponentsChange: (c: ComponentSettings) => void;
+  layout: Layout;
 }
 
-export default function FlightAssistant({ metrics, checks, unit, isDarkMode, aircraftType, dimensions }: FlightAssistantProps) {
+export default function FlightAssistant({ metrics, checks, unit, isDarkMode, aircraftType, dimensions, balance, components, onComponentsChange, layout }: FlightAssistantProps) {
   const { t, i18n } = useTranslation();
   const [openFixId, setOpenFixId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'analysis' | 'electric'>('analysis');
+  const [activeTab, setActiveTab] = useState<'analysis' | 'electric' | 'balance'>('analysis');
 
   const lang = i18n.language === 'pt' ? 'pt' : 'en';
 
@@ -66,7 +73,7 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
               : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
           ].join(' ')}
         >
-          {lang === 'pt' ? 'Análise Aero' : 'Aero Analysis'}
+          {lang === 'pt' ? 'Aero' : 'Aero'}
         </button>
         <button
           onClick={() => setActiveTab('electric')}
@@ -78,7 +85,19 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
           ].join(' ')}
         >
           <Zap size={12} />
-          {lang === 'pt' ? 'Sistema Elétrico' : 'Electric System'}
+          {lang === 'pt' ? 'Elétrico' : 'Electric'}
+        </button>
+        <button
+          onClick={() => setActiveTab('balance')}
+          className={[
+            'flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors',
+            activeTab === 'balance'
+              ? 'border-b-2 border-violet-500 text-violet-600 dark:text-violet-400'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
+          ].join(' ')}
+        >
+          <Scale size={12} />
+          {t('mb_tab')}
         </button>
       </div>
 
@@ -211,12 +230,14 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
             </div>
           </div>
         </div>
-      ) : (
+      ) : activeTab === 'electric' ? (
         <ElectricSystemAdvisor
           dimensions={dimensions}
           aircraftType={aircraftType}
           unit={unit}
         />
+      ) : (
+        <MassBalancePanel balance={balance} settings={components} onChange={onComponentsChange} layout={layout} />
       )}
     </aside>
   );

@@ -1,0 +1,342 @@
+/**
+ * Onboard components (servos, battery, ESC, receiver, motor), their placement,
+ * the control linkages, and the mass & balance of the whole aircraft.
+ *
+ * All positions here are in MILLIMETRES using the layout frame:
+ *   s = station aft of the nose (mm), x = span (right +), y = up.
+ * Masses in grams.
+ */
+import * as THREE from 'three';
+import type { AirfoilType } from './calculations';
+import type { Layout } from './geometry';
+import { getAirfoil } from './airfoils';
+import { buildPrintPlan, DEFAULT_PRINT_SETTINGS, type PrintPlan } from './printParts';
+
+export type ServoKey = 'micro5' | 'sg90' | 'mg90s' | 'mid17' | 'standard';
+export type BatteryKey = 'auto' | string;
+
+export interface ServoSpec { key: ServoKey; label: string; mass: number; l: number; w: number; h: number }
+export interface BatterySpec { key: string; cells: number; mAh: number; label: string; mass: number; l: number; w: number; h: number }
+
+// Body sizes (mm): l = length (incl. no tabs), w = width, h = height
+export const SERVOS: ServoSpec[] = [
+  { key: 'micro5', label: '5 g micro (HK-5330)', mass: 5, l: 20, w: 8.5, h: 18 },
+  { key: 'sg90', label: '9 g (SG90 / ES08MA)', mass: 9, l: 23, w: 12.5, h: 22.5 },
+  { key: 'mg90s', label: '13 g metal (MG90S)', mass: 13.4, l: 23, w: 12.5, h: 22.5 },
+  { key: 'mid17', label: '17 g (HXT-17 / HS-82)', mass: 17, l: 29, w: 13, h: 30 },
+  { key: 'standard', label: 'Standard 40 g (MG996R)', mass: 45, l: 40.5, w: 20, h: 37 },
+];
+
+export const BATTERIES: BatterySpec[] = [
+  { key: '2s800', cells: 2, mAh: 800, label: '2S 800 mAh', mass: 48, l: 60, w: 30, h: 13 },
+  { key: '2s1000', cells: 2, mAh: 1000, label: '2S 1000 mAh', mass: 58, l: 70, w: 30, h: 14 },
+  { key: '3s850', cells: 3, mAh: 850, label: '3S 850 mAh', mass: 72, l: 60, w: 30, h: 20 },
+  { key: '3s1000', cells: 3, mAh: 1000, label: '3S 1000 mAh', mass: 88, l: 72, w: 34, h: 18 },
+  { key: '3s1300', cells: 3, mAh: 1300, label: '3S 1300 mAh', mass: 110, l: 72, w: 35, h: 22 },
+  { key: '3s1800', cells: 3, mAh: 1800, label: '3S 1800 mAh', mass: 150, l: 98, w: 34, h: 22 },
+  { key: '3s2200', cells: 3, mAh: 2200, label: '3S 2200 mAh', mass: 180, l: 105, w: 34, h: 25 },
+  { key: '4s1500', cells: 4, mAh: 1500, label: '4S 1500 mAh', mass: 170, l: 78, w: 35, h: 33 },
+  { key: '4s2200', cells: 4, mAh: 2200, label: '4S 2200 mAh', mass: 235, l: 105, w: 34, h: 33 },
+  { key: '4s3300', cells: 4, mAh: 3300, label: '4S 3300 mAh', mass: 340, l: 135, w: 43, h: 31 },
+];
+
+export interface ComponentSettings { servo: ServoKey; battery: BatteryKey }
+export const DEFAULT_COMPONENTS: ComponentSettings = { servo: 'sg90', battery: 'auto' };
+
+export type ItemKind = 'airframe' | 'spar' | 'motor' | 'prop' | 'esc' | 'battery' | 'servo' | 'rx' | 'misc' | 'ballast';
+
+export const COMPONENT_COLORS: Partial<Record<ItemKind, string>> = {
+  servo: '#7c3aed',
+  battery: '#10b981',
+  esc: '#ef4444',
+  rx: '#0ea5e9',
+  ballast: '#52525b',
+};
+
+export interface MassItem {
+  id: string;
+  kind: ItemKind;
+  labelKey: string;
+  detail?: string;
+  mass: number;               // g
+  s: number; x: number; y: number;          // centre (mm)
+  size?: [number, number, number];          // [span (x), height (y), length (s)] mm, for boxes
+  rotZ?: number;                            // optional rotation about the flight axis (rad)
+}
+
+export interface Linkage { id: string; from: [number, number, number]; to: [number, number, number]; length: number } // [x,y,s] mm
+
+export interface BalanceResult {
+  items: MassItem[];
+  linkages: Linkage[];
+  servo: ServoSpec;
+  battery: BatterySpec;
+  auw: number;                // g
+  airframe: number;           // g (printed parts + spars)
+  cgTarget: number;           // station mm
+  cgAchieved: number;         // station mm
+  batteryRange: [number, number];
+  ballast: { mass: number; s: number } | null;
+  wingLoading: number;        // g/dm²
+  warnings: { key: string; params?: Record<string, string | number> }[];
+}
+
+// LW-PLA vase-mode shell: ~0.45 mm wall at ~0.7 g/cm³ (foamed at ~230 °C)
+const SHELL_G_PER_MM2 = 0.45 * 0.7e-3;
+const CARBON = 1.55e-3; // g/mm³
+
+function motorMass(propIn: number) {
+  if (propIn <= 6) return 18;     // 1806
+  if (propIn <= 8) return 28;     // 2204
+  if (propIn <= 10) return 52;    // 2212
+  if (propIn <= 11) return 76;    // 2216
+  return 90;                      // 2826
+}
+function escSpec(propIn: number) {
+  if (propIn <= 7) return { amps: 12, mass: 12, l: 38, w: 18, h: 7 };
+  if (propIn <= 10) return { amps: 30, mass: 28, l: 50, w: 25, h: 10 };
+  return { amps: 45, mass: 45, l: 60, w: 30, h: 12 };
+}
+const RX = { mass: 10, l: 35, w: 20, h: 10 };
+
+function meshAreaAndCentroid(geo: THREE.BufferGeometry) {
+  const p = geo.attributes.position as THREE.BufferAttribute;
+  const idx = geo.getIndex()!;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3();
+  let area = 0; const cen = new THREE.Vector3();
+  for (let t = 0; t < idx.count; t += 3) {
+    a.fromBufferAttribute(p, idx.getX(t)); b.fromBufferAttribute(p, idx.getX(t + 1)); c.fromBufferAttribute(p, idx.getX(t + 2));
+    const ar = ab.subVectors(b, a).cross(ac.subVectors(c, a)).length() / 2;
+    area += ar;
+    cen.addScaledVector(a.clone().add(b).add(c), ar / 3);
+  }
+  return { area, centroid: area > 0 ? cen.multiplyScalar(1 / area) : cen };
+}
+
+function sparMass(d: number, len: number) {
+  // ≥ 5 mm: tube with 1 mm wall; below: solid rod
+  const ring = d >= 5 ? Math.PI / 4 * (d * d - (d - 2) * (d - 2)) : Math.PI / 4 * d * d;
+  return ring * len * CARBON;
+}
+
+/**
+ * Places the components and solves the battery position so the CG lands on the
+ * target (layout.cgS). Pass an existing print plan to avoid rebuilding it.
+ */
+export function computeBalance(L: Layout, airfoil: AirfoilType, settings: ComponentSettings, plan?: PrintPlan): BalanceResult {
+  const mm = L.toCm * 10;
+  const ownPlan = !plan;
+  const P = plan ?? buildPrintPlan(L, airfoil, DEFAULT_PRINT_SETTINGS);
+  const items: MassItem[] = [];
+  const linkages: Linkage[] = [];
+  const warnings: BalanceResult['warnings'] = [];
+  const w = L.wing;
+  const af = getAirfoil(airfoil);
+  const servo = SERVOS.find(s => s.key === settings.servo) ?? SERVOS[1];
+  const propIn = L.prop.diameter * L.toCm / 2.54;
+
+  // ── Airframe (printed shells), grouped by part kind ──
+  const groups = new Map<string, { mass: number; ms: number; mx: number; my: number }>();
+  P.sections.forEach(sec => {
+    const { area, centroid } = meshAreaAndCentroid(sec.geometry);
+    const m = area * SHELL_G_PER_MM2;
+    const g = groups.get(sec.kind) ?? { mass: 0, ms: 0, mx: 0, my: 0 };
+    g.mass += m; g.ms += m * -centroid.z; g.mx += m * centroid.x; g.my += m * centroid.y;
+    groups.set(sec.kind, g);
+  });
+  groups.forEach((g, kind) => {
+    items.push({ id: `airframe_${kind}`, kind: 'airframe', labelKey: `mb_part_${kind}`, mass: g.mass, s: g.ms / g.mass, x: 0, y: g.my / g.mass });
+  });
+  // Spars (centred on the wing/tail they belong to)
+  P.spars.forEach(sp => {
+    const m = sparMass(sp.diameter, sp.length) * sp.count;
+    let s = w.leAt(0.5) * mm + w.chordAt(0.5) * mm * (sp.id === 'rear' ? 0.6 : 0.28);
+    if (sp.id === 'tail' && L.hStab) s = (L.hStab.leS + L.hStab.rootChord * 0.3) * mm;
+    if (sp.id === 'fin' && L.fin) s = (L.fin.leS + L.fin.rootChord * 0.3) * mm;
+    items.push({ id: `spar_${sp.id}`, kind: 'spar', labelKey: sp.part, detail: `Ø${sp.diameter} × ${sp.length} mm × ${sp.count}`, mass: m, s, x: 0, y: w.mountY * mm });
+  });
+  if (ownPlan) P.sections.forEach(s => s.geometry.dispose());
+  const airframe = items.reduce((a, i) => a + i.mass, 0);
+
+  // ── Motor, prop, ESC ──
+  const m = L.motor;
+  const motorS = (m.mountS + m.dir * m.length / 2) * mm;
+  items.push({ id: 'motor', kind: 'motor', labelKey: 'mb_motor', mass: motorMass(propIn), s: motorS, x: 0, y: L.prop.y * mm });
+  items.push({ id: 'prop', kind: 'prop', labelKey: 'mb_prop', detail: L.prop.label, mass: Math.round(1.4 * propIn), s: L.prop.s * mm, x: 0, y: L.prop.y * mm });
+  const esc = escSpec(propIn);
+
+  // ── Servos + linkages ──
+  const hingeX = 1 - L.aileron.chordFrac;
+  const mainX = 0.28, rearX = Math.min(0.62, hingeX - 0.1);
+  const servoXFrac = (mainX + rearX) / 2;
+  const fS = L.aileron.f0 + 0.12 * (L.aileron.f1 - L.aileron.f0);
+  const cS = w.chordAt(fS) * mm;
+  const wingServo = (side: 1 | -1) => {
+    const x = side * fS * w.halfSpan * mm;
+    const s = w.leAt(fS) * mm + servoXFrac * cS;
+    const midY = w.yAt(fS) * mm + (af.upper(servoXFrac) + af.lower(servoXFrac)) / 2 * cS;
+    items.push({
+      id: `servo_wing_${side > 0 ? 'R' : 'L'}`, kind: 'servo', labelKey: L.isFW ? 'mb_servo_elevon' : 'mb_servo_aileron',
+      detail: servo.label, mass: servo.mass, s, x, y: midY,
+      size: [servo.l, servo.w, servo.h], // lying flat: long axis span-wise, height along the chord
+    });
+    // Arm on the lower side, pushrod aft to the horn on the aileron
+    const armY = w.yAt(fS) * mm + af.lower(servoXFrac) * cS - 4;
+    const hornS = w.leAt(fS) * mm + (hingeX + 0.04) * cS;
+    const hornY = w.yAt(fS) * mm + af.lower(hingeX + 0.04) * cS - 8;
+    const from: [number, number, number] = [x, armY, s + servo.h * 0.3];
+    const to: [number, number, number] = [x, hornY, hornS];
+    linkages.push({ id: `link_wing_${side > 0 ? 'R' : 'L'}`, from, to, length: dist(from, to) });
+  };
+  wingServo(1); wingServo(-1);
+  const thickAtServo = (af.upper(servoXFrac) - af.lower(servoXFrac)) * cS;
+  if (servo.w + 2 > thickAtServo) {
+    warnings.push({ key: 'mb_warn_servo_thick', params: { t: thickAtServo.toFixed(1), h: servo.w } });
+  }
+
+  if (!L.isFW && L.fuselage && L.hStab && L.fin) {
+    const fz = L.fuselage;
+    const sServo = (w.leS + w.rootChord) * mm + servo.l / 2 + 15;
+    const sec = fz.section(sServo / mm);
+    const baseY = (sec.yc - sec.h / 2) * mm + servo.h / 2 + 3;
+    // Two servos side by side, standing, long axis along the fuselage
+    ([['elev', -1], ['rudder', 1]] as const).forEach(([id, side]) => {
+      const x = side * (servo.w / 2 + 1);
+      items.push({ id: `servo_${id}`, kind: 'servo', labelKey: id === 'elev' ? 'mb_servo_elevator' : 'mb_servo_rudder', detail: servo.label, mass: servo.mass, s: sServo, x, y: baseY, size: [servo.w, servo.h, servo.l] });
+    });
+    if ((sec.w * mm) < servo.w * 2 + 6 || (sec.h * mm) < servo.h + 6) {
+      warnings.push({ key: 'mb_warn_servo_fuse' });
+    }
+    const h = L.hStab, f = L.fin;
+    const eFrom: [number, number, number] = [-(servo.w / 2 + 1), baseY + servo.h / 2, sServo - servo.l * 0.25];
+    const eTo: [number, number, number] = [-12, h.y * mm - 10, (h.leS + h.rootChord * (1 - h.hingeFrac) + h.rootChord * 0.05) * mm];
+    const rFrom: [number, number, number] = [servo.w / 2 + 1, baseY + servo.h / 2, sServo - servo.l * 0.25];
+    const rTo: [number, number, number] = [8, f.y * mm + 15, (f.leS + f.rootChord * (1 - f.hingeFrac) + f.rootChord * 0.05) * mm];
+    linkages.push({ id: 'link_elev', from: eFrom, to: eTo, length: dist(eFrom, eTo) });
+    linkages.push({ id: 'link_rudder', from: rFrom, to: rTo, length: dist(rFrom, rTo) });
+  }
+
+  // ── ESC + receiver ──
+  let escPos: [number, number, number];
+  let rxPos: [number, number, number];
+  if (!L.isFW && L.fuselage) {
+    const fz = L.fuselage;
+    const sE = 10 + esc.l / 2;
+    const secE = fz.section(sE / mm);
+    escPos = [0, (secE.yc + secE.h / 2) * mm - esc.h / 2 - 3, sE];
+    const sR = L.cgS * mm + 25;
+    const secR = fz.section(sR / mm);
+    rxPos = [0, (secR.yc + secR.h / 2) * mm - RX.h / 2 - 3, sR];
+  } else {
+    // Flying wing: electronics as far forward as possible (they help the balance);
+    // the motor wires run aft to the pusher.
+    const sE = L.cgS * mm;
+    const fracE = (sE - w.leAt(0) * mm) / (w.rootChord * mm);
+    escPos = [0, w.mountY * mm + (af.upper(fracE) + af.lower(fracE)) / 2 * w.rootChord * mm, sE];
+    rxPos = [RX.w / 2 + 30, w.mountY * mm, L.cgS * mm - 10];
+  }
+  items.push({ id: 'esc', kind: 'esc', labelKey: 'mb_esc', detail: `${esc.amps} A`, mass: esc.mass, s: escPos[2], x: escPos[0], y: escPos[1], size: [esc.w, esc.h, esc.l] });
+  items.push({ id: 'rx', kind: 'rx', labelKey: 'mb_rx', mass: RX.mass, s: rxPos[2], x: rxPos[0], y: rxPos[1], size: [RX.w, RX.h, RX.l] });
+
+  // Wiring, glue, hinges, horns
+  const sub = items.reduce((a, i) => a + i.mass, 0);
+  const miscMass = sub * 0.06 + 4 * 2;
+  const miscS = items.reduce((a, i) => a + i.mass * i.s, 0) / sub;
+  items.push({ id: 'misc', kind: 'misc', labelKey: 'mb_misc', mass: miscMass, s: miscS, x: 0, y: 0 });
+
+  // ── Battery: bay limits, then position that puts the CG on target ──
+  const M0 = items.reduce((a, i) => a + i.mass, 0);
+  const S0 = items.reduce((a, i) => a + i.mass * i.s, 0);
+  const T = L.cgS * mm;
+  const bay = (bt: BatterySpec): { range: [number, number]; y: number } => {
+    if (!L.isFW && L.fuselage) {
+      const fz = L.fuselage;
+      const lo = 10 + bt.l / 2;                          // right behind the firewall
+      const hi = (w.leS + w.rootChord) * mm - bt.l / 2;  // up to the wing TE
+      const secMid = fz.section(((lo + hi) / 2) / mm);
+      return { range: [lo, Math.max(lo, hi)], y: (secMid.yc - secMid.h / 2) * mm + bt.h / 2 + 2 };
+    }
+    const lo = w.leAt(0) * mm + 8 + bt.l / 2;
+    const hi = escPos[2] - esc.l / 2 - 5 - bt.l / 2;
+    const frac = Math.min(0.5, Math.max(0.1, (lo - w.leAt(0) * mm) / (w.rootChord * mm)));
+    return { range: [lo, Math.max(lo, hi)], y: w.mountY * mm + (af.upper(frac) + af.lower(frac)) / 2 * w.rootChord * mm };
+  };
+  const solve = (bt: BatterySpec) => {
+    const { range, y } = bay(bt);
+    const ideal = (T * (M0 + bt.mass) - S0) / bt.mass;
+    const pos = Math.min(range[1], Math.max(range[0], ideal));
+    return { range, y, ideal, pos };
+  };
+
+  const cells = propIn <= 7 ? 2 : propIn <= 11 ? 3 : 4;
+  let battery: BatterySpec;
+  if (settings.battery !== 'auto' && BATTERIES.some(b => b.key === settings.battery)) {
+    battery = BATTERIES.find(b => b.key === settings.battery)!;
+  } else {
+    // Target ≈ 22 % of AUW, but prefer the pack that needs the least ballast
+    const want = (0.22 / 0.78) * M0;
+    const pool = BATTERIES.filter(b => b.cells === cells);
+    const score = (b: BatterySpec) => {
+      const r = solve(b);
+      const Mt = M0 + b.mass;
+      const S = S0 + b.mass * r.pos;
+      const sN = L.isFW ? w.leAt(0) * mm + 10 : 5;
+      const need = r.ideal < r.range[0] - 1 ? Math.max(0, (S - T * Mt) / (T - sN)) : 0;
+      return need * 3 + Math.abs(b.mass - want) + (b.mass > want * 1.8 ? 1000 : 0);
+    };
+    battery = pool.reduce((best, b) => (score(b) < score(best) ? b : best), pool[0]);
+  }
+
+  const mb = battery.mass;
+  const sol = solve(battery);
+  const range = sol.range;
+  const ideal = sol.ideal;
+  const bS = sol.pos;
+  items.push({ id: 'battery', kind: 'battery', labelKey: 'mb_battery', detail: battery.label, mass: mb, s: bS, x: 0, y: sol.y, size: [battery.w, battery.h, battery.l] });
+
+  let ballast: BalanceResult['ballast'] = null;
+  const Mt = M0 + mb;
+  if (ideal < range[0] - 1) {
+    // Tail heavy even with the battery all the way forward → nose ballast
+    const sN = L.isFW ? w.leAt(0) * mm + 10 : 5;
+    const mBal = (S0 + mb * bS - T * Mt) / (T - sN);
+    if (mBal > 0.5) {
+      ballast = { mass: mBal, s: sN };
+      items.push({ id: 'ballast', kind: 'ballast', labelKey: 'mb_ballast', mass: mBal, s: sN, x: 0, y: L.isFW ? w.mountY * mm : (L.fuselage ? (L.fuselage.section(0).yc) * mm : 0) });
+      warnings.push({ key: 'mb_warn_nose_ballast', params: { g: Math.round(mBal) } });
+    }
+  } else if (ideal > range[1] + 1) {
+    const tailS = L.isFW ? w.teAt(0) * mm : (L.fuselage ? L.fuselage.length * mm - 20 : T + 100);
+    const mBal = (T * Mt - (S0 + mb * bS)) / (tailS - T);
+    if (mBal > 0.5) {
+      ballast = { mass: mBal, s: tailS };
+      items.push({ id: 'ballast', kind: 'ballast', labelKey: 'mb_ballast', mass: mBal, s: tailS, x: 0, y: 0 });
+      warnings.push({ key: 'mb_warn_tail_ballast', params: { g: Math.round(mBal) } });
+    }
+  }
+  if (!L.isFW && L.fuselage) {
+    const sec = L.fuselage.section(bS / mm);
+    if (battery.w + 4 > sec.w * mm || battery.h + 4 > sec.h * mm) {
+      warnings.push({ key: 'mb_warn_battery_fit', params: { w: Math.round(sec.w * mm), h: Math.round(sec.h * mm) } });
+    }
+  } else {
+    const t = (af.upper(0.3) - af.lower(0.3)) * w.rootChord * mm;
+    if (battery.h + 3 > t) warnings.push({ key: 'mb_warn_battery_thick', params: { t: Math.round(t) } });
+  }
+
+  const auw = items.reduce((a, i) => a + i.mass, 0);
+  const cgAchieved = items.reduce((a, i) => a + i.mass * i.s, 0) / auw;
+  const wingAreaDm2 = ((w.rootChord + w.tipChord) / 2 * w.halfSpan * 2) * mm * mm / 1e4;
+
+  return {
+    items, linkages, servo, battery, auw, airframe,
+    cgTarget: T, cgAchieved, batteryRange: range, ballast,
+    wingLoading: auw / wingAreaDm2,
+    warnings,
+  };
+}
+
+function dist(a: [number, number, number], b: [number, number, number]) {
+  return Math.round(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+}

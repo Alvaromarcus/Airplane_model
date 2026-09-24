@@ -12,6 +12,7 @@
 - **Internationalization & Unit Conversion:** Supports both English (EN) and Portuguese (PT-BR) languages, and allows toggling between Centimeters (cm) and Millimeters (mm) while retaining physical scale accuracy.
 - **Editable Control Surfaces:** Ailerons/elevons (start, end, chord %), elevator and rudder chord %, with live sizes and sizing checks — shown in 2D, 3D and the PDF.
 - **3D Printing (STL export):** Splits the aircraft into sections that fit your printer's build volume, ready for LW-PLA in spiral vase mode, with keyhole spar channels for carbon rods, automatic chord-wise splits for large chords, and a ZIP with a README (slicer settings, parts list, spar lengths, assembly).
+- **Weight & Balance:** Estimates the all-up weight (printed LW-PLA shells, carbon spars, motor, prop, ESC, battery, servos, receiver), places the components and pushrods in 2D/3D (x-ray view), and solves the battery position that puts the CG on target — warning when ballast would be needed.
 - **Dark Mode Support:** A sleek, toggleable dark mode for comfortable designing in any lighting condition.
 
 ## Tech Stack
