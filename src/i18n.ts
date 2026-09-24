@@ -68,7 +68,7 @@ const resources = {
       "sm_low": "Warning: Static Margin < 5%. The plane is tail-heavy and will be pitch unstable.",
       "sm_high": "Warning: Static Margin > 20%. The plane is nose-heavy and will be sluggish in pitch.",
       "control_surfaces": "Control Surfaces Recommendations",
-      "ailerons_rec": "Ailerons: 10-15% of half-wing area",
+      "ailerons_rec": "Ailerons: 6–16% of wing area, 20–25% of local chord",
       "elevator_rec": "Elevator: 25-30% of Horizontal Stabilizer",
       "rudder_rec": "Rudder: 30-50% of Vertical Stabilizer",
       "top_view": "Top View",
@@ -115,6 +115,45 @@ const resources = {
       "prop_pusher_badge": "Pusher (P)",
       "prop_tractor_hint": "Motor at nose, pulls aircraft",
       "prop_pusher_hint": "Motor behind wing, pushes aircraft",
+      "view_3d": "3D View",
+      "view_2d": "2D View",
+      "drag_to_rotate": "Drag to rotate · Scroll to zoom",
+      "pause_rotation": "Pause rotation",
+      "start_rotation": "Start rotation",
+      "scene_error": "The 3D view could not be displayed on this device (WebGL unavailable). The 2D view and PDF export still work.",
+      "control_surfaces_short": "Control surfaces",
+      "control_surfaces_title": "Control Surfaces",
+      "elevons": "Elevons",
+      "ailerons": "Ailerons",
+      "elevator": "Elevator",
+      "rudder": "Rudder",
+      "cs_start": "Start (% semi-span)",
+      "cs_end": "End (% semi-span)",
+      "cs_chord": "Chord (% of local chord)",
+      "cs_chord_stab": "Chord (% of stab chord)",
+      "cs_chord_fin": "Chord (% of fin chord)",
+      "cs_each": "each",
+      "cs_of_wing": "of wing area",
+      "cs_of_stab": "of stab area",
+      "cs_of_fin": "of fin area",
+      "cs_length": "length",
+      "cs_chord_short": "chord",
+      "fuselage_width": "Max Width",
+      "fuselage_height": "Max Height",
+      "cg_position_fw": "Theoretical CG (18% MAC)",
+      "cg_from_le": "from root LE",
+      "tail_beyond_fuse": "Warning: The tail extends beyond the end of the fuselage.",
+      "fix_tail_beyond_fuse": "Increase the fuselage total length or reduce the wing-to-tail distance so the stabilizers sit on the fuselage.",
+      "aileron_size": "Warning: Aileron area is outside the usual 6–16% of wing area.",
+      "fix_aileron_size": "Typical ailerons span 40–50% of each semi-span, from ~50% to ~95%, with 20–25% of the local chord.",
+      "elevon_size": "Warning: Elevon area is outside the usual 8–22% of wing area.",
+      "fix_elevon_size": "Typical elevons run from ~25% to ~95% of the semi-span with 18–25% of the local chord.",
+      "elevator_size": "Warning: Elevator is outside the usual 20–45% of the horizontal stabilizer.",
+      "fix_elevator_size": "Set the elevator chord to 25–35% of the stabilizer chord.",
+      "rudder_size": "Warning: Rudder is outside the usual 25–55% of the vertical stabilizer.",
+      "fix_rudder_size": "Set the rudder chord to 30–50% of the fin chord.",
+      "ailerons_rec_fw": "Elevons: 8–22% of wing area, 18–25% of local chord",
+      "winglet_area": "Winglet Area (both)",
     }
   },
   pt: {
@@ -183,7 +222,7 @@ const resources = {
       "sm_low": "Aviso: Margem Estática < 5%. O avião está com peso de cauda e será instável em arfagem.",
       "sm_high": "Aviso: Margem Estática > 20%. O avião está com peso de nariz e será lento em arfagem.",
       "control_surfaces": "Recomendações de Superfícies de Controle",
-      "ailerons_rec": "Ailerons: 10-15% da área de meia asa",
+      "ailerons_rec": "Ailerons: 6–16% da área da asa, 20–25% da corda local",
       "elevator_rec": "Profundor: 25-30% do Estabilizador Horizontal",
       "rudder_rec": "Leme: 30-50% do Estabilizador Vertical",
       "top_view": "Vista Superior",
@@ -230,15 +269,67 @@ const resources = {
       "prop_pusher_badge": "Pusher (P)",
       "prop_tractor_hint": "Motor no nariz, puxa o avião",
       "prop_pusher_hint": "Motor atrás da asa, empurra o avião",
+      "view_3d": "Vista 3D",
+      "view_2d": "Vista 2D",
+      "drag_to_rotate": "Arraste para girar · Role para zoom",
+      "pause_rotation": "Pausar rotação",
+      "start_rotation": "Iniciar rotação",
+      "scene_error": "A vista 3D não pôde ser exibida neste dispositivo (WebGL indisponível). A vista 2D e a exportação em PDF continuam funcionando.",
+      "control_surfaces_short": "Superfícies de comando",
+      "control_surfaces_title": "Superfícies de Comando",
+      "elevons": "Elevons",
+      "ailerons": "Ailerons",
+      "elevator": "Profundor",
+      "rudder": "Leme",
+      "cs_start": "Início (% da semi-envergadura)",
+      "cs_end": "Fim (% da semi-envergadura)",
+      "cs_chord": "Corda (% da corda local)",
+      "cs_chord_stab": "Corda (% da corda do estab.)",
+      "cs_chord_fin": "Corda (% da corda da deriva)",
+      "cs_each": "cada",
+      "cs_of_wing": "da área da asa",
+      "cs_of_stab": "da área do estab.",
+      "cs_of_fin": "da área da deriva",
+      "cs_length": "comprimento",
+      "cs_chord_short": "corda",
+      "fuselage_width": "Largura Máx.",
+      "fuselage_height": "Altura Máx.",
+      "cg_position_fw": "CG Teórico (18% MAC)",
+      "cg_from_le": "do bordo de ataque da raiz",
+      "tail_beyond_fuse": "Aviso: A cauda ultrapassa o final da fuselagem.",
+      "fix_tail_beyond_fuse": "Aumente o comprimento total da fuselagem ou reduza a distância asa-cauda para que os estabilizadores fiquem sobre a fuselagem.",
+      "aileron_size": "Aviso: A área dos ailerons está fora da faixa usual de 6–16% da área da asa.",
+      "fix_aileron_size": "Ailerons típicos ocupam 40–50% de cada semi-asa, de ~50% a ~95%, com 20–25% da corda local.",
+      "elevon_size": "Aviso: A área dos elevons está fora da faixa usual de 8–22% da área da asa.",
+      "fix_elevon_size": "Elevons típicos vão de ~25% a ~95% da semi-envergadura com 18–25% da corda local.",
+      "elevator_size": "Aviso: O profundor está fora da faixa usual de 20–45% do estabilizador horizontal.",
+      "fix_elevator_size": "Use a corda do profundor entre 25–35% da corda do estabilizador.",
+      "rudder_size": "Aviso: O leme está fora da faixa usual de 25–55% do estabilizador vertical.",
+      "fix_rudder_size": "Use a corda do leme entre 30–50% da corda da deriva.",
+      "ailerons_rec_fw": "Elevons: 8–22% da área da asa, 18–25% da corda local",
+      "winglet_area": "Área dos Winglets (ambos)",
     }
   }
 };
+
+function detectLanguage(): 'en' | 'pt' {
+  try {
+    const saved = localStorage.getItem('aerobuilder_lang');
+    if (saved === 'en' || saved === 'pt') return saved;
+  } catch { /* storage unavailable */ }
+  return typeof navigator !== 'undefined' && navigator.language?.toLowerCase().startsWith('pt') ? 'pt' : 'en';
+}
+
+const initialLang = detectLanguage();
+if (typeof document !== 'undefined') {
+  document.documentElement.lang = initialLang === 'pt' ? 'pt-BR' : 'en-US';
+}
 
 i18n
   .use(initReactI18next)
   .init({
     resources,
-    lng: "en", // default language
+    lng: initialLang,
     fallbackLng: "en",
     interpolation: {
       escapeValue: false

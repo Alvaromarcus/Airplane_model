@@ -1,152 +1,117 @@
-import * as THREE from 'three';
 import type { AirfoilType } from './calculations';
 
-// Cache for generated geometries to avoid recalculating on every render
-const AIRFOIL_CACHE: Record<string, THREE.Vector2[]> = {};
-
 /**
- * Generates exact coordinates for a 4-digit NACA airfoil.
- * @param digits e.g. '4412', '0012'
- * @param steps Number of segments for upper and lower surfaces
- * @returns Array of THREE.Vector2 forming the complete closed loop of the airfoil.
+ * Airfoil sampling.
+ *
+ * Every airfoil is exposed as two functions of the chord fraction x ∈ [0,1]:
+ * upper(x) and lower(x), both as a fraction of the chord. Working with y(x)
+ * instead of a closed polygon makes it trivial to cut the section at the
+ * hinge line (ailerons, elevators, rudders) and to build water-tight meshes.
  */
-export function generateNACA4(digits: string, steps: number = 40): THREE.Vector2[] {
-  const m = parseInt(digits[0], 10) / 100.0;
-  const p = parseInt(digits[1], 10) / 10.0;
-  const t = parseInt(digits.substring(2), 10) / 100.0;
+export type TailAirfoil = 'sym_tail';
+export interface AirfoilSurface {
+  upper: (x: number) => number;
+  lower: (x: number) => number;
+  thickness: number; // max thickness / chord (approx.)
+}
 
-  const pointsUpper: THREE.Vector2[] = [];
-  const pointsLower: THREE.Vector2[] = [];
+function naca4(digits: string): AirfoilSurface {
+  const m = parseInt(digits[0], 10) / 100;
+  const p = parseInt(digits[1], 10) / 10;
+  const t = parseInt(digits.substring(2), 10) / 100;
+  const yt = (x: number) =>
+    5 * t * (0.2969 * Math.sqrt(x) - 0.126 * x - 0.3516 * x * x + 0.2843 * x ** 3 - 0.1036 * x ** 4); // closed TE
+  const yc = (x: number) => {
+    if (m === 0 || p === 0) return 0;
+    return x <= p
+      ? (m / (p * p)) * (2 * p * x - x * x)
+      : (m / ((1 - p) ** 2)) * (1 - 2 * p + 2 * p * x - x * x);
+  };
+  return {
+    upper: x => yc(x) + yt(x),
+    lower: x => yc(x) - yt(x),
+    thickness: t,
+  };
+}
 
-  for (let i = 0; i <= steps; i++) {
-    // Cosine spacing for better resolution at leading and trailing edges
-    const beta = (i / steps) * Math.PI;
-    const x = 0.5 * (1 - Math.cos(beta));
-
-    // Thickness distribution
-    const yt = 5 * t * (
-      0.2969 * Math.sqrt(x) -
-      0.1260 * x -
-      0.3516 * Math.pow(x, 2) +
-      0.2843 * Math.pow(x, 3) -
-      0.1015 * Math.pow(x, 4)
-    );
-
-    let yc = 0;
-    let dyc_dx = 0;
-
-    // Camber line and its derivative
-    if (m > 0 && p > 0) {
-      if (x <= p) {
-        yc = (m / Math.pow(p, 2)) * (2 * p * x - Math.pow(x, 2));
-        dyc_dx = (2 * m / Math.pow(p, 2)) * (p - x);
-      } else {
-        yc = (m / Math.pow(1 - p, 2)) * ((1 - 2 * p) + 2 * p * x - Math.pow(x, 2));
-        dyc_dx = (2 * m / Math.pow(1 - p, 2)) * (p - x);
+function interp(table: number[][]) {
+  return (x: number) => {
+    if (x <= table[0][0]) return table[0][1];
+    for (let i = 1; i < table.length; i++) {
+      if (x <= table[i][0]) {
+        const [x0, y0] = table[i - 1];
+        const [x1, y1] = table[i];
+        const k = (x - x0) / (x1 - x0);
+        return y0 + (y1 - y0) * k;
       }
     }
-
-    const theta = Math.atan(dyc_dx);
-
-    // Upper surface coordinates
-    const xu = x - yt * Math.sin(theta);
-    const yu = yc + yt * Math.cos(theta);
-
-    // Lower surface coordinates
-    const xl = x + yt * Math.sin(theta);
-    const yl = yc - yt * Math.cos(theta);
-
-    // Three.js coordinates: leading edge at x=0, trailing edge at x=-1
-    // (We negate X to match the engine's expected orientation where flow goes to -Z but local span is along X.
-    // Wait, the original code used pointsUpper.push(new THREE.Vector2(-xu, yu)) 
-    // We maintain that coordinate orientation for compatibility with createWingGeometry)
-    pointsUpper.push(new THREE.Vector2(-xu, yu));
-    pointsLower.push(new THREE.Vector2(-xl, yl));
-  }
-
-  // Reverse lower points to create a continuous closed loop
-  pointsLower.reverse();
-  
-  // Combine, taking care not to duplicate the trailing edge exactly
-  return [...pointsUpper, ...pointsLower];
+    return table[table.length - 1][1];
+  };
 }
 
-/**
- * Fixed coordinate array for Clark-Y airfoil
- * Format: [x, y] normalized 0 to 1
- */
+// Clark-Y (normalised, standard 11.7 % section)
 const CLARKY_UPPER = [
-  [0, 0.0350], [0.0125, 0.0545], [0.025, 0.0650], [0.05, 0.0790], [0.075, 0.0885],
-  [0.10, 0.0960], [0.15, 0.1068], [0.20, 0.1136], [0.30, 0.1170], [0.40, 0.1140],
-  [0.50, 0.1052], [0.60, 0.0915], [0.70, 0.0735], [0.80, 0.0522], [0.90, 0.0280],
-  [0.95, 0.0149], [1.0, 0.0012]
+  [0, 0.035], [0.005, 0.0445], [0.0125, 0.0545], [0.025, 0.065], [0.05, 0.079], [0.075, 0.0885],
+  [0.1, 0.096], [0.15, 0.1068], [0.2, 0.1136], [0.3, 0.117], [0.4, 0.114],
+  [0.5, 0.1052], [0.6, 0.0915], [0.7, 0.0735], [0.8, 0.0522], [0.9, 0.028],
+  [0.95, 0.0149], [1.0, 0.0012],
 ];
 const CLARKY_LOWER = [
-  [0, 0.0350], [0.0125, 0.0193], [0.025, 0.0147], [0.05, 0.0093], [0.075, 0.0063],
-  [0.10, 0.0042], [0.15, 0.0015], [0.20, 0.0003], [0.30, 0.0000], [0.40, 0.0000],
-  [0.50, 0.0000], [0.60, 0.0000], [0.70, 0.0000], [0.80, 0.0000], [0.90, 0.0000],
-  [0.95, 0.0000], [1.0, 0.0000]
+  [0, 0.035], [0.005, 0.0245], [0.0125, 0.0193], [0.025, 0.0147], [0.05, 0.0093], [0.075, 0.0063],
+  [0.1, 0.0042], [0.15, 0.0015], [0.2, 0.0003], [0.3, 0], [1.0, 0],
 ];
 
-/**
- * Fixed coordinate array for MH45 (Martin Hepperle) flying wing airfoil
- * Format: [x, y] normalized 0 to 1
- */
+// MH45 (Martin Hepperle) — reflexed section for flying wings (9.85 %)
 const MH45_UPPER = [
-  [0.0000, 0.0000], [0.0050, 0.0135], [0.0100, 0.0192], [0.0200, 0.0274], [0.0500, 0.0435],
-  [0.1000, 0.0592], [0.1500, 0.0694], [0.2000, 0.0763], [0.3000, 0.0835], [0.4000, 0.0841],
-  [0.5000, 0.0799], [0.6000, 0.0720], [0.7000, 0.0610], [0.8000, 0.0470], [0.9000, 0.0286],
-  [0.9500, 0.0173], [1.0000, 0.0049]
+  [0, 0], [0.005, 0.0135], [0.01, 0.0192], [0.02, 0.0274], [0.05, 0.0435],
+  [0.1, 0.0592], [0.15, 0.0694], [0.2, 0.0763], [0.3, 0.0835], [0.4, 0.0841],
+  [0.5, 0.0799], [0.6, 0.072], [0.7, 0.061], [0.8, 0.047], [0.9, 0.0286],
+  [0.95, 0.0173], [1.0, 0.0049],
 ];
 const MH45_LOWER = [
-  [0.0000, 0.0000], [0.0050, -0.0106], [0.0100, -0.0142], [0.0200, -0.0189], [0.0500, -0.0264],
-  [0.1000, -0.0321], [0.1500, -0.0345], [0.2000, -0.0353], [0.3000, -0.0341], [0.4000, -0.0305],
-  [0.5000, -0.0253], [0.6000, -0.0190], [0.7000, -0.0121], [0.8000, -0.0053], [0.9000, 0.0005],
-  [0.9500, 0.0025], [1.0000, 0.0049]
+  [0, 0], [0.005, -0.0106], [0.01, -0.0142], [0.02, -0.0189], [0.05, -0.0264],
+  [0.1, -0.0321], [0.15, -0.0345], [0.2, -0.0353], [0.3, -0.0341], [0.4, -0.0305],
+  [0.5, -0.0253], [0.6, -0.019], [0.7, -0.0121], [0.8, -0.0053], [0.9, 0.0005],
+  [0.95, 0.0025], [1.0, 0.0049],
 ];
 
-function buildFixedAirfoil(upper: number[][], lower: number[][]): THREE.Vector2[] {
-  const pointsUpper = upper.map(p => new THREE.Vector2(-p[0], p[1]));
-  const pointsLower = lower.map(p => new THREE.Vector2(-p[0], p[1]));
-  
-  // Create a dense set of points by interpolating
-  // ExtrudeGeometry works best with smoothly spaced points.
-  const splineUpper = new THREE.SplineCurve(pointsUpper);
-  const splineLower = new THREE.SplineCurve(pointsLower);
-  
-  const smoothUpper = splineUpper.getPoints(40);
-  const smoothLower = splineLower.getPoints(40).reverse();
-  
-  return [...smoothUpper, ...smoothLower];
+const CACHE: Record<string, AirfoilSurface> = {};
+
+export function getAirfoil(type: AirfoilType | TailAirfoil): AirfoilSurface {
+  if (CACHE[type]) return CACHE[type];
+  let s: AirfoilSurface;
+  switch (type) {
+    case 'sym_tail': s = naca4('0008'); break;
+    case 'naca0012': s = naca4('0012'); break;
+    case 'naca4412': s = naca4('4412'); break;
+    case 'clarky': s = { upper: interp(CLARKY_UPPER), lower: interp(CLARKY_LOWER), thickness: 0.117 }; break;
+    case 'mh45': s = { upper: interp(MH45_UPPER), lower: interp(MH45_LOWER), thickness: 0.0985 }; break;
+    default: s = naca4('0012');
+  }
+  CACHE[type] = s;
+  return s;
 }
 
 /**
- * Returns exact coordinates for the requested airfoil type.
+ * Chord-wise sample positions between x0 and x1 with cosine clustering at
+ * both ends (dense near the leading edge and at the hinge line).
  */
-export function getAirfoilCoordinates(type: AirfoilType | 'sym_tail'): THREE.Vector2[] {
-  if (AIRFOIL_CACHE[type]) return AIRFOIL_CACHE[type];
-
-  let pts: THREE.Vector2[];
-
-  switch (type) {
-    case 'sym_tail':
-    case 'naca0012':
-      pts = generateNACA4('0012', 40);
-      break;
-    case 'naca4412':
-      pts = generateNACA4('4412', 40);
-      break;
-    case 'clarky':
-      pts = buildFixedAirfoil(CLARKY_UPPER, CLARKY_LOWER);
-      break;
-    case 'mh45':
-      pts = buildFixedAirfoil(MH45_UPPER, MH45_LOWER);
-      break;
-    default:
-      // Fallback for any unknown
-      pts = generateNACA4('0012', 40);
+export function chordSamples(x0: number, x1: number, n = 24): number[] {
+  const xs: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = 0.5 * (1 - Math.cos((Math.PI * i) / (n - 1)));
+    xs.push(x0 + (x1 - x0) * t);
   }
+  return xs;
+}
 
-  AIRFOIL_CACHE[type] = pts;
-  return pts;
+/**
+ * Closed 2D outline (x = chord fraction, y = thickness fraction) of the part of
+ * an airfoil between x0 and x1: upper surface x0→x1, then lower x1→x0.
+ */
+export function airfoilSegment(af: AirfoilSurface, x0: number, x1: number, n = 24): [number, number][] {
+  const xs = chordSamples(x0, x1, n);
+  const up = xs.map(x => [x, af.upper(x)] as [number, number]);
+  const lo = xs.slice().reverse().map(x => [x, af.lower(x)] as [number, number]);
+  return [...up, ...lo];
 }
