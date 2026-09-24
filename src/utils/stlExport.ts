@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { zipSync, strToU8 } from 'fflate';
 import type { AirfoilType } from './calculations';
 import type { Layout } from './geometry';
-import { buildPrintPlan, type PrintPlan, type PrintSection, type PrintSettings } from './printParts';
+import { buildPrintPlan, type PrintPlan, type PrintSection, type PrintSettings, type Pocket } from './printParts';
 
 export interface OrientedSection {
   section: PrintSection;
@@ -105,8 +105,8 @@ export interface ExportResult {
   oriented: OrientedSection[];
 }
 
-export function planAndOrient(L: Layout, airfoil: AirfoilType, settings: PrintSettings) {
-  const plan = buildPrintPlan(L, airfoil, settings);
+export function planAndOrient(L: Layout, airfoil: AirfoilType, settings: PrintSettings, pockets: Pocket[] = []) {
+  const plan = buildPrintPlan(L, airfoil, settings, pockets);
   const oriented = plan.sections.map(sec => orientForPrint(sec, settings));
   return { plan, oriented };
 }
@@ -119,8 +119,9 @@ export function exportSTLZip(
   settings: PrintSettings,
   lang: string,
   t: (k: string, o?: Record<string, unknown>) => string,
+  pockets: Pocket[] = [],
 ): ExportResult {
-  const { plan, oriented } = planAndOrient(L, airfoil, settings);
+  const { plan, oriented } = planAndOrient(L, airfoil, settings, pockets);
   const pt = lang === 'pt';
   const files: Record<string, Uint8Array> = {};
   const folder = (k: string) => String(KIND_ORDER.indexOf(k) + 1).padStart(2, '0') + '_' + k;
@@ -151,12 +152,12 @@ export function exportSTLZip(
     files[pt ? '00_montado_preview/aviao_montado.stl' : '00_assembled_preview/aircraft_assembled.stl'] = toBinarySTL(merged, 'assembled');
   }
 
-  files[pt ? 'LEIA-ME.txt' : 'README.txt'] = strToU8(readme(plan, oriented, L, pt, t));
+  files[pt ? 'LEIA-ME.txt' : 'README.txt'] = strToU8(readme(plan, oriented, L, pt, t, pockets));
   const zip = zipSync(files, { level: 6 });
   return { blob: new Blob([zip as BlobPart], { type: 'application/zip' }), plan, oriented };
 }
 
-function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, pt: boolean, t: (k: string, o?: Record<string, unknown>) => string): string {
+function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, pt: boolean, t: (k: string, o?: Record<string, unknown>) => string, pockets: Pocket[]): string {
   const s = plan.settings;
   const lines: string[] = [];
   const bar = '='.repeat(64);
@@ -213,19 +214,38 @@ function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, pt: boo
       '1. Numeração: _01 é a seção mais próxima da raiz (ou do nariz). _R = direita, _L = esquerda.',
       '2. Passe a longarina pelas seções de cada semi-asa, colando com CA médio ou epóxi.',
       '3. Ailerons/elevons e superfícies móveis: dobradiça de fita ou pinos; o vão de dobradiça já está previsto.',
-      '4. A fuselagem sai oca, sem aberturas: recorte berço da asa, tampa da bateria e passagens',
-      '   de cabos conforme sua montagem (a Fase 3 do AeroBuilder vai gerar isso automaticamente).',
-      '5. Confira o CG antes do primeiro voo (veja o PDF de gabaritos).',
+      '4. Recortes já incluídos (veja RECORTES abaixo). No modo vaso, cada recorte vira um',
+      '   compartimento com paredes próprias; o resto da peça continua oco.',
+      '5. Fuselagem: imprima a seção _01 com 3 camadas de fundo (vira o firewall do motor) e as',
+      '   demais com 0 camadas de fundo (tubos abertos) para passar varetas e fios.',
+      '6. Asa: as camadas de fundo viram nervuras; fure-as (Ø5 mm) para passar o cabo dos servos',
+      '   até a raiz. As varetas saem pela fenda da dobradiça, ao lado do horn.',
+      '7. Confira o CG antes do primeiro voo (aba "Peso & CG" e PDF).',
     );
   } else {
     lines.push(
       '1. Numbering: _01 is the section closest to the root (or nose). _R = right, _L = left.',
       '2. Slide the spar through each half-wing\'s sections, gluing with medium CA or epoxy.',
       '3. Ailerons/elevons and moving surfaces: tape or pin hinges; the hinge gap is built in.',
-      '4. The fuselage is hollow and closed: cut the wing saddle, battery hatch and wiring',
-      '   holes to suit your build (AeroBuilder phase 3 will generate these).',
-      '5. Check the CG before the first flight (see the PDF templates).',
+      '4. Cut-outs are already included (see CUT-OUTS below). In vase mode each cut-out becomes',
+      '   a compartment with its own walls; the rest of the part stays hollow.',
+      '5. Fuselage: print section _01 with 3 bottom layers (it becomes the motor firewall) and',
+      '   the others with 0 bottom layers (open tubes) so pushrods and wires can pass.',
+      '6. Wing: the bottom layers become ribs; drill them (Ø5 mm) to route the servo leads',
+      '   to the root. Pushrods exit through the hinge gap next to the horn.',
+      '7. Check the CG before the first flight ("Weight & CG" tab and PDF).',
     );
+  }
+  if (pockets.length) {
+    lines.push('', pt ? 'RECORTES' : 'CUT-OUTS', '-'.repeat(40));
+    pockets.forEach(p => {
+      const name = t('cut_' + p.id);
+      if (p.part === 'wing') {
+        lines.push(`- ${name}: ${Math.round(p.xb - p.xa)} × ${Math.round(p.sb - p.sa)} mm, ${pt ? 'profundidade' : 'depth'} ${Math.round(p.depth)} mm (${p.side === 'lower' ? (pt ? 'intradorso' : 'lower skin') : (pt ? 'extradorso' : 'upper skin')}${p.xa <= 0 ? (pt ? ', centro da asa' : ', wing centre') : ''})`);
+      } else {
+        lines.push(`- ${name}: ${Math.round(p.sb - p.sa)} × ${Math.round((p.halfWidth ?? 0) * 2)} mm, ${pt ? 'aberto em cima' : 'open on top'} (${pt ? 'estação' : 'station'} ${Math.round(p.sa)}–${Math.round(p.sb)} mm)`);
+      }
+    });
   }
   if (plan.warnings.length) {
     lines.push('', pt ? 'AVISOS' : 'WARNINGS', '-'.repeat(40));

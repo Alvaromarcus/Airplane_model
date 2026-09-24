@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import type { AirfoilType } from '../utils/calculations';
 import type { Layout } from '../utils/geometry';
 import { buildAircraftParts, disposeParts, type PartMesh } from '../utils/mesh';
-import { buildPrintPlan, type PrintSettings } from '../utils/printParts';
+import { buildPrintPlan, type PrintSettings, type Pocket } from '../utils/printParts';
 import { COMPONENT_COLORS, type BalanceResult } from '../utils/components';
 
 interface Scene3DProps {
@@ -16,6 +16,7 @@ interface Scene3DProps {
   isDarkMode: boolean;
   printSettings: PrintSettings;
   balance: BalanceResult | null;
+  pockets: Pocket[];
 }
 
 
@@ -70,8 +71,8 @@ const KIND_OFFSET: Record<string, number> = { wing: 0, aileron: 5, hstab: 2, ele
 const SECTION_COLORS = ['#0ea5e9', '#f97316', '#22c55e', '#a855f7', '#eab308', '#ef4444', '#14b8a6', '#ec4899'];
 
 /** Print sections (mm) drawn in their assembled position, alternating colours. */
-function PrintSections({ L, airfoil, settings }: { L: Layout; airfoil: AirfoilType; settings: PrintSettings }) {
-  const plan = useMemo(() => buildPrintPlan(L, airfoil, settings), [L, airfoil, settings]);
+function PrintSections({ L, airfoil, settings, pockets }: { L: Layout; airfoil: AirfoilType; settings: PrintSettings; pockets: Pocket[] }) {
+  const plan = useMemo(() => buildPrintPlan(L, airfoil, settings, pockets), [L, airfoil, settings, pockets]);
   useEffect(() => () => plan.sections.forEach(s => s.geometry.dispose()), [plan]);
   const mmToLayout = 1 / (L.toCm * 10);
   return (
@@ -202,7 +203,7 @@ function BalanceMarkers({ L }: { L: Layout }) {
   );
 }
 
-function Aircraft({ L, airfoil, isRotating, sections, printSettings, balance }: { L: Layout; airfoil: AirfoilType; isRotating: boolean; sections: boolean; printSettings: PrintSettings; balance: BalanceResult | null }) {
+function Aircraft({ L, airfoil, isRotating, sections, printSettings, balance, pockets }: { L: Layout; airfoil: AirfoilType; isRotating: boolean; sections: boolean; printSettings: PrintSettings; balance: BalanceResult | null; pockets: Pocket[] }) {
   const groupRef = useRef<THREE.Group>(null);
   useFrame((_, delta) => {
     if (groupRef.current && isRotating) groupRef.current.rotation.y += delta * 0.25;
@@ -219,7 +220,7 @@ function Aircraft({ L, airfoil, isRotating, sections, printSettings, balance }: 
     <group ref={groupRef} scale={L.toCm}>
       <group position={[0, -midY, midS]}>
         {sections ? (
-          <PrintSections L={L} airfoil={airfoil} settings={printSettings} />
+          <PrintSections L={L} airfoil={airfoil} settings={printSettings} pockets={pockets} />
         ) : (
           <>
             <PartMeshes parts={parts.right} xray={!!balance} />
@@ -235,7 +236,7 @@ function Aircraft({ L, airfoil, isRotating, sections, printSettings, balance }: 
   );
 }
 
-export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, balance }: Scene3DProps) {
+export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, balance, pockets }: Scene3DProps) {
   const { t } = useTranslation();
   const [isRotating, setIsRotating] = useState(true);
   const [showSections, setShowSections] = useState(false);
@@ -264,7 +265,7 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
           <hemisphereLight args={[isDarkMode ? '#cbd5e1' : '#ffffff', '#475569', 0.9]} />
           <directionalLight position={[sizeCm, sizeCm * 1.5, sizeCm * 0.8]} intensity={1.6} castShadow />
           <directionalLight position={[-sizeCm, sizeCm * 0.3, -sizeCm]} intensity={0.35} />
-          <Aircraft L={layout} airfoil={airfoil} isRotating={isRotating} sections={showSections} printSettings={printSettings} balance={showComponents && !showSections ? balance : null} />
+          <Aircraft L={layout} airfoil={airfoil} isRotating={isRotating} sections={showSections} printSettings={printSettings} balance={showComponents && !showSections ? balance : null} pockets={pockets} />
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
             <circleGeometry args={[sizeCm * 0.9, 64]} />
             <meshStandardMaterial color={isDarkMode ? '#1f2937' : '#e2e8f0'} transparent opacity={0.6} />

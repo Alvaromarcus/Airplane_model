@@ -94,7 +94,43 @@ function capTriangles(r: V3[]): number[][] {
       : ay >= az ? new THREE.Vector2(p[2], p[0])
         : new THREE.Vector2(p[0], p[1]);
   const pts = r.map(pick);
-  return THREE.ShapeUtils.triangulateShape(pts, []);
+  const tris = THREE.ShapeUtils.triangulateShape(pts, []);
+  // Ear-clipping drops collinear/duplicate boundary points; the side walls still
+  // use them, so re-insert them (fan from the opposite vertex) to avoid T-junctions.
+  const nr = r.length;
+  const used = new Set<number>();
+  tris.forEach(t => t.forEach(i => used.add(i)));
+  if (used.size === nr) return tris;
+  const out: number[][] = [];
+  const skipped = (a: number, b: number): number[] | null => {
+    // indices strictly between a and b going forward around the ring, all unused
+    const between: number[] = [];
+    for (let i = (a + 1) % nr; i !== b; i = (i + 1) % nr) {
+      if (used.has(i)) return null;
+      between.push(i);
+      if (between.length > nr) return null;
+    }
+    return between;
+  };
+  tris.forEach(([a, b, c]) => {
+    let done = false;
+    for (const [u, v, w] of [[a, b, c], [b, c, a], [c, a, b]]) {
+      const fwd = skipped(u, v);
+      if (fwd && fwd.length) {
+        const chain = [u, ...fwd, v];
+        for (let i = 0; i < chain.length - 1; i++) out.push([chain[i], chain[i + 1], w]);
+        done = true; break;
+      }
+      const bwd = skipped(v, u);
+      if (bwd && bwd.length) {
+        const chain = [v, ...bwd, u];
+        for (let i = 0; i < chain.length - 1; i++) out.push([chain[i + 1], chain[i], w]);
+        done = true; break;
+      }
+    }
+    if (!done) out.push([a, b, c]);
+  });
+  return out;
 }
 
 /**
@@ -151,6 +187,19 @@ export function loftSolid(rings: V3[][]): THREE.BufferGeometry {
   addCap(0, dir.clone().negate());
   addCap(rings.length - 1, dir);
 
+  // Drop zero-area triangles (collapsed pocket vertices, duplicate stations at
+  // pocket end walls). Neighbouring faces share those edges, so the mesh stays closed.
+  const same = (i: number, j: number) =>
+    Math.abs(pos[i * 3] - pos[j * 3]) < 1e-7 && Math.abs(pos[i * 3 + 1] - pos[j * 3 + 1]) < 1e-7 && Math.abs(pos[i * 3 + 2] - pos[j * 3 + 2]) < 1e-7;
+  const clean: number[] = [];
+  for (let t = 0; t < idx.length; t += 3) {
+    const [i0, i1, i2] = [idx[t], idx[t + 1], idx[t + 2]];
+    if (same(i0, i1) || same(i1, i2) || same(i0, i2)) continue;
+    clean.push(i0, i1, i2);
+  }
+  idx.length = 0;
+  idx.push(...clean);
+
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setIndex(idx);
@@ -174,14 +223,37 @@ export function mirrorX(geo: THREE.BufferGeometry): THREE.BufferGeometry {
 // ───────────────────────── Keyholed airfoil outline ─────────────────────────
 
 interface Hole { x: number; d: number } // chord fraction, hole diameter (mm)
+/** Pocket cut into one skin: chord fractions a..b, depth in mm (0 = inactive at this station). */
+interface Notch { a: number; b: number; d: number }
+
+/**
+ * Pocket for a component (servo, battery, ESC, receiver), in mm.
+ * - part 'wing': open on the upper or lower skin of the RIGHT wing (mirrored
+ *   to the left). xa..xb = span range, sa..sb = station range, depth from the skin.
+ * - part 'fuselage': open on top. sa..sb = station range, halfWidth, floorY (absolute).
+ */
+export interface Pocket {
+  id: string;
+  part: 'wing' | 'fuselage';
+  side: 'upper' | 'lower' | 'top';
+  xa: number; xb: number;
+  sa: number; sb: number;
+  depth: number;
+  halfWidth?: number;
+  floorY?: number;
+}
 
 /**
  * Airfoil section between chord fractions x0..x1 at a given chord (mm), as a
- * closed outline (u along chord from the LE, v up), with keyhole spar holes.
- * The vertex count depends only on (x0, x1, holes.length), never on the chord,
- * so consecutive stations can be lofted.
+ * closed outline (u along chord from the LE, v up), with keyhole spar holes
+ * and optional pockets (notches) in the upper/lower skin. The vertex count
+ * depends only on the NUMBER of holes/notches, never on the chord or on
+ * whether a notch is active, so consecutive stations can always be lofted.
  */
-function keyholeOutline(af: AirfoilSurface, x0: number, x1: number, chord: number, holes: Hole[], s: PrintSettings): V2[] {
+function sectionOutline(
+  af: AirfoilSurface, x0: number, x1: number, chord: number, holes: Hole[],
+  upper: Notch[], lower: Notch[], s: PrintSettings,
+): V2[] {
   const yU = (x: number) => {
     const u = af.upper(x) * chord, l = af.lower(x) * chord;
     return u - l < s.minTe ? (u + l) / 2 + s.minTe / 2 : u;
@@ -190,35 +262,79 @@ function keyholeOutline(af: AirfoilSurface, x0: number, x1: number, chord: numbe
     const u = af.upper(x) * chord, l = af.lower(x) * chord;
     return u - l < s.minTe ? (u + l) / 2 - s.minTe / 2 : l;
   };
-  const N = 28, NSEG = 12, NARC = 20;
+  const SKIN = 1.2; // mm kept on the opposite skin under a pocket
+  const NSEG = 12, NARC = 20, NFLOOR = 6;
   const out: V2[] = [];
-  chordSamples(x0, x1, N).forEach(x => out.push([x * chord, yU(x)]));
+  const push = (x: number, y: number) => out.push([x * chord, y]);
 
-  // Lower surface, TE → LE, interrupted by the keyholes
-  const g = s.slit / 2 / chord;
-  const hs = holes.slice().sort((a, b) => b.x - a.x);
-  let from = x1;
-  hs.forEach(h => {
-    const segEnd = h.x + g;
-    chordSamples(segEnd, from, NSEG).reverse().forEach((x, i) => { if (!(i === 0 && from === x1)) out.push([x * chord, yL(x)]); });
-    const hx = h.x * chord;
-    const hy = (af.upper(h.x) + af.lower(h.x)) / 2 * chord;
-    const r = h.d / 2;
-    const gAbs = Math.min(s.slit / 2, r * 0.9);
-    const th0 = -Math.PI / 2 + Math.asin(gAbs / r);
-    const th1 = (3 * Math.PI) / 2 - Math.asin(gAbs / r);
-    for (let i = 0; i < NARC; i++) {
-      const th = th0 + ((th1 - th0) * i) / (NARC - 1);
-      out.push([hx + r * Math.cos(th), hy + r * Math.sin(th)]);
+  // ── Upper surface, LE → TE, with notches ──
+  let cur = x0;
+  let first = true;
+  const seg = (from: number, to: number, f: (x: number) => number, skipFirst: boolean) => {
+    chordSamples(from, to, upper.length ? NSEG : 28).forEach((x, i) => { if (!(skipFirst && i === 0)) push(x, f(x)); });
+  };
+  upper.slice().sort((p, q) => p.a - q.a).forEach(n => {
+    seg(cur, n.a, yU, !first);
+    first = false;
+    for (let i = 0; i < NFLOOR; i++) {
+      const x = n.a + ((n.b - n.a) * i) / (NFLOOR - 1);
+      push(x, n.d > 0 ? Math.max(yU(x) - n.d, Math.min(yU(x), yL(x) + SKIN)) : yU(x));
     }
-    from = h.x - g;
+    push(n.b, yU(n.b));
+    cur = n.b;
+  });
+  seg(cur, x1, yU, !first);
+
+  // ── Lower surface, TE → LE, with keyholes and notches ──
+  const g = s.slit / 2 / chord;
+  type Feat = { hi: number; lo: number; emit: () => void; endsOnSurface: boolean };
+  const feats: Feat[] = [];
+  holes.forEach(h => feats.push({
+    hi: h.x + g, lo: h.x - g,
+    emit: () => {
+      const hx = h.x * chord;
+      const hy = (af.upper(h.x) + af.lower(h.x)) / 2 * chord;
+      const r = h.d / 2;
+      const gAbs = Math.min(s.slit / 2, r * 0.9);
+      const th0 = -Math.PI / 2 + Math.asin(gAbs / r);
+      const th1 = (3 * Math.PI) / 2 - Math.asin(gAbs / r);
+      for (let i = 0; i < NARC; i++) {
+        const th = th0 + ((th1 - th0) * i) / (NARC - 1);
+        out.push([hx + r * Math.cos(th), hy + r * Math.sin(th)]);
+      }
+    },
+    endsOnSurface: false,
+  }));
+  lower.forEach(n => feats.push({
+    hi: n.b, lo: n.a,
+    emit: () => {
+      for (let i = 0; i < NFLOOR; i++) {
+        const x = n.b - ((n.b - n.a) * i) / (NFLOOR - 1);
+        push(x, n.d > 0 ? Math.min(yL(x) + n.d, Math.max(yL(x), yU(x) - SKIN)) : yL(x));
+      }
+      push(n.a, yL(n.a));
+    },
+    endsOnSurface: true,
+  }));
+  feats.sort((p, q) => q.hi - p.hi);
+  let from = x1;
+  let skipFirst = true; // the TE point was already emitted by the upper run
+  feats.forEach(ft => {
+    chordSamples(ft.hi, from, NSEG).reverse().forEach((x, i) => { if (!(i === 0 && skipFirst)) push(x, yL(x)); });
+    ft.emit();
+    skipFirst = ft.endsOnSurface;
+    from = ft.lo;
   });
   chordSamples(x0, from, NSEG).reverse().forEach((x, i) => {
-    if (i === 0 && hs.length === 0 && from === x1) return; // TE already on the upper list
+    if (i === 0 && skipFirst) return;
     if (x === x0 && Math.abs(yU(x0) - yL(x0)) < 1e-6) return; // sharp LE: avoid a duplicate point
-    out.push([x * chord, yL(x)]);
+    push(x, yL(x));
   });
   return out;
+}
+
+function keyholeOutline(af: AirfoilSurface, x0: number, x1: number, chord: number, holes: Hole[], s: PrintSettings): V2[] {
+  return sectionOutline(af, x0, x1, chord, holes, [], [], s);
 }
 
 /** Largest standard rod that leaves WALL mm of material in a thickness t (mm). */
@@ -235,7 +351,7 @@ function splits(a: number, b: number, lengthMm: number, maxLen: number): number[
   return Array.from({ length: n + 1 }, (_, i) => a + ((b - a) * i) / n);
 }
 
-export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintSettings = DEFAULT_PRINT_SETTINGS): PrintPlan {
+export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintSettings = DEFAULT_PRINT_SETTINGS, pockets: Pocket[] = []): PrintPlan {
   const mm = L.toCm * 10; // layout unit → mm
   const s = settings;
   const maxLen = Math.max(s.bedZ - 5, 20);
@@ -287,6 +403,56 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
   const maxChordFit = Math.max(bedMax, (Math.SQRT2 * bedMin) / (1 + wingAf.thickness * 1.1));
   let chordSplit = false;
 
+  // ── Pockets in the wing skins (servos, and on a flying wing the battery/ESC/RX bays) ──
+  const wingPockets = pockets.filter(p => p.part === 'wing').sort((p, q) => p.sa - q.sa);
+  const toNotch = (p: Pocket, f: number, x0: number, x1: number, holes: Hole[], active: boolean): Notch => {
+    const c = chordAt(f), le = leAt(f);
+    let na = (p.sa - le) / c, nb = (p.sb - le) / c;
+    const lo = x0 + 0.02, hi = x1 - 0.02;
+    na = Math.max(na, lo); nb = Math.min(nb, hi);
+    holes.forEach(h => {
+      const m = (h.d / 2 + 1.5) / c;
+      if (h.x + m > na && h.x - m < nb) {
+        if (h.x < (na + nb) / 2) na = Math.max(na, h.x + m); else nb = Math.min(nb, h.x - m);
+      }
+    });
+    if (nb - na < 0.01) { const mid = Math.min(Math.max((na + nb) / 2, lo), hi); return { a: mid, b: mid + 0.001, d: 0 }; }
+    return { a: na, b: nb, d: active ? p.depth : 0 };
+  };
+  /** Rings for a wing section fa..fb / chord x0..x1, stepping in and out of pockets. */
+  const wingRings = (fa: number, fb: number, x0: number, x1: number, holes: Hole[]): V3[][] => {
+    const H = halfSpan;
+    const mine = wingPockets.filter(p => p.xb > fa * H && p.xa < fb * H && (() => {
+      const f = Math.min(Math.max(((p.xa + p.xb) / 2) / H, fa), fb);
+      const c = chordAt(f), le = leAt(f);
+      return (p.sb - le) / c > x0 + 0.02 && (p.sa - le) / c < x1 - 0.02;
+    })());
+    const ups = mine.filter(p => p.side === 'upper');
+    const los = mine.filter(p => p.side === 'lower');
+    // Breakpoints where a pocket starts/ends inside this section
+    const bps = [fa, fb];
+    mine.forEach(p => [p.xa / H, p.xb / H].forEach(f => { if (f > fa + 1e-6 && f < fb - 1e-6) bps.push(f); }));
+    bps.sort((p, q) => p - q);
+    const uniq = bps.filter((f, i) => i === 0 || f - bps[i - 1] > 1e-6);
+    const activeAt = (p: Pocket, fm: number) => fm * H > p.xa && fm * H < p.xb;
+    const ring = (f: number, fm: number) => sectionOutline(
+      wingAf, x0, x1, chordAt(f), holes,
+      ups.map(p => toNotch(p, f, x0, x1, holes, activeAt(p, fm))),
+      los.map(p => toNotch(p, f, x0, x1, holes, activeAt(p, fm))),
+      s,
+    ).map(([u, v]) => [f * H, yAt(f) + v, -(leAt(f) + u)] as V3);
+    // Duplicate a station only where the set of active pockets changes (pocket end walls)
+    const key = (fm: number) => mine.map(p => (activeAt(p, fm) ? 1 : 0)).join('');
+    const rings: V3[][] = [];
+    for (let i = 0; i < uniq.length - 1; i++) {
+      const fm = (uniq[i] + uniq[i + 1]) / 2;
+      if (i === 0) rings.push(ring(uniq[0], fm));
+      else if (key(fm) !== key((uniq[i - 1] + uniq[i]) / 2)) rings.push(ring(uniq[i], fm));
+      rings.push(ring(uniq[i + 1], fm));
+    }
+    return rings;
+  };
+
   let wingIdx = 0;
   wingPieces.forEach(pc => {
     const fs = splits(pc.f0, pc.f1, (pc.f1 - pc.f0) * halfSpan, maxLen);
@@ -309,8 +475,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
       const len = (fs[i + 1] - fs[i]) * halfSpan;
       for (let k = 0; k < xs.length - 1; k++) {
         const holes = wingHoles(xs[k], xs[k + 1]);
-        const rings = [fs[i], fs[i + 1]].map(f => keyholeOutline(wingAf, xs[k], xs[k + 1], chordAt(f), holes, s)
-          .map(([u, v]) => [f * halfSpan, yAt(f) + v, -(leAt(f) + u)] as V3));
+        const rings = wingRings(fs[i], fs[i + 1], xs[k], xs[k + 1], holes);
         const geo = loftSolid(rings);
         const suffix = xs.length > 2 ? String.fromCharCode(97 + k) : '';
         sections.push({ name: `wing_R_${pad(wingIdx)}${suffix}`, kind: 'wing', side: 'R', index: wingIdx, axis: [1, 0, 0], geometry: geo, length: len });
@@ -401,31 +566,60 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     }
   }
 
-  // ── Fuselage (printed standing, split along its length) ──
+  // ── Fuselage (printed standing, split along its length), with open-top bays ──
   if (L.fuselage) {
     const fz = L.fuselage;
     const Lmm = fz.length * mm;
     const expo = fz.style === 'trainer' ? 6 : 2.4;
-    const nRing = 48;
-    const ring = (sMm: number): V3[] => {
-      const sec = fz.section(sMm / mm);
-      const r: V3[] = [];
-      for (let i = 0; i < nRing; i++) {
-        const th = (2 * Math.PI * i) / nRing;
-        const c = Math.cos(th), sn = Math.sin(th);
-        r.push([
-          (sec.w * mm / 2) * Math.sign(c) * Math.abs(c) ** (2 / expo),
-          sec.yc * mm + (sec.h * mm / 2) * Math.sign(sn) * Math.abs(sn) ** (2 / expo),
-          -sMm,
-        ]);
-      }
-      return r;
+    const bays = pockets.filter(p => p.part === 'fuselage').sort((p, q) => p.sa - q.sa);
+    const NQ = 14, NTOP = 6, NFLOOR = 8;
+    const se = (th: number, W: number, Hh: number, yc: number): V2 => {
+      const c = Math.cos(th), sn = Math.sin(th);
+      return [(W / 2) * Math.sign(c) * Math.abs(c) ** (2 / expo), yc + (Hh / 2) * Math.sign(sn) * Math.abs(sn) ** (2 / expo)];
     };
+    /** Cross-section ring: bottom → right side → top (with the bay notch) → left side. */
+    const ring = (sMm: number, activeBay: Pocket | null): V3[] => {
+      const sec = fz.section(sMm / mm);
+      const W = sec.w * mm, Hh = sec.h * mm, yc = sec.yc * mm;
+      // One notch slot per ring (the widest bay), so the vertex count is constant
+      const hw = Math.min(activeBay?.halfWidth ?? Math.max(...bays.map(b => b.halfWidth ?? 10), 10), W / 2 - 1.5);
+      const ratio = Math.min(Math.max((2 * hw) / W, 0.05), 0.95);
+      const thA = Math.acos(ratio ** (expo / 2));
+      const yTop = (x: number) => yc + (Hh / 2) * Math.max(0, 1 - Math.abs((2 * x) / W) ** expo) ** (1 / expo);
+      const pts: V2[] = [];
+      for (let i = 0; i < NQ; i++) pts.push(se(-Math.PI / 2 + ((thA + Math.PI / 2) * i) / NQ, W, Hh, yc));
+      if (bays.length) {
+        const xA = se(thA, W, Hh, yc)[0];
+        pts.push([xA, yTop(xA)]);
+        const floor = activeBay ? Math.max(Math.min(activeBay.floorY ?? yc, yTop(xA) - 1), yc - Hh / 2 + 1.2) : null;
+        for (let i = 0; i < NFLOOR; i++) {
+          const x = xA - (2 * xA * i) / (NFLOOR - 1);
+          pts.push([x, floor === null ? yTop(x) : Math.min(floor, yTop(x))]);
+        }
+        pts.push([-xA, yTop(-xA)]);
+      } else {
+        for (let i = 1; i < NTOP; i++) pts.push(se(thA + ((Math.PI - 2 * thA) * i) / NTOP, W, Hh, yc));
+      }
+      for (let i = 0; i < NQ; i++) pts.push(se(Math.PI - thA + ((thA + Math.PI / 2) * i) / NQ, W, Hh, yc));
+      return pts.map(([x, y]) => [x, y, -sMm] as V3);
+    };
+    const bayAt = (sm: number) => bays.find(b => sm > b.sa && sm < b.sb) ?? null;
     const cuts = splits(0, Lmm, Lmm, maxLen);
     for (let i = 0; i < cuts.length - 1; i++) {
       const nSt = 12;
+      const st: number[] = [];
+      for (let k = 0; k <= nSt; k++) st.push(cuts[i] + ((cuts[i + 1] - cuts[i]) * k) / nSt);
+      bays.forEach(b => [b.sa, b.sb].forEach(v => { if (v > cuts[i] + 0.5 && v < cuts[i + 1] - 0.5) st.push(v); }));
+      st.sort((p, q) => p - q);
+      const uniq = st.filter((v, k) => k === 0 || v - st[k - 1] > 0.3);
       const rings: V3[][] = [];
-      for (let k = 0; k <= nSt; k++) rings.push(ring(cuts[i] + ((cuts[i + 1] - cuts[i]) * k) / nSt));
+      let prevBay: Pocket | null | undefined;
+      for (let k = 0; k < uniq.length - 1; k++) {
+        const bay = bayAt((uniq[k] + uniq[k + 1]) / 2);
+        if (k === 0 || bay !== prevBay) rings.push(ring(uniq[k], bay));
+        rings.push(ring(uniq[k + 1], bay));
+        prevBay = bay;
+      }
       sections.push({ name: `fuselage_${pad(i + 1)}`, kind: 'fuselage', side: 'C', index: i + 1, axis: [0, 0, -1], geometry: loftSolid(rings), length: cuts[i + 1] - cuts[i] });
     }
     if (fz.width * mm > Math.min(s.bedX, s.bedY) || fz.height * mm > Math.max(s.bedX, s.bedY)) {
