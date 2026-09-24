@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import type { AirfoilType } from './calculations';
 import type { Layout } from './geometry';
 import { getAirfoil } from './airfoils';
-import { buildPrintPlan, DEFAULT_PRINT_SETTINGS, type PrintPlan } from './printParts';
+import { buildPrintPlan, DEFAULT_PRINT_SETTINGS, type PrintPlan, type Pocket } from './printParts';
 
 export type ServoKey = 'micro5' | 'sg90' | 'mg90s' | 'mid17' | 'standard';
 export type BatteryKey = 'auto' | string;
@@ -234,7 +234,9 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
     const sE = L.cgS * mm;
     const fracE = (sE - w.leAt(0) * mm) / (w.rootChord * mm);
     escPos = [0, w.mountY * mm + (af.upper(fracE) + af.lower(fracE)) / 2 * w.rootChord * mm, sE];
-    rxPos = [RX.w / 2 + 30, w.mountY * mm, L.cgS * mm - 10];
+    const sR = sE + esc.l / 2 + RX.l / 2 + 6;
+    const fracR = (sR - w.leAt(0) * mm) / (w.rootChord * mm);
+    rxPos = [0, w.mountY * mm + (af.upper(fracR) + af.lower(fracR)) / 2 * w.rootChord * mm, sR];
   }
   items.push({ id: 'esc', kind: 'esc', labelKey: 'mb_esc', detail: `${esc.amps} A`, mass: esc.mass, s: escPos[2], x: escPos[0], y: escPos[1], size: [esc.w, esc.h, esc.l] });
   items.push({ id: 'rx', kind: 'rx', labelKey: 'mb_rx', mass: RX.mass, s: rxPos[2], x: rxPos[0], y: rxPos[1], size: [RX.w, RX.h, RX.l] });
@@ -339,4 +341,42 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
 
 function dist(a: [number, number, number], b: [number, number, number]) {
   return Math.round(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+}
+
+/**
+ * Pockets to cut into the printed parts so the components fit:
+ * - wing servos: pocket open on the lower skin (both wings)
+ * - flying wing: battery / ESC / receiver bays open on the upper skin at the root
+ * - conventional: open-top bays in the fuselage (front: ESC + battery;
+ *   middle: receiver + tail servos, under the wing)
+ */
+export function cutoutsFromBalance(b: BalanceResult, L: Layout): Pocket[] {
+  const out: Pocket[] = [];
+  const it = (id: string) => b.items.find(i => i.id === id);
+  const sv = it('servo_wing_R');
+  if (sv?.size) {
+    const [sx, sy, ss] = sv.size;
+    out.push({ id: 'servo_wing', part: 'wing', side: 'lower', xa: sv.x - sx / 2 - 1, xb: sv.x + sx / 2 + 1, sa: sv.s - ss / 2 - 1, sb: sv.s + ss / 2 + 1, depth: sy + 1 });
+  }
+  if (L.isFW) {
+    ['battery', 'esc', 'rx'].forEach(id => {
+      const c = it(id);
+      if (!c?.size) return;
+      const [sx, sy, ss] = c.size;
+      out.push({ id: `bay_${id}`, part: 'wing', side: 'upper', xa: 0, xb: Math.abs(c.x) + sx / 2 + 2, sa: c.s - ss / 2 - 2, sb: c.s + ss / 2 + 2, depth: sy + 1.5 });
+    });
+  } else if (L.fuselage) {
+    const bay = (id: string, ids: string[]) => {
+      const cs = ids.map(it).filter((c): c is MassItem => !!c?.size);
+      if (!cs.length) return;
+      const sa = Math.min(...cs.map(c => c.s - c.size![2] / 2)) - 3;
+      const sb = Math.max(...cs.map(c => c.s + c.size![2] / 2)) + 3;
+      const halfWidth = Math.max(...cs.map(c => Math.abs(c.x) + c.size![0] / 2)) + 2;
+      const floorY = Math.min(...cs.map(c => c.y - c.size![1] / 2)) - 1;
+      out.push({ id, part: 'fuselage', side: 'top', xa: -halfWidth, xb: halfWidth, sa, sb, depth: 0, halfWidth, floorY });
+    };
+    bay('bay_front', ['esc', 'battery']);
+    bay('bay_mid', ['rx', 'servo_elev', 'servo_rudder']);
+  }
+  return out;
 }

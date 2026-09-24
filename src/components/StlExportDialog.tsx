@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { X, Download, Printer, AlertTriangle, Info } from 'lucide-react';
 import type { AirfoilType } from '../utils/calculations';
 import type { Layout } from '../utils/geometry';
-import type { PrintSettings } from '../utils/printParts';
+import type { PrintSettings, Pocket } from '../utils/printParts';
 import type { OrientedSection } from '../utils/stlExport';
 import type { PrintPlan } from '../utils/printParts';
 
@@ -14,6 +14,7 @@ interface Props {
   airfoil: AirfoilType;
   settings: PrintSettings;
   onSettingsChange: (s: PrintSettings) => void;
+  pockets: Pocket[];
 }
 
 const BED_PRESETS: { label: string; x: number; y: number; z: number }[] = [
@@ -29,7 +30,7 @@ const KIND_KEYS: Record<string, string> = {
   elevator: 'elevator', fin: 'fin_short', rudder: 'rudder', winglet: 'winglets',
 };
 
-export default function StlExportDialog({ open, onClose, layout, airfoil, settings, onSettingsChange }: Props) {
+export default function StlExportDialog({ open, onClose, layout, airfoil, settings, onSettingsChange, pockets }: Props) {
   const { t, i18n } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ plan: PrintPlan; oriented: OrientedSection[] } | null>(null);
@@ -40,11 +41,11 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
     let cancelled = false;
     import('../utils/stlExport').then(m => {
       if (cancelled) return;
-      const r = m.planAndOrient(layout, airfoil, settings);
+      const r = m.planAndOrient(layout, airfoil, settings, pockets);
       setResult(r);
     });
     return () => { cancelled = true; };
-  }, [open, layout, airfoil, settings]);
+  }, [open, layout, airfoil, settings, pockets]);
 
   // Free the geometries built for the summary
   useEffect(() => () => {
@@ -73,7 +74,7 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
     setBusy(true);
     try {
       const m = await import('../utils/stlExport');
-      const r = m.exportSTLZip(layout, airfoil, settings, i18n.language, (k, o) => t(k, o));
+      const r = m.exportSTLZip(layout, airfoil, settings, i18n.language, (k, o) => t(k, o), pockets);
       const url = URL.createObjectURL(r.blob);
       const a = document.createElement('a');
       a.href = url;
@@ -152,6 +153,16 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
                     <span key={k} className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-xs">{t(KIND_KEYS[k] ?? k)}: {n}</span>
                   ))}
                 </div>
+                {pockets.length > 0 && (
+                  <>
+                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{t('stl_cutouts')}</div>
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {pockets.map(p => (
+                        <span key={p.id} className="px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-900/30 text-violet-800 dark:text-violet-300 text-xs">{t('cut_' + p.id)}</span>
+                      ))}
+                    </div>
+                  </>
+                )}
                 <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">{t('stl_spars')}</div>
                 {result.plan.spars.length === 0 ? (
                   <p className="text-xs text-gray-500">—</p>

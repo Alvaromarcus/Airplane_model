@@ -15,7 +15,7 @@ import type { AircraftDimensions, AircraftType, AircraftPreset, AirfoilType, Fus
 import { computeLayout } from './utils/geometry';
 import { DEFAULT_PRINT_SETTINGS, type PrintSettings } from './utils/printParts';
 import StlExportDialog from './components/StlExportDialog';
-import { computeBalance, DEFAULT_COMPONENTS, type ComponentSettings } from './utils/components';
+import { computeBalance, cutoutsFromBalance, DEFAULT_COMPONENTS, type ComponentSettings } from './utils/components';
 import { exportToPDF } from './utils/pdfExport';
 import { useVersionCheck } from './hooks/useVersionCheck';
 import './App.css';
@@ -131,6 +131,7 @@ function App() {
       return null;
     }
   }, [layout, airfoil, components]);
+  const pockets = useMemo(() => (balance ? cutoutsFromBalance(balance, layout) : []), [balance, layout]);
 
   const handleUnitToggle = (newUnit: 'cm' | 'mm') => {
     if (unit === newUnit) return;
@@ -307,7 +308,7 @@ function App() {
           {viewMode === '2D' ? (
             <CanvasView layout={layout} isDarkMode={isDarkMode} airfoil={airfoil} balance={balance} />
           ) : (
-            <Scene3D layout={layout} airfoil={airfoil} isDarkMode={isDarkMode} printSettings={printSettings} balance={balance} />
+            <Scene3D layout={layout} airfoil={airfoil} isDarkMode={isDarkMode} printSettings={printSettings} balance={balance} pockets={pockets} />
           )}
         </div>
 
@@ -333,6 +334,7 @@ function App() {
         airfoil={airfoil}
         settings={printSettings}
         onSettingsChange={setPrintSettings}
+        pockets={pockets}
       />
       <footer className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 p-2 text-center text-xs text-gray-500 dark:text-gray-400 transition-colors duration-200 z-20">
         {t('developed_by')} <a href="https://www.linkedin.com/in/alvaromarcus/" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Alvaro Marcus</a>
