@@ -19,6 +19,9 @@ interface SidebarProps {
   onFuselageStyleChange: (val: FuselageType) => void;
   propeller: PropellerType;
   onPropellerChange: (val: PropellerType) => void;
+  propCutout: boolean;
+  onPropCutoutChange: (v: boolean) => void;
+  teCutNeedsElevonStart: number | null;
 }
 
 // Map PropellerType keys to prop specs for the selector
@@ -118,6 +121,7 @@ export default function Sidebar({
   airfoil, onAirfoilChange,
   fuselageStyle, onFuselageStyleChange,
   propeller, onPropellerChange,
+  propCutout, onPropCutoutChange, teCutNeedsElevonStart,
 }: SidebarProps) {
   const { t } = useTranslation();
 
@@ -250,7 +254,20 @@ export default function Sidebar({
               {selectedPropInfo.notes}
             </div>
           )}
-        </Section>
+                  {isFlyingWing && (
+            <div className="mt-3">
+              <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                <input type="checkbox" className="mt-0.5 accent-sky-600" checked={propCutout} onChange={e => onPropCutoutChange(e.target.checked)} />
+                <span><b className="font-medium">{t('te_cutout')}</b><br /><span className="text-slate-500 dark:text-slate-400">{t('te_cutout_hint')}</span></span>
+              </label>
+              {propCutout && teCutNeedsElevonStart !== null && (
+                <div className="mt-2 p-2 rounded-md text-[11px] bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300">
+                  {t('te_cutout_blocked', { pct: teCutNeedsElevonStart })}
+                </div>
+              )}
+            </div>
+          )}
+</Section>
 
         {/* Tail Section */}
         <Section title={t('tail')} icon={<Wind size={16} />}>

@@ -9,6 +9,7 @@ import type { Layout } from '../utils/geometry';
 import { buildAircraftParts, disposeParts, type PartMesh } from '../utils/mesh';
 import { buildPrintPlan, type PrintSettings, type Pocket } from '../utils/printParts';
 import { COMPONENT_COLORS, type BalanceResult } from '../utils/components';
+import { buildExtraParts, disposeExtraParts } from '../utils/printables';
 
 interface Scene3DProps {
   layout: Layout;
@@ -21,10 +22,40 @@ interface Scene3DProps {
 
 
 /** Servos, battery, ESC, receiver, ballast and pushrods (positions in mm). */
-function Components({ L, balance }: { L: Layout; balance: BalanceResult }) {
+function Components({ L, balance, airfoil, pockets }: { L: Layout; balance: BalanceResult; airfoil: AirfoilType; pockets: Pocket[] }) {
   const k = 1 / (L.toCm * 10); // mm → layout units
+  const extras = useMemo(() => buildExtraParts(L, airfoil, balance, pockets), [L, airfoil, balance, pockets]);
+  useEffect(() => () => disposeExtraParts(extras), [extras]);
+  const sparMeshes = useMemo(() => balance.sparLines.flatMap(sp => {
+    const sides = sp.mirror ? [1, -1] : [1];
+    return sides.map(sg => {
+      const a = new THREE.Vector3(sg * sp.a[0], sp.a[1], -sp.a[2]);
+      const b = new THREE.Vector3(sg * sp.b[0], sp.b[1], -sp.b[2]);
+      const dir = b.clone().sub(a);
+      return {
+        key: `${sp.id}_${sg}`, d: sp.d, len: dir.length(),
+        mid: a.clone().add(b).multiplyScalar(0.5),
+        q: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize()),
+      };
+    });
+  }), [balance]);
   return (
     <group scale={k}>
+      {/* Carbon spars */}
+      {sparMeshes.map(m => (
+        <mesh key={m.key} position={m.mid} quaternion={m.q}>
+          <cylinderGeometry args={[m.d / 2, m.d / 2, m.len, 16]} />
+          <meshStandardMaterial color={COMPONENT_COLORS.spar} roughness={0.35} metalness={0.4} />
+        </mesh>
+      ))}
+      {/* Printed servo mounts and hatches */}
+      {extras.map(x => (
+        <mesh key={x.name} geometry={x.geometry}>
+          {x.kind === 'mount'
+            ? <meshStandardMaterial color={COMPONENT_COLORS.mount} roughness={0.6} />
+            : <meshStandardMaterial color={COMPONENT_COLORS.hatch} roughness={0.5} transparent opacity={0.45} depthWrite={false} side={THREE.DoubleSide} />}
+        </mesh>
+      ))}
       {balance.items.filter(i => i.size || i.kind === 'ballast').map(i => (
         i.kind === 'ballast' ? (
           <mesh key={i.id} position={[i.x, i.y, -i.s]}>
@@ -228,7 +259,7 @@ function Aircraft({ L, airfoil, isRotating, sections, printSettings, balance, po
             <PartMeshes parts={parts.center} xray={!!balance} />
           </>
         )}
-        {balance && <Components L={L} balance={balance} />}
+        {balance && <Components L={L} balance={balance} airfoil={airfoil} pockets={pockets} />}
         <Powertrain L={L} />
         <BalanceMarkers L={L} />
       </group>
@@ -283,6 +314,9 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
             <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-sm" style={{ background: COMPONENT_COLORS.battery }} />{t('mb_battery')}</span>
             <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-sm" style={{ background: COMPONENT_COLORS.esc }} />ESC</span>
             <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-sm" style={{ background: COMPONENT_COLORS.rx }} />RX</span>
+            <span className="flex items-center gap-1"><i className="inline-block w-3 h-1.5 rounded-sm" style={{ background: COMPONENT_COLORS.spar }} />{t('mb_spars')}</span>
+            <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-sm border border-slate-300" style={{ background: COMPONENT_COLORS.mount }} />{t('stl_mounts')}</span>
+            <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-sm opacity-60" style={{ background: COMPONENT_COLORS.hatch }} />{t('stl_hatches')}</span>
           </>
         )}
         <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-full bg-slate-900 dark:bg-white" />CG</span>

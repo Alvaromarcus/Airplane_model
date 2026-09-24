@@ -34,7 +34,7 @@ export interface ControlSurfaces {
 
 export const DEFAULT_CONTROL_SURFACES: Record<AircraftType, ControlSurfaces> = {
   conventional: { aileronStart: 50, aileronEnd: 95, aileronChord: 25, elevatorChord: 30, rudderChord: 40 },
-  flying_wing:  { aileronStart: 25, aileronEnd: 95, aileronChord: 22, elevatorChord: 0,  rudderChord: 0 },
+  flying_wing:  { aileronStart: 30, aileronEnd: 95, aileronChord: 22, elevatorChord: 0,  rudderChord: 0 },
 };
 
 /** Clamp control-surface values into physically meaningful ranges. */

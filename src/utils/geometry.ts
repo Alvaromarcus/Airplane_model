@@ -72,6 +72,13 @@ export interface Layout {
     dir: 1 | -1;                  // +1 motor extends aft (pusher), -1 forward (tractor)
   };
   prop: { diameter: number; pitchIn: number; label: string; s: number; y: number };
+  /**
+   * Flying wing: notch in the root trailing edge so the pusher motor/prop sit
+   * inside the wing (Zagi style). |x| ≤ halfWidth, stations ≥ sCut are removed.
+   */
+  teCut: { halfWidth: number; sCut: number } | null;
+  /** Set when the cut-out was requested but does not fit (min. elevon start, %). */
+  teCutNeedsElevonStart: number | null;
   cgS: number;
   npS: number;
   /** min/max station and max lateral extent, for fitting views */
@@ -91,6 +98,7 @@ export function computeLayout(
   unit: 'cm' | 'mm',
   fuselageStyle: FuselageType = 'trainer',
   propeller: PropellerType = 'prop_9x47',
+  propCutout = true,
 ): Layout {
   const isFW = aircraftType === 'flying_wing';
   const inch = unit === 'mm' ? 25.4 : 2.54;
@@ -197,9 +205,23 @@ export function computeLayout(
   const motorL = motorD * 0.9;
   let motor: Layout['motor'];
   let prop: Layout['prop'];
+  let teCut: Layout['teCut'] = null;
+  let teCutNeedsElevonStart: number | null = null;
   if (isFW) {
-    // Pusher mounted in the root trailing-edge cut-out
-    const mountS = rootChord;
+    // Pusher: either inside a trailing-edge notch (motor further forward) or behind the TE
+    const hw = propD / 2 + 1 * u;
+    const depth = motorL + 2.5 * u;
+    const maxHw = c.aileronStart / 100 * halfSpan - 0.5 * u;
+    let mountS = rootChord;
+    if (propCutout) {
+      if (hw <= maxHw && depth < rootChord * 0.35) {
+        const sCut = noseLength + rootChord - depth;
+        teCut = { halfWidth: hw, sCut };
+        mountS = sCut + 0.3 * u;
+      } else {
+        teCutNeedsElevonStart = Math.ceil(((hw + 0.5 * u) / halfSpan) * 100);
+      }
+    }
     motor = { pusher: true, diameter: motorD, length: motorL, mountS, dir: 1 };
     prop = { diameter: propD, pitchIn, label: spec?.label ?? '', s: mountS + motorL + 0.6 * u, y: 0 };
   } else {
@@ -224,7 +246,7 @@ export function computeLayout(
   if (winglet) yVals.push(winglet.y + winglet.span);
 
   return {
-    unit, toCm, isFW, wing,
+    unit, toCm, isFW, wing, teCut, teCutNeedsElevonStart,
     aileron: { f0: c.aileronStart / 100, f1: c.aileronEnd / 100, chordFrac: c.aileronChord / 100 },
     hStab, fin, winglet, fuselage, motor, prop, cgS, npS,
     bounds: {

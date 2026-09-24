@@ -8,6 +8,8 @@ import { zipSync, strToU8 } from 'fflate';
 import type { AirfoilType } from './calculations';
 import type { Layout } from './geometry';
 import { buildPrintPlan, type PrintPlan, type PrintSection, type PrintSettings, type Pocket } from './printParts';
+import { buildExtraParts } from './printables';
+import type { BalanceResult } from './components';
 
 export interface OrientedSection {
   section: PrintSection;
@@ -105,13 +107,17 @@ export interface ExportResult {
   oriented: OrientedSection[];
 }
 
-export function planAndOrient(L: Layout, airfoil: AirfoilType, settings: PrintSettings, pockets: Pocket[] = []) {
+export function planAndOrient(L: Layout, airfoil: AirfoilType, settings: PrintSettings, pockets: Pocket[] = [], balance: BalanceResult | null = null) {
   const plan = buildPrintPlan(L, airfoil, settings, pockets);
+  // Servo mounts and hatches (normal printing, not vase mode) join the parts list
+  buildExtraParts(L, airfoil, balance, pockets).forEach((x, i) => {
+    plan.sections.push({ name: x.name, kind: x.kind, side: x.side, index: i + 1, axis: x.axis, geometry: x.geometry, length: 0 });
+  });
   const oriented = plan.sections.map(sec => orientForPrint(sec, settings));
   return { plan, oriented };
 }
 
-const KIND_ORDER = ['fuselage', 'wing', 'aileron', 'hstab', 'elevator', 'fin', 'rudder', 'winglet'];
+const KIND_ORDER = ['fuselage', 'wing', 'aileron', 'hstab', 'elevator', 'fin', 'rudder', 'winglet', 'mount', 'hatch'];
 
 export function exportSTLZip(
   L: Layout,
@@ -120,8 +126,9 @@ export function exportSTLZip(
   lang: string,
   t: (k: string, o?: Record<string, unknown>) => string,
   pockets: Pocket[] = [],
+  balance: BalanceResult | null = null,
 ): ExportResult {
-  const { plan, oriented } = planAndOrient(L, airfoil, settings, pockets);
+  const { plan, oriented } = planAndOrient(L, airfoil, settings, pockets, balance);
   const pt = lang === 'pt';
   const files: Record<string, Uint8Array> = {};
   const folder = (k: string) => String(KIND_ORDER.indexOf(k) + 1).padStart(2, '0') + '_' + k;
@@ -134,14 +141,15 @@ export function exportSTLZip(
   {
     const geos = plan.sections.map(s => s.geometry);
     let total = 0;
-    geos.forEach(g => { total += g.getIndex()!.count; });
+    geos.forEach(g => { total += g.getIndex() ? g.getIndex()!.count : g.attributes.position.count; });
     const pos = new Float32Array(total * 3);
     let o = 0;
     geos.forEach(g => {
       const p = g.attributes.position as THREE.BufferAttribute;
-      const idx = g.getIndex()!;
-      for (let i = 0; i < idx.count; i++) {
-        const v = idx.getX(i);
+      const idx = g.getIndex();
+      const n = idx ? idx.count : p.count;
+      for (let i = 0; i < n; i++) {
+        const v = idx ? idx.getX(i) : i;
         pos[o++] = p.getX(v); pos[o++] = p.getY(v); pos[o++] = p.getZ(v);
       }
     });
@@ -189,6 +197,22 @@ function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, pt: boo
   }
   lines.push('');
 
+  if (oriented.some(o => o.section.kind === 'mount' || o.section.kind === 'hatch')) {
+    lines.push(pt ? 'SUPORTES DE SERVO E TAMPAS (pastas 09_mount e 10_hatch)' : 'SERVO MOUNTS AND HATCHES (folders 09_mount and 10_hatch)', '-'.repeat(40));
+    lines.push(...(pt ? [
+      '- NÃO use modo vaso nessas peças: PLA ou PETG comum, 3 perímetros, 40–100% de preenchimento.',
+      '- Suportes: cole dentro do bolsão do servo (asa) ou no compartimento central (fuselagem);',
+      '  o servo encaixa na janela e é parafusado pelas abas (furos Ø1,8 mm para parafusos M2).',
+      '- Tampas: casca de 1 mm que acompanha a superfície; prenda com fita, ímãs ou velcro.',
+      '  A tampa do servo da asa deixa aberta a ponta externa para o braço do servo.',
+    ] : [
+      '- Do NOT use vase mode for these: regular PLA or PETG, 3 perimeters, 40–100% infill.',
+      '- Mounts: glue inside the wing servo pocket or the fuselage middle bay; the servo drops',
+      '  into the window and is screwed through its tabs (Ø1.8 mm holes for M2 screws).',
+      '- Hatches: 1 mm shells that follow the skin; hold them with tape, magnets or velcro.',
+      '  The wing servo hatch leaves the outboard end open for the servo arm.',
+    ]), '');
+  }
   lines.push(pt ? 'LONGARINAS (tubo/vareta de carbono)' : 'SPARS (carbon tube/rod)', '-'.repeat(40));
   if (plan.spars.length === 0) lines.push(pt ? '(nenhuma — perfil fino demais para longarina)' : '(none — airfoil too thin for a spar)');
   plan.spars.forEach(sp => {

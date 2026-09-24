@@ -4,6 +4,7 @@ import { X, Download, Printer, AlertTriangle, Info } from 'lucide-react';
 import type { AirfoilType } from '../utils/calculations';
 import type { Layout } from '../utils/geometry';
 import type { PrintSettings, Pocket } from '../utils/printParts';
+import type { BalanceResult } from '../utils/components';
 import type { OrientedSection } from '../utils/stlExport';
 import type { PrintPlan } from '../utils/printParts';
 
@@ -15,6 +16,7 @@ interface Props {
   settings: PrintSettings;
   onSettingsChange: (s: PrintSettings) => void;
   pockets: Pocket[];
+  balance: BalanceResult | null;
 }
 
 const BED_PRESETS: { label: string; x: number; y: number; z: number }[] = [
@@ -28,9 +30,10 @@ const BED_PRESETS: { label: string; x: number; y: number; z: number }[] = [
 const KIND_KEYS: Record<string, string> = {
   fuselage: 'fuselage', wing: 'wing', aileron: 'ailerons', hstab: 'hstab_short',
   elevator: 'elevator', fin: 'fin_short', rudder: 'rudder', winglet: 'winglets',
+  mount: 'stl_mounts', hatch: 'stl_hatches',
 };
 
-export default function StlExportDialog({ open, onClose, layout, airfoil, settings, onSettingsChange, pockets }: Props) {
+export default function StlExportDialog({ open, onClose, layout, airfoil, settings, onSettingsChange, pockets, balance }: Props) {
   const { t, i18n } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ plan: PrintPlan; oriented: OrientedSection[] } | null>(null);
@@ -41,11 +44,11 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
     let cancelled = false;
     import('../utils/stlExport').then(m => {
       if (cancelled) return;
-      const r = m.planAndOrient(layout, airfoil, settings, pockets);
+      const r = m.planAndOrient(layout, airfoil, settings, pockets, balance);
       setResult(r);
     });
     return () => { cancelled = true; };
-  }, [open, layout, airfoil, settings, pockets]);
+  }, [open, layout, airfoil, settings, pockets, balance]);
 
   // Free the geometries built for the summary
   useEffect(() => () => {
@@ -74,7 +77,7 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
     setBusy(true);
     try {
       const m = await import('../utils/stlExport');
-      const r = m.exportSTLZip(layout, airfoil, settings, i18n.language, (k, o) => t(k, o), pockets);
+      const r = m.exportSTLZip(layout, airfoil, settings, i18n.language, (k, o) => t(k, o), pockets, balance);
       const url = URL.createObjectURL(r.blob);
       const a = document.createElement('a');
       a.href = url;

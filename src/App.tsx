@@ -37,6 +37,7 @@ interface PersistedState {
   isDarkMode: boolean;
   printSettings: PrintSettings;
   components: ComponentSettings;
+  propCutout: boolean;
 }
 
 const DEFAULT_STATE: PersistedState = {
@@ -50,6 +51,7 @@ const DEFAULT_STATE: PersistedState = {
   isDarkMode: false,
   printSettings: DEFAULT_PRINT_SETTINGS,
   components: DEFAULT_COMPONENTS,
+  propCutout: true,
 };
 
 function loadState(): PersistedState {
@@ -116,15 +118,16 @@ function App() {
     }
   }, []);
   const [components, setComponents] = useState<ComponentSettings>(initial.components);
+  const [propCutout, setPropCutout] = useState<boolean>(initial.propCutout !== false);
 
   // Persist the whole project (dimensions are meaningless without their unit/type)
   useEffect(() => {
     try {
-      const state: PersistedState = { dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode, printSettings, components };
+      const state: PersistedState = { dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode, printSettings, components, propCutout };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       localStorage.removeItem(LEGACY_DIMS_KEY);
     } catch { /* storage unavailable (private mode) — ignore */ }
-  }, [dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode, printSettings, components]);
+  }, [dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode, printSettings, components, propCutout]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -137,8 +140,8 @@ function App() {
   const metrics = useMemo(() => calculateMetrics(dimensions, aircraftType, controls), [dimensions, aircraftType, controls]);
   const validationChecks = useMemo(() => validateDesign(dimensions, metrics, aircraftType), [dimensions, metrics, aircraftType]);
   const layout = useMemo(
-    () => computeLayout(dimensions, aircraftType, controls, metrics, unit, fuselageStyle, propeller),
-    [dimensions, aircraftType, controls, metrics, unit, fuselageStyle, propeller],
+    () => computeLayout(dimensions, aircraftType, controls, metrics, unit, fuselageStyle, propeller, propCutout),
+    [dimensions, aircraftType, controls, metrics, unit, fuselageStyle, propeller, propCutout],
   );
   const balance = useMemo(() => {
     try {
@@ -205,7 +208,7 @@ function App() {
   };
 
   const handleShare = async (): Promise<boolean> => {
-    const url = shareUrl({ dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, printSettings, components });
+    const url = shareUrl({ dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, printSettings, components, propCutout });
     try {
       await navigator.clipboard.writeText(url);
       return true;
@@ -267,6 +270,9 @@ function App() {
             onFuselageStyleChange={setFuselageStyle}
             propeller={propeller}
             onPropellerChange={setPropeller}
+            propCutout={propCutout}
+            onPropCutoutChange={setPropCutout}
+            teCutNeedsElevonStart={layout.teCutNeedsElevonStart}
           />
         </div>
 
@@ -301,6 +307,7 @@ function App() {
         settings={printSettings}
         onSettingsChange={setPrintSettings}
         pockets={pockets}
+        balance={balance}
       />
       <WelcomeModal open={welcomeOpen} onClose={closeWelcome} />
       <footer className="flex-shrink-0 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 z-20">

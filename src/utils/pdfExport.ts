@@ -271,7 +271,13 @@ export async function exportToPDF(
   {
     const le0 = w.leAt(0);
     const P = (x: number, s: number): Pt => [x * mm, (s - le0) * mm];
-    const outline: Pt[] = [P(0, w.leAt(0)), P(w.halfSpan, w.leAt(1)), P(w.halfSpan, w.teAt(1)), P(0, w.teAt(0))];
+    const outline: Pt[] = [P(0, w.leAt(0)), P(w.halfSpan, w.leAt(1)), P(w.halfSpan, w.teAt(1))];
+    if (L.teCut) {
+      const fc = L.teCut.halfWidth / w.halfSpan;
+      outline.push(P(L.teCut.halfWidth, w.teAt(fc)), P(L.teCut.halfWidth, L.teCut.sCut), P(0, L.teCut.sCut));
+    } else {
+      outline.push(P(0, w.teAt(0)));
+    }
     const ail = aileronOutline(L).map(([x, s]) => P(x, s));
     const hingeLine: Pt[] = [ail[0], ail[1]];
     const cg = P(0, L.cgS);
@@ -285,7 +291,7 @@ export async function exportToPDF(
       ],
       [
         { text: `CG (${fmt(metrics.cgPosition)})`, x: cg[0] + 14, y: cg[1] + 1, color: RED },
-        { text: `${t('root_chord')}: ${fmt(w.rootChord)}`, x: 2, y: outline[3][1] + 5 },
+        { text: `${t('root_chord')}: ${fmt(w.rootChord)}`, x: 2, y: outline[outline.length - 1][1] + 5 },
         { text: `${t('tip_chord')}: ${fmt(w.tipChord)}`, x: outline[1][0] - 40, y: outline[2][1] + 5 },
         { text: `${t('wingspan')}/2: ${fmt(w.halfSpan)}`, x: outline[1][0] / 2 - 15, y: -3 },
         { text: `${t(isFW ? 'elevons' : 'ailerons')}: ${controls.aileronStart.toFixed(0)}% > ${controls.aileronEnd.toFixed(0)}%, ${controls.aileronChord.toFixed(0)}%`, x: ail[0][0], y: ail[0][1] - 2, color: AMBER },
