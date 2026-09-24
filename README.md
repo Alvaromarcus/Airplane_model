@@ -10,6 +10,8 @@
 - **Flight Assistant (Aerodynamic Consultant):** Automatically calculates key metrics (MAC, CG, Neutral Point, Static Margin, Aspect Ratio) and warns you about potentially unstable or unflyable designs based on proven aerodynamic rules.
 - **1:1 PDF Template Export:** Tiling logic that seamlessly splits your aircraft design across multiple standard A4 pages with alignment crosshairs for easy printing, taping, and cutting.
 - **Internationalization & Unit Conversion:** Supports both English (EN) and Portuguese (PT-BR) languages, and allows toggling between Centimeters (cm) and Millimeters (mm) while retaining physical scale accuracy.
+- **Editable Control Surfaces:** Ailerons/elevons (start, end, chord %), elevator and rudder chord %, with live sizes and sizing checks — shown in 2D, 3D and the PDF.
+- **3D Printing (STL export):** Splits the aircraft into sections that fit your printer's build volume, ready for LW-PLA in spiral vase mode, with keyhole spar channels for carbon rods, automatic chord-wise splits for large chords, and a ZIP with a README (slicer settings, parts list, spar lengths, assembly).
 - **Dark Mode Support:** A sleek, toggleable dark mode for comfortable designing in any lighting condition.
 
 ## Tech Stack
@@ -17,6 +19,7 @@
 - **Styling:** TailwindCSS (v3) for rapid, responsive, and themeable UI development.
 - **Visualization:** Native HTML5 Canvas API.
 - **PDF Generation:** jsPDF for precise, tiled PDF rendering.
+- **3D / STL:** three.js + react-three-fiber; STL files zipped with fflate (loaded on demand).
 - **Internationalization:** react-i18next.
 
 ## How to run locally
