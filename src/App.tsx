@@ -15,6 +15,7 @@ import type { AircraftDimensions, AircraftType, AircraftPreset, AirfoilType, Fus
 import { computeLayout } from './utils/geometry';
 import { DEFAULT_PRINT_SETTINGS, type PrintSettings } from './utils/printParts';
 import StlExportDialog from './components/StlExportDialog';
+import { computeBalance, DEFAULT_COMPONENTS, type ComponentSettings } from './utils/components';
 import { exportToPDF } from './utils/pdfExport';
 import { useVersionCheck } from './hooks/useVersionCheck';
 import './App.css';
@@ -34,6 +35,7 @@ interface PersistedState {
   controls: ControlSurfaces;
   isDarkMode: boolean;
   printSettings: PrintSettings;
+  components: ComponentSettings;
 }
 
 const DEFAULT_STATE: PersistedState = {
@@ -46,6 +48,7 @@ const DEFAULT_STATE: PersistedState = {
   controls: DEFAULT_CONTROL_SURFACES.conventional,
   isDarkMode: false,
   printSettings: DEFAULT_PRINT_SETTINGS,
+  components: DEFAULT_COMPONENTS,
 };
 
 function loadState(): PersistedState {
@@ -64,6 +67,7 @@ function loadState(): PersistedState {
         dimensions: normalizeDims(p.dimensions, presetDims),
         controls: sanitizeControls({ ...DEFAULT_CONTROL_SURFACES[type], ...(p.controls ?? {}) }),
         printSettings: { ...DEFAULT_PRINT_SETTINGS, ...(p.printSettings ?? {}) },
+        components: { ...DEFAULT_COMPONENTS, ...(p.components ?? {}) },
       };
     }
     // Older versions stored only the dimensions (always in cm, conventional)
@@ -94,15 +98,16 @@ function App() {
   const [viewMode, setViewMode] = useState<'2D' | '3D'>('2D');
   const [printSettings, setPrintSettings] = useState<PrintSettings>(initial.printSettings);
   const [stlOpen, setStlOpen] = useState(false);
+  const [components, setComponents] = useState<ComponentSettings>(initial.components);
 
   // Persist the whole project (dimensions are meaningless without their unit/type)
   useEffect(() => {
     try {
-      const state: PersistedState = { dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode, printSettings };
+      const state: PersistedState = { dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode, printSettings, components };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       localStorage.removeItem(LEGACY_DIMS_KEY);
     } catch { /* storage unavailable (private mode) — ignore */ }
-  }, [dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode, printSettings]);
+  }, [dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, isDarkMode, printSettings, components]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -118,6 +123,14 @@ function App() {
     () => computeLayout(dimensions, aircraftType, controls, metrics, unit, fuselageStyle, propeller),
     [dimensions, aircraftType, controls, metrics, unit, fuselageStyle, propeller],
   );
+  const balance = useMemo(() => {
+    try {
+      return computeBalance(layout, airfoil, components);
+    } catch (e) {
+      console.error('Balance computation failed', e);
+      return null;
+    }
+  }, [layout, airfoil, components]);
 
   const handleUnitToggle = (newUnit: 'cm' | 'mm') => {
     if (unit === newUnit) return;
@@ -154,7 +167,7 @@ function App() {
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
-      await exportToPDF(dimensions, metrics, validationChecks, unit, i18n.language, t, layout, controls, aircraftType, airfoil);
+      await exportToPDF(dimensions, metrics, validationChecks, unit, i18n.language, t, layout, controls, aircraftType, airfoil, balance);
     } catch (error) {
       console.error("PDF Export failed", error);
     }
@@ -170,6 +183,7 @@ function App() {
     setFuselageStyle('trainer');
     setPropeller('prop_9x47');
     setControls(DEFAULT_CONTROL_SURFACES.conventional);
+    setComponents(DEFAULT_COMPONENTS);
   };
 
   const handlePresetSelect = (preset: AircraftPreset) => {
@@ -291,9 +305,9 @@ function App() {
 
         <div className="order-1 lg:order-2 w-full lg:flex-1 relative min-h-[400px] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 overflow-x-auto">
           {viewMode === '2D' ? (
-            <CanvasView layout={layout} isDarkMode={isDarkMode} airfoil={airfoil} />
+            <CanvasView layout={layout} isDarkMode={isDarkMode} airfoil={airfoil} balance={balance} />
           ) : (
-            <Scene3D layout={layout} airfoil={airfoil} isDarkMode={isDarkMode} printSettings={printSettings} />
+            <Scene3D layout={layout} airfoil={airfoil} isDarkMode={isDarkMode} printSettings={printSettings} balance={balance} />
           )}
         </div>
 
@@ -305,6 +319,10 @@ function App() {
             isDarkMode={isDarkMode}
             aircraftType={aircraftType}
             dimensions={dimensions}
+            balance={balance}
+            components={components}
+            onComponentsChange={setComponents}
+            layout={layout}
           />
         </div>
       </main>

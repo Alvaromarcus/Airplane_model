@@ -3,16 +3,18 @@ import { useTranslation } from 'react-i18next';
 import type { AirfoilType } from '../utils/calculations';
 import { aileronOutline, type Layout } from '../utils/geometry';
 import { getAirfoil, airfoilSegment } from '../utils/airfoils';
+import { COMPONENT_COLORS, type BalanceResult } from '../utils/components';
 
 interface CanvasViewProps {
   layout: Layout;
   isDarkMode: boolean;
   airfoil: AirfoilType;
+  balance?: BalanceResult | null;
 }
 
 type Pt = [number, number];
 
-export default function CanvasView({ layout: L, isDarkMode, airfoil }: CanvasViewProps) {
+export default function CanvasView({ layout: L, isDarkMode, airfoil, balance }: CanvasViewProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -190,6 +192,37 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil }: CanvasVie
       }
       drawPowerTop();
 
+      // Onboard components (x-ray): boxes + pushrods
+      const mmU = L.toCm * 10; // mm per layout unit
+      const drawComponents = (proj: 'top' | 'side') => {
+        if (!balance) return;
+        balance.items.forEach(it => {
+          const col = COMPONENT_COLORS[it.kind];
+          if (!col) return;
+          if (it.kind === 'ballast') {
+            const [px, py] = proj === 'top' ? top(it.x / mmU, it.s / mmU) : side(it.s / mmU, it.y / mmU);
+            ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+            return;
+          }
+          if (!it.size) return;
+          const [sx, sy, ss] = it.size.map(v => v / mmU);
+          const x = it.x / mmU, y = it.y / mmU, st = it.s / mmU;
+          const pts: Pt[] = proj === 'top'
+            ? [top(x - sx / 2, st - ss / 2), top(x + sx / 2, st - ss / 2), top(x + sx / 2, st + ss / 2), top(x - sx / 2, st + ss / 2)]
+            : [side(st - ss / 2, y - sy / 2), side(st + ss / 2, y - sy / 2), side(st + ss / 2, y + sy / 2), side(st - ss / 2, y + sy / 2)];
+          poly(pts, col + 'b0', col, 1);
+        });
+        ctx.strokeStyle = isDarkMode ? '#e5e7eb' : '#111827';
+        ctx.lineWidth = 1;
+        balance.linkages.forEach(l => {
+          const a = proj === 'top' ? top(l.from[0] / mmU, l.from[2] / mmU) : side(l.from[2] / mmU, l.from[1] / mmU);
+          const b2 = proj === 'top' ? top(l.to[0] / mmU, l.to[2] / mmU) : side(l.to[2] / mmU, l.to[1] / mmU);
+          ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b2[0], b2[1]); ctx.stroke();
+          ctx.beginPath(); ctx.arc(b2[0], b2[1], 2, 0, Math.PI * 2); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
+        });
+      };
+      drawComponents('top');
+
       // CG / NP
       const [cgx, cgy] = top(0, L.cgS);
       drawCG(ctx, cgx, cgy, 6, isDarkMode);
@@ -262,6 +295,7 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil }: CanvasVie
         const th = Math.max(p.diameter * 0.03, 2 / k);
         poly([side(p.s - th / 2, p.y - p.diameter / 2), side(p.s + th / 2, p.y - p.diameter / 2), side(p.s + th / 2, p.y + p.diameter / 2), side(p.s - th / 2, p.y + p.diameter / 2)], C.propFill, C.propStroke, 1.2);
       }
+      drawComponents('side');
       {
         const [x, y] = side(L.cgS, w.mountY);
         drawCG(ctx, x, y, 6, isDarkMode);
@@ -341,7 +375,7 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil }: CanvasVie
         label(t('front_view'), rightX, frontO[1] - b.yMax * k - 10);
       }
 
-      const lx = 10, ly = ch - 64;
+      const lx = 10, ly = ch - (balance ? 80 : 64);
       ctx.font = '11px sans-serif'; ctx.fillStyle = C.text;
       ctx.fillText(t('legend'), lx, ly);
       drawCG(ctx, lx + 6, ly + 14, 6, isDarkMode);
@@ -354,13 +388,22 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil }: CanvasVie
       ctx.strokeStyle = C.csStroke; ctx.strokeRect(lx, ly + 44, 12, 10);
       ctx.fillStyle = C.text;
       ctx.fillText(t(L.isFW ? 'elevons' : 'control_surfaces_short'), lx + 16, ly + 53);
+      if (balance) {
+        const chips: [string, string][] = [[COMPONENT_COLORS.servo!, t('mb_servos')], [COMPONENT_COLORS.battery!, t('mb_battery')], [COMPONENT_COLORS.esc!, 'ESC'], [COMPONENT_COLORS.rx!, 'RX']];
+        let cx2 = lx;
+        chips.forEach(([col, lbl]) => {
+          ctx.fillStyle = col; ctx.fillRect(cx2, ly + 60, 10, 10);
+          ctx.fillStyle = C.text; ctx.fillText(lbl, cx2 + 13, ly + 69);
+          cx2 += 22 + ctx.measureText(lbl).width;
+        });
+      }
     };
 
     const ro = new ResizeObserver(() => draw());
     ro.observe(container);
     draw();
     return () => ro.disconnect();
-  }, [L, t, isDarkMode, airfoil]);
+  }, [L, t, isDarkMode, airfoil, balance]);
 
   return (
     <div ref={containerRef} className="w-full h-full absolute inset-0">

@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import type { AircraftDimensions, AircraftMetrics, AircraftType, AirfoilType, ControlSurfaces, ValidationCheck } from './calculations';
 import { aileronOutline, type Layout } from './geometry';
 import { getAirfoil, airfoilSegment } from './airfoils';
+import type { BalanceResult } from './components';
 
 type Pt = [number, number];
 
@@ -40,11 +41,12 @@ export async function exportToPDF(
   checks: ValidationCheck[],
   unit: 'cm' | 'mm',
   lang: string,
-  t: (key: string) => string,
+  t: (key: string, opts?: Record<string, unknown>) => string,
   L: Layout,
   controls: ControlSurfaces,
   aircraftType: AircraftType,
   airfoil: AirfoilType = 'clarky',
+  balance: BalanceResult | null = null,
 ): Promise<void> {
   const pt = lang === 'pt';
   const isFW = aircraftType === 'flying_wing';
@@ -200,6 +202,59 @@ export async function exportToPDF(
   doc.setFontSize(7);
   doc.setTextColor(150);
   doc.text('AeroBuilder — aerobuilder-calc.netlify.app', 105, 290, { align: 'center' });
+
+  // ==========================================
+  // PAGE 2: WEIGHT & BALANCE
+  // ==========================================
+  if (balance) {
+    doc.addPage();
+    y = 22;
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text(t('mb_title'), 15, y);
+    y += 8;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(80, 80, 80);
+    const bat = balance.items.find(i => i.id === 'battery')!;
+    const leMm = L.wing.leS * L.toCm * 10;
+    const summary = [
+      `${t('mb_auw')}: ${Math.round(balance.auw)} g   ·   ${balance.wingLoading.toFixed(1)} g/dm²`,
+      `${t('mb_battery')}: ${balance.battery.label} (${balance.battery.mass} g) — ${t('mb_battery_pos')}: ${Math.round(bat.s - bat.size![2] / 2)} mm ${t('mb_battery_front')} ${L.isFW ? t('mb_from_root_le') : t('mb_from_firewall')}`,
+      t('mb_cg_line', { target: Math.round(balance.cgTarget - leMm), achieved: Math.round(balance.cgAchieved - leMm) }),
+      `${t('mb_servos')}: ${balance.servo.label}`,
+    ];
+    summary.forEach(line => { doc.text(doc.splitTextToSize(line, 180), 15, y); y += 5.5; });
+    y += 3;
+    tableHeader(t('mb_breakdown'), pt ? 'Massa / posição' : 'Mass / station');
+    const mbRows = balance.items.map(i => ({
+      label: `${t(i.labelKey)}${i.detail ? ' — ' + i.detail : ''}`.slice(0, 60),
+      value: `${i.mass.toFixed(0)} g   @ ${Math.round(i.s)} mm`,
+    }));
+    doc.setFontSize(8);
+    tableRows(mbRows);
+    y += 4;
+    if (balance.linkages.length) {
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.text(t('mb_pushrods'), 15, y);
+      doc.setFont('helvetica', 'normal');
+      y += 5;
+      balance.linkages.forEach(l => { doc.text(`${t('mb_' + l.id)}: ${l.length} mm`, 17, y); y += 4.5; });
+    }
+    if (balance.warnings.length) {
+      y += 3;
+      doc.setTextColor(180, 83, 9);
+      balance.warnings.forEach(w => {
+        const lines = doc.splitTextToSize('! ' + t(w.key, w.params), 180);
+        doc.text(lines, 15, y); y += lines.length * 4 + 1;
+      });
+    }
+    doc.setFontSize(7);
+    doc.setTextColor(130, 130, 130);
+    doc.text(doc.splitTextToSize(t('mb_note'), 180), 15, 285);
+  }
 
   // ==========================================
   // PAGES 2+: 1:1 TEMPLATES
