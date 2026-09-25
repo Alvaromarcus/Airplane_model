@@ -88,7 +88,7 @@ function centroid(r: V3[]): THREE.Vector3 {
 }
 
 /** Triangulate a (possibly concave, keyholed) planar ring with ear-clipping. */
-function capTriangles(r: V3[]): number[][] {
+export function capTriangles(r: V3[]): number[][] {
   const n = ringNormal(r);
   const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
   const pick = (p: V3): THREE.Vector2 =>
@@ -493,13 +493,25 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
 
   let wingIdx = 0;
   wingPieces.forEach(pc => {
-    const fs = splits(pc.f0, pc.f1, (pc.f1 - pc.f0) * halfSpan, maxLen);
+    // Standing on its root face, a swept section's footprint is its chord plus
+    // the sweep over its height: add span-wise cuts until it fits the bed
+    const x1At = (f: number) => (typeof pc.x1 === 'function' ? pc.x1(f) : pc.x1);
+    const footprint = (fa: number, fb: number) => {
+      const lo = Math.min(leAt(fa) + pc.x0 * chordAt(fa), leAt(fb) + pc.x0 * chordAt(fb));
+      const hi = Math.max(leAt(fa) + x1At(fa) * chordAt(fa), leAt(fb) + x1At(fb) * chordAt(fb));
+      return hi - lo;
+    };
+    let nSpan = Math.max(1, Math.ceil(((pc.f1 - pc.f0) * halfSpan) / maxLen - 1e-9));
+    const worst = (n: number) => Math.max(...Array.from({ length: n }, (_, i) =>
+      footprint(pc.f0 + ((pc.f1 - pc.f0) * i) / n, pc.f0 + ((pc.f1 - pc.f0) * (i + 1)) / n)));
+    while (nSpan < 12 && worst(nSpan) > maxChordFit && worst(nSpan + 1) < worst(nSpan) - 1) nSpan++;
+    const fs = Array.from({ length: nSpan + 1 }, (_, i) => pc.f0 + ((pc.f1 - pc.f0) * i) / nSpan);
     for (let i = 0; i < fs.length - 1; i++) {
       wingIdx++;
       // Chord-wise split when the section's longest chord does not fit the bed
       const x1Of = (f: number) => (typeof pc.x1 === 'function' ? pc.x1(f) : pc.x1);
       const x1Here = x1Of(fs[i]);
-      const usedChord = chordAt(fs[i]) * (x1Here - pc.x0);
+      const usedChord = Math.max(chordAt(fs[i]) * (x1Here - pc.x0), footprint(fs[i], fs[i + 1]));
       const nC = Math.ceil(usedChord / maxChordFit - 1e-9);
       let xs = Array.from({ length: nC + 1 }, (_, k) => pc.x0 + ((x1Here - pc.x0) * k) / nC);
       if (nC > 1) {
@@ -639,7 +651,10 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
       if (bays.length) {
         const xA = se(thA, W, Hh, yc)[0];
         pts.push([xA, yTop(xA)]);
-        const floor = activeBay ? Math.max(Math.min(activeBay.floorY ?? yc, yTop(xA) - 1), yc - Hh / 2 + 1.2) : null;
+        // The floor must stay above the bottom skin at the bay edges (round
+        // sections rise towards the sides), otherwise the outline self-intersects
+        const bottomAtEdge = yc - (yTop(xA) - yc);
+        const floor = activeBay ? Math.max(Math.min(activeBay.floorY ?? yc, yTop(xA) - 1), bottomAtEdge + 1.2) : null;
         for (let i = 0; i < NFLOOR; i++) {
           const x = xA - (2 * xA * i) / (NFLOOR - 1);
           pts.push([x, floor === null ? yTop(x) : Math.min(floor, yTop(x))]);

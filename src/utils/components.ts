@@ -8,7 +8,7 @@
  */
 import * as THREE from 'three';
 import type { AirfoilType } from './calculations';
-import type { Layout } from './geometry';
+import { sectionHalfHeightAt, type Layout } from './geometry';
 import { getAirfoil } from './airfoils';
 import { buildPrintPlan, DEFAULT_PRINT_SETTINGS, type PrintPlan, type Pocket } from './printParts';
 
@@ -252,7 +252,7 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
     const fz = L.fuselage;
     const sServo = (w.leS + w.rootChord) * mm + servo.l / 2 + 15;
     const sec = fz.section(sServo / mm);
-    const baseY = (sec.yc - sec.h / 2) * mm + servo.h / 2 + 3;
+    const baseY = sec.yc * mm - sectionHalfHeightAt(sec, (servo.w + 1) / mm, fz.style) * mm + servo.h / 2 + 3;
     // Two servos side by side, standing, long axis along the fuselage
     ([['elev', -1], ['rudder', 1]] as const).forEach(([id, side]) => {
       const x = side * (servo.w / 2 + 1);
@@ -307,10 +307,10 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
     const fz = L.fuselage;
     const sE = 10 + esc.l / 2;
     const secE = fz.section(sE / mm);
-    escPos = [0, (secE.yc + secE.h / 2) * mm - esc.h / 2 - 3, sE];
+    escPos = [0, secE.yc * mm + sectionHalfHeightAt(secE, (esc.w / 2) / mm, fz.style) * mm - esc.h / 2 - 3, sE];
     const sR = L.cgS * mm + 25;
     const secR = fz.section(sR / mm);
-    rxPos = [0, (secR.yc + secR.h / 2) * mm - RX.h / 2 - 3, sR];
+    rxPos = [0, secR.yc * mm + sectionHalfHeightAt(secR, (RX.w / 2) / mm, fz.style) * mm - RX.h / 2 - 3, sR];
   } else {
     // Flying wing: electronics as far forward as possible (they help the balance);
     // the motor wires run aft to the pusher.
@@ -340,7 +340,9 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
       const lo = 10 + bt.l / 2;                          // right behind the firewall
       const hi = (w.leS + w.rootChord) * mm - bt.l / 2;  // up to the wing TE
       const secMid = fz.section(((lo + hi) / 2) / mm);
-      return { range: [lo, Math.max(lo, hi)], y: (secMid.yc - secMid.h / 2) * mm + bt.h / 2 + 2 };
+      // Rest on the floor where the pack's edges are (round sections rise towards the sides)
+      const hb = sectionHalfHeightAt(secMid, (bt.w / 2) / mm, fz.style) * mm;
+      return { range: [lo, Math.max(lo, hi)], y: secMid.yc * mm - hb + bt.h / 2 + 2 };
     }
     const lo = w.leAt(0) * mm + 8 + bt.l / 2;
     const hi = escPos[2] - esc.l / 2 - 5 - bt.l / 2;
@@ -402,7 +404,8 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
   }
   if (!L.isFW && L.fuselage) {
     const sec = L.fuselage.section(bS / mm);
-    if (battery.w + 4 > sec.w * mm || battery.h + 4 > sec.h * mm) {
+    const hEdge = 2 * sectionHalfHeightAt(sec, (battery.w / 2) / mm, L.fuselage.style) * mm;
+    if (battery.w + 4 > sec.w * mm || battery.h + 5 > hEdge) {
       warnings.push({ key: 'mb_warn_battery_fit', params: { w: Math.round(sec.w * mm), h: Math.round(sec.h * mm) } });
     }
   } else {

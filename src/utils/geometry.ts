@@ -267,3 +267,16 @@ export function aileronOutline(L: Layout): [number, number][] {
   pts.push([aileron.f0 * wing.halfSpan, wing.teAt(aileron.f0)]);
   return pts;
 }
+
+/** Superellipse exponent of the fuselage cross-section for each style. */
+export const FUSE_EXPO: Record<FuselageType, number> = { trainer: 6, sport: 2.4 };
+
+/**
+ * Half height of a fuselage cross-section at lateral offset x (same unit as
+ * the section): the top is at yc + h, the bottom at yc − h. Round (sport)
+ * sections get much lower towards the sides.
+ */
+export function sectionHalfHeightAt(sec: FuselageSection, x: number, style: FuselageType): number {
+  const n = FUSE_EXPO[style];
+  return (sec.h / 2) * Math.max(0, 1 - Math.abs((2 * x) / sec.w) ** n) ** (1 / n);
+}
