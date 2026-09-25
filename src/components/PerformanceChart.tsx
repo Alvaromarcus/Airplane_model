@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AircraftMetrics, AircraftType } from '../utils/calculations';
+import { SM_RANGE } from '../utils/calculations';
 
 interface PerformanceChartProps {
   metrics: AircraftMetrics;
@@ -54,8 +55,12 @@ export default function PerformanceChart({ metrics, isDarkMode, aircraftType }: 
 
       // Regions: < 5, 5-20, > 20
       // Let's map -10% to 40% SM across the bar (range 50)
-      const SM_MIN = -10;
-      const SM_MAX = 40;
+      // The ideal zone always spans 30 %–60 % of the bar (the mini bars share
+      // those columns); the scale adapts to the layout's comfortable range.
+      const [smLo, smHi] = SM_RANGE[aircraftType];
+      const SM_RANGE_W = (smHi - smLo) / 0.3;
+      const SM_MIN = smLo - 0.3 * SM_RANGE_W;
+      const SM_MAX = SM_MIN + SM_RANGE_W;
       const smToX = (sm: number) => {
         const clamped = Math.max(SM_MIN, Math.min(SM_MAX, sm));
         return BAR_X + ((clamped - SM_MIN) / (SM_MAX - SM_MIN)) * BAR_W;
@@ -64,8 +69,8 @@ export default function PerformanceChart({ metrics, isDarkMode, aircraftType }: 
       // idealLeftFrac = (5 - SM_MIN) / (SM_MAX - SM_MIN) = 15/50 = 0.30
       // idealRightFrac = (20 - SM_MIN) / (SM_MAX - SM_MIN) = 30/50 = 0.60
 
-      const x5 = smToX(5);
-      const x20 = smToX(20);
+      const x5 = smToX(smLo);
+      const x20 = smToX(smHi);
 
       // Draw Unstable (Red)
       ctx.fillStyle = '#ef4444';

@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next';
 import { SlidersHorizontal, ShieldCheck, Printer, X } from 'lucide-react';
 
-interface Props { open: boolean; onClose: () => void }
+interface Props { open: boolean; onClose: () => void; onExamples: () => void }
 
-export default function WelcomeModal({ open, onClose }: Props) {
+export default function WelcomeModal({ open, onClose, onExamples }: Props) {
   const { t } = useTranslation();
   if (!open) return null;
   const steps = [
@@ -30,7 +30,8 @@ export default function WelcomeModal({ open, onClose }: Props) {
             </li>
           ))}
         </ol>
-        <div className="px-6 pb-6 flex justify-end">
+        <div className="px-6 pb-6 flex flex-wrap justify-end gap-2">
+          <button onClick={onExamples} className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium">{t('examples_cta')}</button>
           <button onClick={onClose} className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold">{t('welcome_cta')}</button>
         </div>
       </div>

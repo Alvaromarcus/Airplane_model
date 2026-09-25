@@ -30,11 +30,16 @@ export interface ControlSurfaces {
   aileronChord: number;
   elevatorChord: number;
   rudderChord: number;
+  /**
+   * Flying wing only: target static margin (% of MAC). The CG is placed this
+   * far ahead of the neutral point (Hepperle: 2–5 % typical, more for beginners).
+   */
+  fwStaticMargin: number;
 }
 
 export const DEFAULT_CONTROL_SURFACES: Record<AircraftType, ControlSurfaces> = {
-  conventional: { aileronStart: 50, aileronEnd: 95, aileronChord: 25, elevatorChord: 30, rudderChord: 40 },
-  flying_wing:  { aileronStart: 30, aileronEnd: 95, aileronChord: 22, elevatorChord: 0,  rudderChord: 0 },
+  conventional: { aileronStart: 50, aileronEnd: 95, aileronChord: 25, elevatorChord: 30, rudderChord: 40, fwStaticMargin: 6 },
+  flying_wing:  { aileronStart: 30, aileronEnd: 95, aileronChord: 22, elevatorChord: 0,  rudderChord: 0, fwStaticMargin: 6 },
 };
 
 /** Clamp control-surface values into physically meaningful ranges. */
@@ -48,13 +53,17 @@ export function sanitizeControls(c: ControlSurfaces): ControlSurfaces {
     aileronChord: clamp(c.aileronChord, 5, 50),
     elevatorChord: clamp(c.elevatorChord, 0, 60),
     rudderChord: clamp(c.rudderChord, 0, 60),
+    fwStaticMargin: clamp(c.fwStaticMargin ?? 6, 1, 20),
   };
 }
 
-/** CG target as a fraction of MAC for each layout. */
-export const CG_FRACTION: Record<AircraftType, number> = {
-  conventional: 0.28,
-  flying_wing: 0.18,
+/** CG target as a fraction of MAC for conventional aircraft. */
+export const CG_FRACTION_CONVENTIONAL = 0.28;
+
+/** Comfortable static-margin range (% MAC) per layout. */
+export const SM_RANGE: Record<AircraftType, [number, number]> = {
+  conventional: [5, 20],
+  flying_wing: [2, 12],
 };
 
 export interface AircraftPreset {
@@ -94,10 +103,10 @@ export const AIRCRAFT_PRESETS: AircraftPreset[] = [
     tailEfficiencyOverride: 0,   // no tail
     defaults: {
       wingspan: 90,
-      rootChord: 30,
-      tipChord: 10,
-      sweepOffset: 20,
-      dihedral: 3,
+      rootChord: 26,
+      tipChord: 13,
+      sweepOffset: 30,
+      dihedral: 2,
       hStabSpan: 0,
       hStabChord: 0,
       vStabSpan: 8,
@@ -232,8 +241,12 @@ export function calculateMetrics(
   const sweepAngleTan = dims.sweepOffset / (safeWingspan / 2);
   const macLeOffset = yMac * sweepAngleTan;
 
-  // Theoretical CG from root leading edge
-  const cgFraction = CG_FRACTION[aircraftType];
+  // Theoretical CG from root leading edge.
+  // Conventional: 28 % MAC. Flying wing (M. Hepperle, "Basic Design of Flying
+  // Wing Models"): NP at the quarter chord of the MAC, placed at its span
+  // station (so sweep is already accounted for); CG = NP − SM·MAC.
+  const fwSm = sanitizeControls(controls).fwStaticMargin / 100;
+  const cgFraction = aircraftType === 'flying_wing' ? 0.25 - fwSm : CG_FRACTION_CONVENTIONAL;
   const cgPosition = macLeOffset + (mac * cgFraction);
 
   const aspectRatio = (safeWingspan * safeWingspan) / wingArea;
@@ -272,16 +285,9 @@ export function calculateMetrics(
   let neutralPoint: number;
 
   if (aircraftType === 'flying_wing') {
-    // Swept flying wing: NP shifts aft with sweep.
-    // sweepRatio = sweepOffset / (halfSpan), clamped to [0, 0.7]
-    const halfSpan = safeWingspan / 2;
-    const sweepRatioNP = Math.min(0.7, Math.max(0, dims.sweepOffset / halfSpan));
-
-    // NP for flying wing ≈ AC_wing + sweep contribution
-    // Typical range: 25%MAC (unswept) to ~40%MAC (heavily swept)
-    const npFraction = 0.25 + 0.20 * sweepRatioNP;
-    neutralPoint = macLeOffset + (mac * npFraction);
-
+    // Tailless wing: NP = aerodynamic centre = 25 % of the MAC, measured from
+    // the MAC leading edge (which already sits aft by the sweep at y_MAC).
+    neutralPoint = wingAcPosition;
   } else {
     // Conventional formula
     neutralPoint =
@@ -417,11 +423,12 @@ export function validateDesign(
     checks.push({ id: 'dihedral_high', level: 'warning', messageKey: 'dihedral_high', fixKey: 'fix_dihedral_high' });
   }
 
-  // Static Margin validation
-  if (metrics.staticMargin < 5) {
-    checks.push({ id: 'sm_low', level: 'unstable', messageKey: 'sm_low', fixKey: 'fix_sm_low' });
-  } else if (metrics.staticMargin > 20) {
-    checks.push({ id: 'sm_high', level: 'warning', messageKey: 'sm_high', fixKey: 'fix_sm_high' });
+  // Static Margin validation (flying wings fly with much smaller margins)
+  const [smLo, smHi] = SM_RANGE[aircraftType];
+  if (metrics.staticMargin < smLo) {
+    checks.push({ id: 'sm_low', level: 'unstable', messageKey: aircraftType === 'flying_wing' ? 'fw_sm_low' : 'sm_low', fixKey: aircraftType === 'flying_wing' ? 'fix_fw_sm_low' : 'fix_sm_low' });
+  } else if (metrics.staticMargin > smHi) {
+    checks.push({ id: 'sm_high', level: 'warning', messageKey: aircraftType === 'flying_wing' ? 'fw_sm_high' : 'sm_high', fixKey: aircraftType === 'flying_wing' ? 'fix_fw_sm_high' : 'fix_sm_high' });
   }
 
   return checks;

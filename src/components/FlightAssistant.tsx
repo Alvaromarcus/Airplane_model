@@ -123,7 +123,7 @@ export default function FlightAssistant({ metrics, checks, unit, isDarkMode, air
                 <span className="font-medium">{formatNumber(metrics.mac)}</span>
               </li>
               <li className="flex justify-between">
-                <span className="text-slate-600 dark:text-slate-400">{t(aircraftType === 'flying_wing' ? 'cg_position_fw' : 'cg_position')}:</span>
+                <span className="text-slate-600 dark:text-slate-400">{aircraftType === 'flying_wing' ? t('cg_position_fw', { sm: metrics.staticMargin.toFixed(0) }) : t('cg_position')}:</span>
                 <span className="font-medium">{formatNumber(metrics.cgPosition)}</span>
               </li>
               <li className="flex justify-between">
