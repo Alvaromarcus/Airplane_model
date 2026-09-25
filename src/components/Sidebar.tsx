@@ -199,6 +199,12 @@ export default function Sidebar({
           </div>
           {renderInput('sweep_angle', 'sweepOffset', undefined, -1000)}
           {renderInput('dihedral', 'dihedral', '°', -10, 30)}
+          {isFlyingWing && (
+            <>
+              {renderControl('fw_static_margin', 'fwStaticMargin', 1, 20)}
+              <p className="-mt-2 mb-3 text-[11px] leading-snug text-slate-500 dark:text-slate-400">{t('fw_static_margin_hint')}</p>
+            </>
+          )}
         </Section>
 
         {/* Propeller Section */}

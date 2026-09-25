@@ -7,6 +7,8 @@ import Scene3D from './components/Scene3D';
 import Header from './components/Header';
 import KpiBar from './components/KpiBar';
 import WelcomeModal from './components/WelcomeModal';
+import ExamplesDialog from './components/ExamplesDialog';
+import type { ExampleProject } from './utils/examples';
 import { projectFromUrl, shareUrl } from './utils/share';
 import {
   calculateMetrics, validateDesign, AIRCRAFT_PRESETS, DEFAULT_CONTROL_SURFACES,
@@ -103,6 +105,7 @@ function App() {
   const [viewMode, setViewMode] = useState<'2D' | '3D'>('2D');
   const [printSettings, setPrintSettings] = useState<PrintSettings>(initial.printSettings);
   const [stlOpen, setStlOpen] = useState(false);
+  const [examplesOpen, setExamplesOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(() => {
     try { return !localStorage.getItem('aerobuilder_welcome_seen') && !projectFromUrl(); } catch { return false; }
   });
@@ -218,6 +221,19 @@ function App() {
     }
   };
 
+  const loadExample = (ex: ExampleProject) => {
+    const st = ex.state;
+    setDimensions(dimsInUnit(st.dimensions, unit));
+    setAircraftType(st.aircraftType);
+    setAirfoil(st.airfoil);
+    setFuselageStyle(st.fuselageStyle);
+    setPropeller(st.propeller);
+    setControls(sanitizeControls(st.controls));
+    setComponents(st.components);
+    setPropCutout(st.propCutout);
+    setExamplesOpen(false);
+  };
+
   const handlePresetSelect = (preset: AircraftPreset) => {
     setAircraftType(preset.type);
     // Presets are authored in cm — convert to the unit currently in use
@@ -225,7 +241,7 @@ function App() {
     setControls(DEFAULT_CONTROL_SURFACES[preset.type]);
     // Auto-select sensible defaults for each aircraft type
     if (preset.type === 'flying_wing') {
-      setPropeller('prop_9x47P');
+      setPropeller('prop_8x45P');
       setAirfoil('mh45');
     } else {
       setPropeller('prop_9x47');
@@ -251,6 +267,7 @@ function App() {
         onOpenSTL={() => setStlOpen(true)}
         onShare={handleShare}
         onHelp={() => setWelcomeOpen(true)}
+        onExamples={() => setExamplesOpen(true)}
       />
       <KpiBar metrics={metrics} checks={validationChecks} balance={balance} layout={layout} unit={unit} />
 
@@ -309,7 +326,8 @@ function App() {
         pockets={pockets}
         balance={balance}
       />
-      <WelcomeModal open={welcomeOpen} onClose={closeWelcome} />
+      <WelcomeModal open={welcomeOpen} onClose={closeWelcome} onExamples={() => { closeWelcome(); setExamplesOpen(true); }} />
+      <ExamplesDialog open={examplesOpen} onClose={() => setExamplesOpen(false)} onLoad={loadExample} />
       <footer className="flex-shrink-0 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 z-20">
         <span>{t('developed_by')} <a href="https://www.linkedin.com/in/alvaromarcus/" target="_blank" rel="noopener noreferrer" className="text-sky-700 dark:text-sky-400 hover:underline">Alvaro Marcus</a></span>
         <span aria-hidden="true">·</span>
