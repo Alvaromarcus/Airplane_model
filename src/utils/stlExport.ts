@@ -110,7 +110,7 @@ export interface ExportResult {
 export function planAndOrient(L: Layout, airfoil: AirfoilType, settings: PrintSettings, pockets: Pocket[] = [], balance: BalanceResult | null = null) {
   const plan = buildPrintPlan(L, airfoil, settings, pockets);
   // Servo mounts and hatches (normal printing, not vase mode) join the parts list
-  buildExtraParts(L, airfoil, balance, pockets).forEach((x, i) => {
+  buildExtraParts(L, airfoil, balance, pockets, Math.max(Math.min(settings.bedX, settings.bedY), Math.max(settings.bedX, settings.bedY) * 0.95) - 12).forEach((x, i) => {
     plan.sections.push({ name: x.name, kind: x.kind, side: x.side, index: i + 1, axis: x.axis, geometry: x.geometry, length: 0 });
   });
   const oriented = plan.sections.map(sec => orientForPrint(sec, settings));

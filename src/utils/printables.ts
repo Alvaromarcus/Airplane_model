@@ -63,7 +63,7 @@ function strip(inner: V3[], outer: V3[]): V3[] {
   return [...inner, ...outer.slice().reverse()];
 }
 
-export function buildExtraParts(L: Layout, airfoil: AirfoilType, balance: BalanceResult | null, pockets: Pocket[]): ExtraPart[] {
+export function buildExtraParts(L: Layout, airfoil: AirfoilType, balance: BalanceResult | null, pockets: Pocket[], maxHatchLen = 200): ExtraPart[] {
   const parts: ExtraPart[] = [];
   if (!balance) return parts;
   const mm = L.toCm * 10;
@@ -133,6 +133,11 @@ export function buildExtraParts(L: Layout, airfoil: AirfoilType, balance: Balanc
           return out;
         });
       }
+      // Long covers are split so each piece lies flat on the bed
+      intervals = intervals.flatMap(([a, b]) => {
+        const n = Math.max(1, Math.ceil((b - a) / maxHatchLen - 1e-9));
+        return Array.from({ length: n }, (_, i) => [a + ((b - a) * i) / n, a + ((b - a) * (i + 1)) / n] as [number, number]);
+      });
       intervals.filter(([a, b]) => b - a > 15).forEach(([a, b], k) => {
         const hw = (p.halfWidth ?? 10) + OVERLAP + 1;
         const nS = Math.max(2, Math.ceil((b - a) / 10) + 1);
