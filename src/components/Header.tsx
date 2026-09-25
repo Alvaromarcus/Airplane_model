@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Moon, Sun, Printer, FileText, Share2, Settings, Download, Check, RotateCcw, Box, PenLine, HelpCircle } from 'lucide-react';
+import { Moon, Sun, Printer, FileText, Share2, Settings, Download, Check, RotateCcw, Box, PenLine, HelpCircle, LayoutGrid } from 'lucide-react';
 import AppLogo from './AppLogo';
 import type { AircraftType } from '../utils/calculations';
 import { AIRCRAFT_PRESETS } from '../utils/calculations';
@@ -22,6 +22,7 @@ interface HeaderProps {
   onOpenSTL: () => void;
   onShare: () => Promise<boolean>;
   onHelp: () => void;
+  onExamples: () => void;
 }
 
 /** Closes a popover when clicking outside or pressing Escape. */
@@ -99,6 +100,13 @@ export default function Header(p: HeaderProps) {
         </div>
 
         <div className="order-2 sm:order-3 ml-auto flex items-center gap-1.5">
+          <button
+            onClick={p.onExamples}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+            title={t('examples_title')}
+          >
+            <LayoutGrid size={16} /><span className="hidden md:inline">{t('examples')}</span>
+          </button>
           <button onClick={p.onHelp} className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800" title={t('help')} aria-label={t('help')}>
             <HelpCircle size={18} />
           </button>
