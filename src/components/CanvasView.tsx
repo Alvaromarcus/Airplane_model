@@ -124,7 +124,13 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil, balance }: 
       ctx.strokeStyle = C.grid; ctx.setLineDash([5, 5]); ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
 
       // Wing (drawn first; fuselage on top of it for a high wing looks wrong, so wing last for trainer)
-      const wingHalf: [number, number][] = [[0, w.leAt(0)], [w.halfSpan, w.leAt(1)], [w.halfSpan, w.teAt(1)], [0, w.teAt(0)]];
+      const wingHalf: [number, number][] = [[0, w.leAt(0)], [w.halfSpan, w.leAt(1)], [w.halfSpan, w.teAt(1)]];
+      if (L.teCut) {
+        const fc = L.teCut.halfWidth / w.halfSpan;
+        wingHalf.push([L.teCut.halfWidth, w.teAt(fc)], [L.teCut.halfWidth, L.teCut.sCut], [0, L.teCut.sCut]);
+      } else {
+        wingHalf.push([0, w.teAt(0)]);
+      }
       const drawWingTop = () => {
         poly([...wingHalf, ...mirror(wingHalf).reverse()].map(([x, s]) => top(x, s)), C.wingFill, C.wingStroke, 2);
         const ail = aileronOutline(L);
@@ -211,6 +217,36 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil, balance }: 
             ? [top(x - sx / 2, st - ss / 2), top(x + sx / 2, st - ss / 2), top(x + sx / 2, st + ss / 2), top(x - sx / 2, st + ss / 2)]
             : [side(st - ss / 2, y - sy / 2), side(st + ss / 2, y - sy / 2), side(st + ss / 2, y + sy / 2), side(st - ss / 2, y + sy / 2)];
           poly(pts, col + 'b0', col, 1);
+        });
+        // Carbon spars (dashed) and printed servo mounts
+        ctx.save();
+        ctx.setLineDash([6, 3]);
+        ctx.strokeStyle = isDarkMode ? '#94a3b8' : '#1e293b';
+        balance.sparLines.forEach(sp => {
+          ctx.lineWidth = Math.max(1, (sp.d / mmU) * k);
+          (sp.mirror ? [1, -1] : [1]).forEach(sg => {
+            const a = proj === 'top' ? top(sg * sp.a[0] / mmU, sp.a[2] / mmU) : side(sp.a[2] / mmU, sp.a[1] / mmU);
+            const b2 = proj === 'top' ? top(sg * sp.b[0] / mmU, sp.b[2] / mmU) : side(sp.b[2] / mmU, sp.b[1] / mmU);
+            ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b2[0], b2[1]); ctx.stroke();
+          });
+        });
+        ctx.restore();
+        balance.mounts.forEach(m => {
+          const us = m.outline.map(p => p[0]), vs = m.outline.map(p => p[1]);
+          const u0 = Math.min(...us), u1 = Math.max(...us), v0 = Math.min(...vs), v1 = Math.max(...vs);
+          const [ox, oy, os] = m.origin.map(v => v / mmU);
+          const T = m.t / mmU;
+          let pts: Pt[];
+          if (m.normal === 'span') {
+            pts = proj === 'top'
+              ? [top(ox - T / 2, os + u0 / mmU), top(ox + T / 2, os + u0 / mmU), top(ox + T / 2, os + u1 / mmU), top(ox - T / 2, os + u1 / mmU)]
+              : [side(os + u0 / mmU, oy + v0 / mmU), side(os + u1 / mmU, oy + v0 / mmU), side(os + u1 / mmU, oy + v1 / mmU), side(os + u0 / mmU, oy + v1 / mmU)];
+          } else {
+            pts = proj === 'top'
+              ? [top(ox + u0 / mmU, os + v0 / mmU), top(ox + u1 / mmU, os + v0 / mmU), top(ox + u1 / mmU, os + v1 / mmU), top(ox + u0 / mmU, os + v1 / mmU)]
+              : [side(os + v0 / mmU, oy - T / 2), side(os + v1 / mmU, oy - T / 2), side(os + v1 / mmU, oy + T / 2), side(os + v0 / mmU, oy + T / 2)];
+          }
+          poly(pts, isDarkMode ? '#cbd5e1aa' : '#cbd5e1cc', isDarkMode ? '#e2e8f0' : '#64748b', 1);
         });
         ctx.strokeStyle = isDarkMode ? '#e5e7eb' : '#111827';
         ctx.lineWidth = 1;

@@ -89,11 +89,11 @@ function horizontalPiece(
   leAt: (f: number) => number,
   chordAt: (f: number) => number,
   yAt: (f: number) => number,
-  fA: number, fB: number, x0: number, x1: number,
+  fA: number, fB: number, x0: number, x1: number | ((f: number) => number),
 ): THREE.BufferGeometry {
-  const outline = airfoilSegment(af, x0, x1);
   const rings: V3[][] = [fA, fB].map(f => {
     const c = chordAt(f);
+    const outline = airfoilSegment(af, x0, typeof x1 === 'function' ? x1(f) : x1);
     return outline.map(([cx, ty]) => [spanAt(f), yAt(f) + ty * c, -(leAt(f) + cx * c)] as V3);
   });
   return loftRings(rings);
@@ -131,7 +131,15 @@ export function buildAircraftParts(L: Layout, airfoil: AirfoilType): { right: Pa
   // ── Wing (split around the aileron / elevon) ──
   const hinge = 1 - a.chordFrac;
   if (a.f0 > 0.001) {
-    right.push({ id: 'wing_root', kind: 'wing', geometry: horizontalPiece(wingAf, span, w.leAt, w.chordAt, w.yAt, 0, a.f0, 0, 1) });
+    if (L.teCut) {
+      // Root trailing-edge notch for the pusher propeller
+      const fc = Math.min(L.teCut.halfWidth / w.halfSpan, a.f0);
+      const cutX1 = (f: number) => (L.teCut!.sCut - w.leAt(f)) / w.chordAt(f);
+      right.push({ id: 'wing_root_cut', kind: 'wing', geometry: horizontalPiece(wingAf, span, w.leAt, w.chordAt, w.yAt, 0, fc, 0, cutX1) });
+      if (fc < a.f0 - 1e-4) right.push({ id: 'wing_root', kind: 'wing', geometry: horizontalPiece(wingAf, span, w.leAt, w.chordAt, w.yAt, fc, a.f0, 0, 1) });
+    } else {
+      right.push({ id: 'wing_root', kind: 'wing', geometry: horizontalPiece(wingAf, span, w.leAt, w.chordAt, w.yAt, 0, a.f0, 0, 1) });
+    }
   }
   right.push({ id: 'wing_mid', kind: 'wing', geometry: horizontalPiece(wingAf, span, w.leAt, w.chordAt, w.yAt, a.f0, a.f1, 0, hinge - GAP / 2) });
   right.push({ id: 'aileron', kind: 'aileron', geometry: horizontalPiece(wingAf, span, w.leAt, w.chordAt, w.yAt, a.f0 + spanGap, a.f1 - spanGap, hinge + GAP / 2, 1) });

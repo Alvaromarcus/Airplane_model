@@ -15,16 +15,21 @@ import { buildPrintPlan, DEFAULT_PRINT_SETTINGS, type PrintPlan, type Pocket } f
 export type ServoKey = 'micro5' | 'sg90' | 'mg90s' | 'mid17' | 'standard';
 export type BatteryKey = 'auto' | string;
 
-export interface ServoSpec { key: ServoKey; label: string; mass: number; l: number; w: number; h: number }
+/**
+ * l = body length (between the tabs), w = width, h = height (base to top, without shaft).
+ * tabSpan = length over the mounting tabs, holeSpacing = screw hole spacing,
+ * tabH = height of the underside of the tabs above the base.
+ */
+export interface ServoSpec { key: ServoKey; label: string; mass: number; l: number; w: number; h: number; tabSpan: number; holeSpacing: number; tabH: number }
 export interface BatterySpec { key: string; cells: number; mAh: number; label: string; mass: number; l: number; w: number; h: number }
 
 // Body sizes (mm): l = length (incl. no tabs), w = width, h = height
 export const SERVOS: ServoSpec[] = [
-  { key: 'micro5', label: '5 g micro (HK-5330)', mass: 5, l: 20, w: 8.5, h: 18 },
-  { key: 'sg90', label: '9 g (SG90 / ES08MA)', mass: 9, l: 23, w: 12.5, h: 22.5 },
-  { key: 'mg90s', label: '13 g metal (MG90S)', mass: 13.4, l: 23, w: 12.5, h: 22.5 },
-  { key: 'mid17', label: '17 g (HXT-17 / HS-82)', mass: 17, l: 29, w: 13, h: 30 },
-  { key: 'standard', label: 'Standard 40 g (MG996R)', mass: 45, l: 40.5, w: 20, h: 37 },
+  { key: 'micro5', label: '5 g micro (HK-5330)', mass: 5, l: 20, w: 8.5, h: 18, tabSpan: 26, holeSpacing: 23, tabH: 12.5 },
+  { key: 'sg90', label: '9 g (SG90 / ES08MA)', mass: 9, l: 23, w: 12.5, h: 22.5, tabSpan: 32.5, holeSpacing: 28, tabH: 15.9 },
+  { key: 'mg90s', label: '13 g metal (MG90S)', mass: 13.4, l: 23, w: 12.5, h: 22.5, tabSpan: 32.5, holeSpacing: 28, tabH: 15.9 },
+  { key: 'mid17', label: '17 g (HXT-17 / HS-82)', mass: 17, l: 29, w: 13, h: 30, tabSpan: 39, holeSpacing: 34.5, tabH: 20.5 },
+  { key: 'standard', label: 'Standard 40 g (MG996R)', mass: 45, l: 40.5, w: 20, h: 37, tabSpan: 54.5, holeSpacing: 49.5, tabH: 26.5 },
 ];
 
 export const BATTERIES: BatterySpec[] = [
@@ -43,7 +48,7 @@ export const BATTERIES: BatterySpec[] = [
 export interface ComponentSettings { servo: ServoKey; battery: BatteryKey }
 export const DEFAULT_COMPONENTS: ComponentSettings = { servo: 'sg90', battery: 'auto' };
 
-export type ItemKind = 'airframe' | 'spar' | 'motor' | 'prop' | 'esc' | 'battery' | 'servo' | 'rx' | 'misc' | 'ballast';
+export type ItemKind = 'airframe' | 'spar' | 'motor' | 'prop' | 'esc' | 'battery' | 'servo' | 'rx' | 'misc' | 'ballast' | 'mount' | 'hatch';
 
 export const COMPONENT_COLORS: Partial<Record<ItemKind, string>> = {
   servo: '#7c3aed',
@@ -51,6 +56,9 @@ export const COMPONENT_COLORS: Partial<Record<ItemKind, string>> = {
   esc: '#ef4444',
   rx: '#0ea5e9',
   ballast: '#52525b',
+  spar: '#1e293b',
+  mount: '#e2e8f0',
+  hatch: '#38bdf8',
 };
 
 export interface MassItem {
@@ -66,9 +74,30 @@ export interface MassItem {
 
 export interface Linkage { id: string; from: [number, number, number]; to: [number, number, number]; length: number } // [x,y,s] mm
 
+/**
+ * Printable servo mount (flat plate, printed in normal mode). Drawn in its own
+ * 2D frame (u, v) and extruded by t along its normal:
+ *  - 'span' plate (wing servo): u = chord (station), v = up
+ *  - 'up' tray (fuselage servos): u = span (x), v = station
+ */
+export interface MountSpec {
+  id: string;
+  side: 'R' | 'L' | 'C';
+  normal: 'span' | 'up';
+  origin: [number, number, number];      // centre of the plate [x, y, s] mm
+  outline: [number, number][];           // closed polygon (u, v)
+  windows: [number, number][][];         // closed polygons cut through
+  holes: { u: number; v: number; d: number }[];
+  t: number;
+}
+
+export interface SparLine { id: string; d: number; a: [number, number, number]; b: [number, number, number]; mirror: boolean }
+
 export interface BalanceResult {
   items: MassItem[];
   linkages: Linkage[];
+  mounts: MountSpec[];
+  sparLines: SparLine[];
   servo: ServoSpec;
   battery: BatterySpec;
   auw: number;                // g
@@ -172,26 +201,50 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
   const servoXFrac = (mainX + rearX) / 2;
   const fS = L.aileron.f0 + 0.12 * (L.aileron.f1 - L.aileron.f0);
   const cS = w.chordAt(fS) * mm;
+  const mounts: MountSpec[] = [];
+  const PLATE_T = 2.5;
+  // Pocket depth used for wing servos (keeps 1.2 mm of the opposite skin)
+  const thickAtServo = (af.upper(servoXFrac) - af.lower(servoXFrac)) * cS;
+  const servoPocketDepth = Math.min(servo.w + 3, thickAtServo - 1.2);
   const wingServo = (side: 1 | -1) => {
+    // Servo lying on its side: height span-wise (output shaft pointing outboard),
+    // length along the chord, width vertical; the arm comes out through the lower skin.
     const x = side * fS * w.halfSpan * mm;
     const s = w.leAt(fS) * mm + servoXFrac * cS;
-    const midY = w.yAt(fS) * mm + (af.upper(servoXFrac) + af.lower(servoXFrac)) / 2 * cS;
+    const lowerY = w.yAt(fS) * mm + af.lower(servoXFrac) * cS;
+    const midY = lowerY + servo.w / 2 + 0.5;
     items.push({
       id: `servo_wing_${side > 0 ? 'R' : 'L'}`, kind: 'servo', labelKey: L.isFW ? 'mb_servo_elevon' : 'mb_servo_aileron',
       detail: servo.label, mass: servo.mass, s, x, y: midY,
-      size: [servo.l, servo.w, servo.h], // lying flat: long axis span-wise, height along the chord
+      size: [servo.h, servo.w, servo.l],
     });
-    // Arm on the lower side, pushrod aft to the horn on the aileron
-    const armY = w.yAt(fS) * mm + af.lower(servoXFrac) * cS - 4;
+    // Mounting plate at the tabs (servo slides in from inboard, tabs screw to the plate)
+    const plateX = x + side * (-servo.h / 2 + servo.tabH + PLATE_T / 2);
+    const plateH = Math.max(servoPocketDepth - 0.4, servo.w + 1.5);
+    const U = (servo.tabSpan + 5) / 2;
+    const winW = (servo.l + 0.4) / 2;
+    const vBot = -plateH / 2, vTop = plateH / 2, vWin = vBot + servo.w + 0.4;
+    mounts.push({
+      id: `mount_wing_${side > 0 ? 'R' : 'L'}`, side: side > 0 ? 'R' : 'L', normal: 'span',
+      origin: [plateX, lowerY + 0.2 + plateH / 2, s],
+      // U-shaped plate: the window is open towards the pocket opening (lower skin)
+      outline: [[-U, vBot], [-winW, vBot], [-winW, vWin], [winW, vWin], [winW, vBot], [U, vBot], [U, vTop], [-U, vTop]],
+      windows: [],
+      holes: [-1, 1].map(k => ({ u: k * servo.holeSpacing / 2, v: vBot + servo.w / 2 + 0.2, d: 1.8 })),
+      t: PLATE_T,
+    });
+    // Arm at the shaft (outboard end, near one end of the body), pushrod aft to the horn
+    const armX = x + side * (servo.h / 2 - 3);
+    const armS = s + servo.l * 0.25;
+    const armY = lowerY - 6;
     const hornS = w.leAt(fS) * mm + (hingeX + 0.04) * cS;
     const hornY = w.yAt(fS) * mm + af.lower(hingeX + 0.04) * cS - 8;
-    const from: [number, number, number] = [x, armY, s + servo.h * 0.3];
-    const to: [number, number, number] = [x, hornY, hornS];
+    const from: [number, number, number] = [armX, armY, armS];
+    const to: [number, number, number] = [armX, hornY, hornS];
     linkages.push({ id: `link_wing_${side > 0 ? 'R' : 'L'}`, from, to, length: dist(from, to) });
   };
   wingServo(1); wingServo(-1);
-  const thickAtServo = (af.upper(servoXFrac) - af.lower(servoXFrac)) * cS;
-  if (servo.w + 2 > thickAtServo) {
+  if (servo.w + 2.5 > thickAtServo) {
     warnings.push({ key: 'mb_warn_servo_thick', params: { t: thickAtServo.toFixed(1), h: servo.w } });
   }
 
@@ -208,6 +261,27 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
     if ((sec.w * mm) < servo.w * 2 + 6 || (sec.h * mm) < servo.h + 6) {
       warnings.push({ key: 'mb_warn_servo_fuse' });
     }
+    // Printed tray: servos drop in from the top and rest on their tabs
+    {
+      const trayY = baseY - servo.h / 2 + servo.tabH - PLATE_T / 2;
+      const halfU = Math.min(servo.w + 1 + 6, (sec.w * mm) / 2 - 1.5);
+      const halfV = (servo.tabSpan + 6) / 2;
+      // (the two windows are offset by a hair so their edges are never collinear —
+      // collinear hole edges make the ear-clipping triangulation drop vertices)
+      const win = (cx: number): [number, number][] => {
+        const a2 = (servo.w + 0.4) / 2, b2 = (servo.l + 0.4) / 2 + (cx > 0 ? 0.05 : 0);
+        return [[cx - a2, -b2], [cx + a2, -b2], [cx + a2, b2], [cx - a2, b2]];
+      };
+      const cxs = [-(servo.w / 2 + 1), servo.w / 2 + 1];
+      mounts.push({
+        id: 'mount_tail_servos', side: 'C', normal: 'up',
+        origin: [0, trayY, sServo],
+        outline: [[-halfU, -halfV], [halfU, -halfV], [halfU, halfV], [-halfU, halfV]],
+        windows: cxs.map(win),
+        holes: cxs.flatMap(cx => [-1, 1].map(k => ({ u: cx, v: k * servo.holeSpacing / 2, d: 1.8 }))),
+        t: PLATE_T,
+      });
+    }
     const h = L.hStab, f = L.fin;
     const eFrom: [number, number, number] = [-(servo.w / 2 + 1), baseY + servo.h / 2, sServo - servo.l * 0.25];
     const eTo: [number, number, number] = [-12, h.y * mm - 10, (h.leS + h.rootChord * (1 - h.hingeFrac) + h.rootChord * 0.05) * mm];
@@ -216,6 +290,15 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
     linkages.push({ id: 'link_elev', from: eFrom, to: eTo, length: dist(eFrom, eTo) });
     linkages.push({ id: 'link_rudder', from: rFrom, to: rTo, length: dist(rFrom, rTo) });
   }
+
+  // Printed servo mounts (PLA/PETG, ~70 % effective density)
+  mounts.forEach(m => {
+    let area = 0;
+    m.outline.forEach(([u1, v1], i) => { const [u2, v2] = m.outline[(i + 1) % m.outline.length]; area += u1 * v2 - u2 * v1; });
+    area = Math.abs(area) / 2;
+    m.windows.forEach(wp => { let a2 = 0; wp.forEach(([u1, v1], i) => { const [u2, v2] = wp[(i + 1) % wp.length]; a2 += u1 * v2 - u2 * v1; }); area -= Math.abs(a2) / 2; });
+    items.push({ id: m.id, kind: 'mount', labelKey: 'mb_mount', mass: area * m.t * 1.24e-3 * 0.7, s: m.origin[2], x: m.origin[0], y: m.origin[1] });
+  });
 
   // ── ESC + receiver ──
   let escPos: [number, number, number];
@@ -332,7 +415,7 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
   const wingAreaDm2 = ((w.rootChord + w.tipChord) / 2 * w.halfSpan * 2) * mm * mm / 1e4;
 
   return {
-    items, linkages, servo, battery, auw, airframe,
+    items, linkages, mounts, sparLines: P.sparLines, servo, battery, auw, airframe,
     cgTarget: T, cgAchieved, batteryRange: range, ballast,
     wingLoading: auw / wingAreaDm2,
     warnings,
@@ -354,9 +437,11 @@ export function cutoutsFromBalance(b: BalanceResult, L: Layout): Pocket[] {
   const out: Pocket[] = [];
   const it = (id: string) => b.items.find(i => i.id === id);
   const sv = it('servo_wing_R');
+  const plate = b.mounts.find(m => m.id === 'mount_wing_R');
   if (sv?.size) {
     const [sx, sy, ss] = sv.size;
-    out.push({ id: 'servo_wing', part: 'wing', side: 'lower', xa: sv.x - sx / 2 - 1, xb: sv.x + sx / 2 + 1, sa: sv.s - ss / 2 - 1, sb: sv.s + ss / 2 + 1, depth: sy + 1 });
+    const halfChord = Math.max(ss / 2, plate ? Math.max(...plate.outline.map(p => Math.abs(p[0]))) : 0) + 1;
+    out.push({ id: 'servo_wing', part: 'wing', side: 'lower', xa: sv.x - sx / 2 - 1, xb: sv.x + sx / 2 + 1, sa: sv.s - halfChord, sb: sv.s + halfChord, depth: sy + 3 });
   }
   if (L.isFW) {
     ['battery', 'esc', 'rx'].forEach(id => {

@@ -34,7 +34,7 @@ export const DEFAULT_PRINT_SETTINGS: PrintSettings = {
   slit: 0.2, minTe: 0.8, clearance: 0.3,
 };
 
-export type PrintKind = 'wing' | 'aileron' | 'hstab' | 'elevator' | 'fin' | 'rudder' | 'winglet' | 'fuselage';
+export type PrintKind = 'wing' | 'aileron' | 'hstab' | 'elevator' | 'fin' | 'rudder' | 'winglet' | 'fuselage' | 'mount' | 'hatch';
 
 export interface PrintSection {
   name: string;               // file-friendly name, e.g. "wing_R_02"
@@ -57,6 +57,8 @@ export interface SparSpec {
 export interface PrintPlan {
   sections: PrintSection[];
   spars: SparSpec[];
+  /** Spar axes in mm [x, y, s]; `mirror` = also on the left side. */
+  sparLines: { id: string; d: number; a: [number, number, number]; b: [number, number, number]; mirror: boolean }[];
   warnings: { key: string; params?: Record<string, string | number> }[];
   settings: PrintSettings;
 }
@@ -167,25 +169,32 @@ export function loftSolid(rings: V3[][]): THREE.BufferGeometry {
     }
   }
 
-  const dir = new THREE.Vector3().subVectors(centroid(rings[rings.length - 1]), centroid(rings[0])).normalize();
-  const addCap = (ringIdx: number, wantDir: THREE.Vector3) => {
+  // Caps: orient them topologically so every edge is shared with opposite
+  // direction by the neighbouring side triangle, then fix the global sign below.
+  const projArea = (r: V3[], tri: number[] | null) => {
+    const nrm = ringNormal(r);
+    const ax = Math.abs(nrm.x), ay = Math.abs(nrm.y), az = Math.abs(nrm.z);
+    const pick = (p: V3): [number, number] => (ax >= ay && ax >= az ? [p[1], p[2]] : ay >= az ? [p[2], p[0]] : [p[0], p[1]]);
+    const pts = (tri ?? r.map((_, i) => i)).map(i => pick(r[i]));
+    let A = 0;
+    for (let i = 0; i < pts.length; i++) { const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length]; A += x1 * y2 - x2 * y1; }
+    return A;
+  };
+  const addCap = (ringIdx: number, followRing: boolean) => {
     const base = ringIdx * n;
-    // Ear-clipping returns consistently wound triangles: decide the flip once
-    // for the whole cap (per-triangle tests are unreliable on sliver triangles)
-    const tris = capTriangles(rings[ringIdx]);
-    const sum = new THREE.Vector3();
-    tris.forEach(([i0, i1, i2]) => {
-      const A = P(ringIdx, i0), B = P(ringIdx, i1), C = P(ringIdx, i2);
-      sum.add(new THREE.Vector3().subVectors(B, A).cross(new THREE.Vector3().subVectors(C, A)));
-    });
-    const flip = sum.dot(wantDir) < 0;
-    tris.forEach(([i0, i1, i2]) => {
-      if (flip) idx.push(base + i0, base + i2, base + i1);
-      else idx.push(base + i0, base + i1, base + i2);
+    const r = rings[ringIdx];
+    const ringSign = Math.sign(projArea(r, null));
+    const tris = capTriangles(r);
+    // Ear-clipping output is consistently wound: compare its total signed area once
+    const triSign = Math.sign(tris.reduce((acc, t) => acc + projArea(r, t), 0));
+    const keep = (triSign === ringSign) === followRing;
+    tris.forEach(t => {
+      const [i0, i1, i2] = keep ? t : [t[0], t[2], t[1]];
+      idx.push(base + i0, base + i1, base + i2);
     });
   };
-  addCap(0, dir.clone().negate());
-  addCap(rings.length - 1, dir);
+  addCap(0, flipSides);
+  addCap(rings.length - 1, !flipSides);
 
   // Drop zero-area triangles (collapsed pocket vertices, duplicate stations at
   // pocket end walls). Neighbouring faces share those edges, so the mesh stays closed.
@@ -199,6 +208,14 @@ export function loftSolid(rings: V3[][]): THREE.BufferGeometry {
   }
   idx.length = 0;
   idx.push(...clean);
+  let vol = 0;
+  for (let t = 0; t < idx.length; t += 3) {
+    const A = idx[t] * 3, B = idx[t + 1] * 3, C = idx[t + 2] * 3;
+    vol += pos[A] * (pos[B + 1] * pos[C + 2] - pos[B + 2] * pos[C + 1])
+      - pos[A + 1] * (pos[B] * pos[C + 2] - pos[B + 2] * pos[C])
+      + pos[A + 2] * (pos[B] * pos[C + 1] - pos[B + 1] * pos[C]);
+  }
+  if (vol < 0) for (let t = 0; t < idx.length; t += 3) { const tmp = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = tmp; }
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -357,6 +374,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
   const maxLen = Math.max(s.bedZ - 5, 20);
   const sections: PrintSection[] = [];
   const spars: SparSpec[] = [];
+  const sparLines: PrintPlan['sparLines'] = [];
   const warnings: PrintPlan['warnings'] = [];
   const wingAf = getAirfoil(airfoil);
   const tailAf = getAirfoil('sym_tail');
@@ -388,13 +406,31 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     const d = new THREE.Vector3(halfSpan, yAt(1) - yAt(0), (leAt(1) + x * chordAt(1)) - (leAt(0) + x * chordAt(0)));
     return Math.round(d.length());
   };
+  const wingSparLine = (id: string, x: number, d: number) => {
+    const pt = (f: number): [number, number, number] =>
+      [f * halfSpan, yAt(f) + (wingAf.upper(x) + wingAf.lower(x)) / 2 * chordAt(f), leAt(f) + x * chordAt(f)];
+    sparLines.push({ id, d, a: pt(0), b: pt(1), mirror: true });
+  };
+  if (mainD) wingSparLine('main', mainX, mainD);
+  if (rearD) wingSparLine('rear', rearX, rearD);
   if (mainD) spars.push({ id: 'main', part: 'spar_main', diameter: mainD, length: sparLen(mainX), count: 2 });
   else warnings.push({ key: 'stl_warn_no_spar' });
   if (rearD) spars.push({ id: 'rear', part: 'spar_rear', diameter: rearD, length: sparLen(rearX), count: 2 });
 
   // ── Wing halves ──
-  const wingPieces: { f0: number; f1: number; x0: number; x1: number; kind: PrintKind; label: string }[] = [];
-  if (a.f0 > 0.001) wingPieces.push({ f0: 0, f1: a.f0, x0: 0, x1: 1, kind: 'wing', label: 'wing' });
+  type X1 = number | ((f: number) => number);
+  const wingPieces: { f0: number; f1: number; x0: number; x1: X1; kind: PrintKind; label: string }[] = [];
+  if (a.f0 > 0.001) {
+    if (L.teCut) {
+      // Root trailing-edge notch for the pusher propeller (Zagi style)
+      const fc = Math.min((L.teCut.halfWidth * mm) / halfSpan, a.f0);
+      const sCut = L.teCut.sCut * mm;
+      wingPieces.push({ f0: 0, f1: fc, x0: 0, x1: (f: number) => (sCut - leAt(f)) / chordAt(f), kind: 'wing', label: 'wing' });
+      if (fc < a.f0 - 1e-4) wingPieces.push({ f0: fc, f1: a.f0, x0: 0, x1: 1, kind: 'wing', label: 'wing' });
+    } else {
+      wingPieces.push({ f0: 0, f1: a.f0, x0: 0, x1: 1, kind: 'wing', label: 'wing' });
+    }
+  }
   wingPieces.push({ f0: a.f0, f1: a.f1, x0: 0, x1: hinge - GAP / 2, kind: 'wing', label: 'wing' });
   if (a.f1 < 0.999) wingPieces.push({ f0: a.f1, f1: 1, x0: 0, x1: 1, kind: 'wing', label: 'wing' });
 
@@ -420,8 +456,10 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     return { a: na, b: nb, d: active ? p.depth : 0 };
   };
   /** Rings for a wing section fa..fb / chord x0..x1, stepping in and out of pockets. */
-  const wingRings = (fa: number, fb: number, x0: number, x1: number, holes: Hole[]): V3[][] => {
+  const wingRings = (fa: number, fb: number, x0: number, x1f: X1, holes: Hole[]): V3[][] => {
     const H = halfSpan;
+    const X1 = (f: number) => (typeof x1f === 'function' ? x1f(f) : x1f);
+    const x1 = Math.min(X1(fa), X1(fb));
     const mine = wingPockets.filter(p => p.xb > fa * H && p.xa < fb * H && (() => {
       const f = Math.min(Math.max(((p.xa + p.xb) / 2) / H, fa), fb);
       const c = chordAt(f), le = leAt(f);
@@ -436,9 +474,9 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     const uniq = bps.filter((f, i) => i === 0 || f - bps[i - 1] > 1e-6);
     const activeAt = (p: Pocket, fm: number) => fm * H > p.xa && fm * H < p.xb;
     const ring = (f: number, fm: number) => sectionOutline(
-      wingAf, x0, x1, chordAt(f), holes,
-      ups.map(p => toNotch(p, f, x0, x1, holes, activeAt(p, fm))),
-      los.map(p => toNotch(p, f, x0, x1, holes, activeAt(p, fm))),
+      wingAf, x0, X1(f), chordAt(f), holes,
+      ups.map(p => toNotch(p, f, x0, X1(f), holes, activeAt(p, fm))),
+      los.map(p => toNotch(p, f, x0, X1(f), holes, activeAt(p, fm))),
       s,
     ).map(([u, v]) => [f * H, yAt(f) + v, -(leAt(f) + u)] as V3);
     // Duplicate a station only where the set of active pockets changes (pocket end walls)
@@ -459,9 +497,11 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     for (let i = 0; i < fs.length - 1; i++) {
       wingIdx++;
       // Chord-wise split when the section's longest chord does not fit the bed
-      const usedChord = chordAt(fs[i]) * (pc.x1 - pc.x0);
+      const x1Of = (f: number) => (typeof pc.x1 === 'function' ? pc.x1(f) : pc.x1);
+      const x1Here = x1Of(fs[i]);
+      const usedChord = chordAt(fs[i]) * (x1Here - pc.x0);
       const nC = Math.ceil(usedChord / maxChordFit - 1e-9);
-      let xs = Array.from({ length: nC + 1 }, (_, k) => pc.x0 + ((pc.x1 - pc.x0) * k) / nC);
+      let xs = Array.from({ length: nC + 1 }, (_, k) => pc.x0 + ((x1Here - pc.x0) * k) / nC);
       if (nC > 1) {
         chordSplit = true;
         // Keep cuts at least 6% chord away from the spar holes
@@ -474,8 +514,10 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
       }
       const len = (fs[i + 1] - fs[i]) * halfSpan;
       for (let k = 0; k < xs.length - 1; k++) {
-        const holes = wingHoles(xs[k], xs[k + 1]);
-        const rings = wingRings(fs[i], fs[i + 1], xs[k], xs[k + 1], holes);
+        const last = k === xs.length - 2;
+        const hiX: X1 = last ? pc.x1 : xs[k + 1];
+        const holes = wingHoles(xs[k], last ? Math.min(x1Of(fs[i]), x1Of(fs[i + 1])) : xs[k + 1]);
+        const rings = wingRings(fs[i], fs[i + 1], xs[k], hiX, holes);
         const geo = loftSolid(rings);
         const suffix = xs.length > 2 ? String.fromCharCode(97 + k) : '';
         sections.push({ name: `wing_R_${pad(wingIdx)}${suffix}`, kind: 'wing', side: 'R', index: wingIdx, axis: [1, 0, 0], geometry: geo, length: len });
@@ -510,7 +552,10 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     const hasElev = h.hingeFrac > 0.001;
     const tailD = pickRod(thick(tailAf, 0.3, hc), 4);
     const holes: Hole[] = tailD ? [{ x: 0.3, d: tailD + s.clearance }] : [];
-    if (tailD) spars.push({ id: 'tail', part: 'spar_tail', diameter: tailD, length: Math.round(hs * 2 * 0.9), count: 1 });
+    if (tailD) {
+      spars.push({ id: 'tail', part: 'spar_tail', diameter: tailD, length: Math.round(hs * 2 * 0.9), count: 1 });
+      sparLines.push({ id: 'tail', d: tailD, a: [-hs * 0.9, hy, hLe + 0.3 * hc], b: [hs * 0.9, hy, hLe + 0.3 * hc], mirror: false });
+    }
     const pieces: [number, number, PrintKind, string][] = [[0, hasElev ? eh - GAP / 2 : 1, 'hstab', 'hstab']];
     if (hasElev) pieces.push([eh + GAP / 2, 1, 'elevator', 'elevator']);
     pieces.forEach(([x0, x1, kind, label]) => {
@@ -534,7 +579,10 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     const hasRud = f.hingeFrac > 0.001;
     const eh = 1 - f.hingeFrac;
     const finD = pickRod(thick(tailAf, 0.3, fc), 3);
-    if (finD) spars.push({ id: 'fin', part: 'spar_fin', diameter: finD, length: Math.round(H * 0.9), count: 1 });
+    if (finD) {
+      spars.push({ id: 'fin', part: 'spar_fin', diameter: finD, length: Math.round(H * 0.9), count: 1 });
+      sparLines.push({ id: 'fin', d: finD, a: [0, fy + 0.05 * H, fLe + 0.3 * fc], b: [0, fy + 0.95 * H, fLe + 0.3 * fc], mirror: false });
+    }
     const pieces: [number, number, PrintKind][] = [[0, hasRud ? eh - GAP / 2 : 1, 'fin']];
     if (hasRud) pieces.push([eh + GAP / 2, 1, 'rudder']);
     pieces.forEach(([x0, x1, kind]) => {
@@ -627,7 +675,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     }
   }
 
-  return { sections, spars, warnings, settings: s };
+  return { sections, spars, sparLines, warnings, settings: s };
 }
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
