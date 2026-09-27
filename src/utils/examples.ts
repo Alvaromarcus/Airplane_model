@@ -25,7 +25,7 @@ export interface ExampleProject {
   };
 }
 
-const CONV_CS: ControlSurfaces = { aileronStart: 50, aileronEnd: 95, aileronChord: 25, elevatorChord: 30, rudderChord: 40, fwStaticMargin: 6 };
+const CONV_CS: ControlSurfaces = { aileronStart: 50, aileronEnd: 95, aileronChord: 25, elevatorChord: 30, rudderChord: 40, fwStaticMargin: 6, convStaticMargin: 12 };
 
 export const EXAMPLES: ExampleProject[] = [
   {
@@ -82,7 +82,7 @@ export const EXAMPLES: ExampleProject[] = [
     state: {
       dimensions: { wingspan: 160, rootChord: 22, tipChord: 13, sweepOffset: 4, dihedral: 6, hStabSpan: 40, hStabChord: 10.5, vStabSpan: 18, vStabChord: 13, fuselageLength: 90, noseLength: 24, wingToTailDistance: 28, fuselageWidth: 6, fuselageHeight: 7 },
       unit: 'cm', aircraftType: 'conventional', airfoil: 'naca4412', fuselageStyle: 'sport', propeller: 'prop_9x47',
-      controls: { ...CONV_CS, aileronStart: 55, aileronChord: 22 },
+      controls: { ...CONV_CS, aileronStart: 55, aileronChord: 22, convStaticMargin: 15 },
       components: { servo: 'sg90', battery: 'auto' }, propCutout: false,
     },
   },
@@ -97,7 +97,7 @@ export const EXAMPLES: ExampleProject[] = [
     state: {
       dimensions: { wingspan: 90, rootChord: 26, tipChord: 13, sweepOffset: 30, dihedral: 2, hStabSpan: 0, hStabChord: 0, vStabSpan: 8, vStabChord: 6, fuselageLength: 30, noseLength: 0, wingToTailDistance: 0, fuselageWidth: 0, fuselageHeight: 0 },
       unit: 'cm', aircraftType: 'flying_wing', airfoil: 'mh45', fuselageStyle: 'trainer', propeller: 'prop_8x45P',
-      controls: { aileronStart: 30, aileronEnd: 95, aileronChord: 22, elevatorChord: 0, rudderChord: 0, fwStaticMargin: 6 },
+      controls: { aileronStart: 30, aileronEnd: 95, aileronChord: 22, elevatorChord: 0, rudderChord: 0, fwStaticMargin: 6, convStaticMargin: 12 },
       components: { servo: 'sg90', battery: 'auto' }, propCutout: true,
     },
   },
@@ -112,7 +112,7 @@ export const EXAMPLES: ExampleProject[] = [
     state: {
       dimensions: { wingspan: 120, rootChord: 30, tipChord: 17, sweepOffset: 42, dihedral: 1, hStabSpan: 0, hStabChord: 0, vStabSpan: 12, vStabChord: 9, fuselageLength: 32, noseLength: 0, wingToTailDistance: 0, fuselageWidth: 0, fuselageHeight: 0 },
       unit: 'cm', aircraftType: 'flying_wing', airfoil: 'mh45', fuselageStyle: 'trainer', propeller: 'prop_8x45P',
-      controls: { aileronStart: 30, aileronEnd: 95, aileronChord: 20, elevatorChord: 0, rudderChord: 0, fwStaticMargin: 6 },
+      controls: { aileronStart: 30, aileronEnd: 95, aileronChord: 20, elevatorChord: 0, rudderChord: 0, fwStaticMargin: 6, convStaticMargin: 12 },
       components: { servo: 'sg90', battery: '3s2200' }, propCutout: true,
     },
   },

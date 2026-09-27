@@ -97,7 +97,7 @@ export async function exportToPDF(
   const rows = [
     { label: t('wing_area'), value: `${metrics.wingArea.toFixed(0)} ${unit}²` },
     { label: t('mac'), value: fmt(metrics.mac) },
-    { label: isFW ? t('cg_position_fw', { sm: metrics.staticMargin.toFixed(0) }) : t('cg_position'), value: `${fmt(metrics.cgPosition)} ${t('cg_from_le')}` },
+    { label: isFW ? t('cg_position_fw', { sm: metrics.staticMargin.toFixed(0) }) : t('cg_position', { pct: (metrics.cgFraction * 100).toFixed(0) }), value: `${fmt(metrics.cgPosition)} ${t('cg_from_le')}` },
     { label: t('neutral_point'), value: `${fmt(metrics.neutralPoint)} ${t('cg_from_le')}` },
     { label: t('static_margin'), value: `${metrics.staticMargin.toFixed(1)} %` },
     { label: t('aspect_ratio'), value: `${metrics.aspectRatio.toFixed(2)}` },
