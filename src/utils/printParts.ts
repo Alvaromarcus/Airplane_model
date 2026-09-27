@@ -396,26 +396,30 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
   const mainCap = halfSpan * 2 <= 1000 ? 6 : halfSpan * 2 <= 1500 ? 8 : 10;
   const mainD = pickRod(thick(wingAf, mainX, chordAt(1)), mainCap);
   const rearD = rearX > mainX + 0.15 ? Math.min(pickRod(thick(wingAf, rearX, chordAt(1)), 4), Math.max(mainD - 2, 0)) : 0;
-  const wingHoles = (x0: number, x1: number): Hole[] => {
+  let mainStart = 0, rearStart = 0; // set below, once the spar lines are known
+  /** Spar holes of a section between chord fractions x0..x1 that starts at span fraction fa. */
+  const wingHoles = (x0: number, x1: number, fa = 1): Hole[] => {
     const hs: Hole[] = [];
-    if (mainD && mainX > x0 + 0.05 && mainX < x1 - 0.05) hs.push({ x: mainX, d: mainD + s.clearance });
-    if (rearD && rearX > x0 + 0.05 && rearX < x1 - 0.05) hs.push({ x: rearX, d: rearD + s.clearance });
+    if (mainD && fa >= mainStart - 1e-6 && mainX > x0 + 0.05 && mainX < x1 - 0.05) hs.push({ x: mainX, d: mainD + s.clearance });
+    if (rearD && fa >= rearStart - 1e-6 && rearX > x0 + 0.05 && rearX < x1 - 0.05) hs.push({ x: rearX, d: rearD + s.clearance });
     return hs;
   };
-  const sparLen = (x: number) => {
-    const d = new THREE.Vector3(halfSpan, yAt(1) - yAt(0), (leAt(1) + x * chordAt(1)) - (leAt(0) + x * chordAt(0)));
-    return Math.round(d.length());
+  const sparPt = (x: number, f: number): [number, number, number] =>
+    [f * halfSpan, yAt(f) + (wingAf.upper(x) + wingAf.lower(x)) / 2 * chordAt(f), leAt(f) + x * chordAt(f)];
+  // Spars stop at the wall of a centre bay they would otherwise cross
+  const startOf = (x: number, d: number) => (d ? sparStartFraction({ d: d + s.clearance, a: sparPt(x, 0), b: sparPt(x, 1) }, pockets, halfSpan) : 0);
+  mainStart = startOf(mainX, mainD);
+  rearStart = startOf(rearX, rearD);
+  const sparLen = (x: number, f0: number) => {
+    const [a0, b0] = [sparPt(x, f0), sparPt(x, 1)];
+    return Math.round(Math.hypot(b0[0] - a0[0], b0[1] - a0[1], b0[2] - a0[2]));
   };
-  const wingSparLine = (id: string, x: number, d: number) => {
-    const pt = (f: number): [number, number, number] =>
-      [f * halfSpan, yAt(f) + (wingAf.upper(x) + wingAf.lower(x)) / 2 * chordAt(f), leAt(f) + x * chordAt(f)];
-    sparLines.push({ id, d, a: pt(0), b: pt(1), mirror: true });
-  };
-  if (mainD) wingSparLine('main', mainX, mainD);
-  if (rearD) wingSparLine('rear', rearX, rearD);
-  if (mainD) spars.push({ id: 'main', part: 'spar_main', diameter: mainD, length: sparLen(mainX), count: 2 });
+  if (mainD) sparLines.push({ id: 'main', d: mainD, a: sparPt(mainX, mainStart), b: sparPt(mainX, 1), mirror: true });
+  if (rearD) sparLines.push({ id: 'rear', d: rearD, a: sparPt(rearX, rearStart), b: sparPt(rearX, 1), mirror: true });
+  if (mainD) spars.push({ id: 'main', part: 'spar_main', diameter: mainD, length: sparLen(mainX, mainStart), count: 2 });
   else warnings.push({ key: 'stl_warn_no_spar' });
-  if (rearD) spars.push({ id: 'rear', part: 'spar_rear', diameter: rearD, length: sparLen(rearX), count: 2 });
+  if (rearD) spars.push({ id: 'rear', part: 'spar_rear', diameter: rearD, length: sparLen(rearX, rearStart), count: 2 });
+  if (mainStart > 0 || rearStart > 0) warnings.push({ key: 'stl_info_spar_bays', params: { mm: Math.round(Math.max(mainStart, rearStart) * halfSpan) } });
 
   // ── Wing halves ──
   type X1 = number | ((f: number) => number);
@@ -433,6 +437,14 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
   }
   wingPieces.push({ f0: a.f0, f1: a.f1, x0: 0, x1: hinge - GAP / 2, kind: 'wing', label: 'wing' });
   if (a.f1 < 0.999) wingPieces.push({ f0: a.f1, f1: 1, x0: 0, x1: 1, kind: 'wing', label: 'wing' });
+  // A section boundary where each spar starts, so the sections inboard of it have no spar hole
+  [mainStart, rearStart].filter(f => f > 0).sort((p, q) => p - q).forEach(fc => {
+    const i = wingPieces.findIndex(pc => fc > pc.f0 + 1e-4 && fc < pc.f1 - 1e-4);
+    if (i >= 0) {
+      const pc = wingPieces[i];
+      wingPieces.splice(i, 1, { ...pc, f1: fc }, { ...pc, f0: fc });
+    }
+  });
 
   // Longest chord that fits the bed standing up (straight, or diagonally with its thickness)
   const bedMin = Math.min(s.bedX, s.bedY) - 4, bedMax = Math.max(s.bedX, s.bedY) - 4;
@@ -528,7 +540,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
       for (let k = 0; k < xs.length - 1; k++) {
         const last = k === xs.length - 2;
         const hiX: X1 = last ? pc.x1 : xs[k + 1];
-        const holes = wingHoles(xs[k], last ? Math.min(x1Of(fs[i]), x1Of(fs[i + 1])) : xs[k + 1]);
+        const holes = wingHoles(xs[k], last ? Math.min(x1Of(fs[i]), x1Of(fs[i + 1])) : xs[k + 1], fs[i]);
         const rings = wingRings(fs[i], fs[i + 1], xs[k], hiX, holes);
         const geo = loftSolid(rings);
         const suffix = xs.length > 2 ? String.fromCharCode(97 + k) : '';
@@ -694,3 +706,36 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
 }
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
+
+/**
+ * Span fraction where a wing spar must start so it does not run through a
+ * centre bay (flying-wing battery / ESC / receiver bays at the root). The spar
+ * then stops at the bay's outboard wall; the joiner plate bridges the centre.
+ */
+export function sparStartFraction(line: { d: number; a: [number, number, number]; b: [number, number, number] }, pockets: Pocket[], halfSpanMm: number): number {
+  let f0 = 0;
+  const sAt = (x: number) => {
+    const t = (x - line.a[0]) / Math.max(line.b[0] - line.a[0], 1e-6);
+    return line.a[2] + (line.b[2] - line.a[2]) * t;
+  };
+  pockets.filter(p => p.part === 'wing' && p.xa <= 1).forEach(p => {
+    const m = line.d / 2 + 1.5;
+    for (let k = 0; k <= 24; k++) {
+      const s = sAt(p.xa + ((p.xb - p.xa) * k) / 24);
+      if (s + m > p.sa && s - m < p.sb) { f0 = Math.max(f0, Math.min(0.9, (p.xb + 4) / halfSpanMm)); break; }
+    }
+  });
+  return f0;
+}
+
+/** Spar lines trimmed so they start at the wall of any centre bay they would cross. */
+export function trimSparLines<T extends { id: string; d: number; a: [number, number, number]; b: [number, number, number] }>(lines: T[], pockets: Pocket[], halfSpanMm: number): T[] {
+  return lines.map(l => {
+    if (l.id !== 'main' && l.id !== 'rear') return l;
+    const f0 = sparStartFraction(l, pockets, halfSpanMm);
+    if (f0 <= 0) return l;
+    const t = (f0 * halfSpanMm - l.a[0]) / Math.max(l.b[0] - l.a[0], 1e-6);
+    const a = [0, 1, 2].map(k => l.a[k] + (l.b[k] - l.a[k]) * t) as [number, number, number];
+    return { ...l, a };
+  });
+}

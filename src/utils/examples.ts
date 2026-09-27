@@ -90,8 +90,8 @@ export const EXAMPLES: ExampleProject[] = [
     id: 'zagi90',
     name: { pt: 'Asa voadora estilo Zagi 90 cm', en: 'Zagi-style flying wing 90 cm' },
     description: {
-      pt: 'Asa bem enflechada com MH45, winglets e hélice pusher no recorte do bordo de fuga. Balanceia com 3S 1800 deitada na transversal no bico (margem estática 5 %), sem lastro.',
-      en: 'Strongly swept wing with MH45, winglets and a pusher prop in the trailing-edge cut-out. Balances with a 3S 1800 lying across the nose (5 % static margin), no ballast.',
+      pt: 'Asa bem enflechada com MH45, winglets e hélice pusher no recorte do bordo de fuga. Balanceia com uma 3S 1300 no bico (margem estática 5 %), sem lastro; as longarinas começam na parede dos compartimentos centrais.',
+      en: 'Strongly swept wing with MH45, winglets and a pusher prop in the trailing-edge cut-out. Balances with a 3S 1300 in the nose (5 % static margin), no ballast; the spars start at the wall of the centre bays.',
     },
     tags: [{ pt: 'Asa voadora', en: 'Flying wing' }, { pt: 'Rápida', en: 'Fast' }],
     state: {
