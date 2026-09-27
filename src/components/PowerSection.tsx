@@ -79,6 +79,7 @@ export default function PowerSection({ balance, settings, onChange, layout, dime
         <>
           <Impact>
             {t('pw_battery_share', { mass: Math.round(bat.mass), pct: Math.round((bat.mass / b.auw) * 100) })}
+            {b.batteryAcross && <> · {t('pw_battery_across')}</>}
             {b.battery.cells !== rec.batteryCell && <> · <span className="text-amber-600 dark:text-amber-400">{t('pw_cells_mismatch', { cells: rec.batteryCell })}</span></>}
           </Impact>
           <Impact tone={cgOk ? 'ok' : 'bad'}>

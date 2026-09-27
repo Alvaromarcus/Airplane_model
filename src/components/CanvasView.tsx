@@ -281,6 +281,19 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil, balance }: 
             ctx.fillStyle = ASSEMBLY_COLORS.dowel; ctx.fill();
           }
         });
+        // Tail pushrods: guide tube and the holes to drill
+        balance.linkExits.forEach(ex2 => {
+          const pts = [ex2.through, ex2.skin].filter((p): p is [number, number, number] => !!p)
+            .map(p => (proj === 'top' ? top(p[0] / mmU, p[2] / mmU) : side(p[2] / mmU, p[1] / mmU)));
+          if (pts.length === 2) {
+            ctx.save(); ctx.strokeStyle = ASSEMBLY_COLORS.guide; ctx.lineWidth = 3.5; ctx.globalAlpha = 0.6;
+            ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); ctx.lineTo(pts[1][0], pts[1][1]); ctx.stroke(); ctx.restore();
+          }
+          pts.forEach(([px, py]) => {
+            ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+            ctx.strokeStyle = ASSEMBLY_COLORS.drill; ctx.lineWidth = 1.8; ctx.stroke();
+          });
+        });
         ctx.strokeStyle = isDarkMode ? '#e5e7eb' : '#111827';
         ctx.lineWidth = 1;
         balance.linkages.forEach(l => {
@@ -469,6 +482,7 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil, balance }: 
         });
         const chips2: [string, string][] = [[ASSEMBLY_COLORS.joiner, t('asm_joiner_short')]];
         if (hasBands) chips2.push([ASSEMBLY_COLORS.dowel, t('asm_dowels_short')], [ASSEMBLY_COLORS.band, t('asm_bands_short')]);
+        if (balance.linkExits.length) chips2.push([ASSEMBLY_COLORS.drill, t('link_exit_short')]);
         cx2 = lx;
         chips2.forEach(([col, lbl]) => {
           ctx.fillStyle = col; ctx.fillRect(cx2, ly + 76, 10, 10);

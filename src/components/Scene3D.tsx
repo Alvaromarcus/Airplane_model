@@ -159,6 +159,30 @@ function Components({ L, balance, airfoil, pockets, explode }: { L: Layout; bala
           </group>
         );
       })}
+      {/* Tail pushrods: guide tube from the bay wall to the exit, and the holes to drill */}
+      {balance.linkExits.map(ex2 => {
+        const pts = [ex2.through, ex2.skin].filter((p): p is [number, number, number] => !!p).map(p => new THREE.Vector3(p[0], p[1], -p[2]));
+        const tube = pts.length === 2 ? (() => {
+          const d = pts[1].clone().sub(pts[0]);
+          return { mid: pts[0].clone().add(pts[1]).multiplyScalar(0.5), len: d.length(), q: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()) };
+        })() : null;
+        return (
+          <group key={ex2.id}>
+            {tube && (
+              <mesh position={tube.mid} quaternion={tube.q}>
+                <cylinderGeometry args={[1.6, 1.6, tube.len, 10]} />
+                <meshStandardMaterial color={ASSEMBLY_COLORS.guide} transparent opacity={0.55} depthWrite={false} />
+              </mesh>
+            )}
+            {pts.map((p, i) => (
+              <mesh key={i} position={p}>
+                <sphereGeometry args={[3, 14, 10]} />
+                <meshStandardMaterial color={ASSEMBLY_COLORS.drill} emissive={ASSEMBLY_COLORS.drill} emissiveIntensity={0.35} />
+              </mesh>
+            ))}
+          </group>
+        );
+      })}
       {/* Target CG ring on the fuselage/wing centreline */}
       <mesh position={[0, L.wing.mountY / k, -balance.cgAchieved]} rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[Math.max(L.wing.rootChord / k * 0.05, 6), 1.2, 8, 32]} />
@@ -401,6 +425,9 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
                 <span className="flex items-center gap-1"><i className="inline-block w-3 h-1.5 rounded-sm" style={{ background: ASSEMBLY_COLORS.dowel }} />{t('asm_dowels_short')}</span>
                 <span className="flex items-center gap-1"><i className="inline-block w-3 h-1 rounded-full" style={{ background: ASSEMBLY_COLORS.band }} />{t('asm_bands_short')}</span>
               </>
+            )}
+            {balance.linkExits.length > 0 && (
+              <span className="flex items-center gap-1"><i className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: ASSEMBLY_COLORS.drill }} />{t('link_exit_short')}</span>
             )}
           </>
         )}
