@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import Sidebar from './components/Sidebar';
 import InsightsDrawer, { type InsightsTab } from './components/InsightsDrawer';
 import PowerSection from './components/PowerSection';
+import AssemblySection from './components/AssemblySection';
 import type { PowerCategory } from './utils/electricSystem';
 import CanvasView from './components/CanvasView';
 import Scene3D from './components/Scene3D';
@@ -105,6 +106,7 @@ function App() {
   const [insights, setInsights] = useState<InsightsTab | null>(null);
   const closeInsights = useCallback(() => setInsights(null), []);
   const [powerCategory, setPowerCategory] = useState<PowerCategory>('trainer');
+  const [explode, setExplode] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(initial.isDarkMode);
   const [viewMode, setViewMode] = useState<'2D' | '3D'>('2D');
@@ -309,6 +311,14 @@ function App() {
                 onOpenDetails={() => setInsights('weight')}
               />
             }
+            assemblySection={
+              <AssemblySection
+                balance={balance}
+                settings={components}
+                onChange={setComponents}
+                onShow3D={() => { setViewMode('3D'); setExplode(1); }}
+              />
+            }
           />
         </div>
 
@@ -318,7 +328,7 @@ function App() {
             {viewMode === '2D' ? (
               <CanvasView layout={layout} isDarkMode={isDarkMode} airfoil={airfoil} balance={balance} />
             ) : (
-              <Scene3D layout={layout} airfoil={airfoil} isDarkMode={isDarkMode} printSettings={printSettings} balance={balance} pockets={pockets} />
+              <Scene3D layout={layout} airfoil={airfoil} isDarkMode={isDarkMode} printSettings={printSettings} balance={balance} pockets={pockets} explode={explode} onExplode={setExplode} />
             )}
           </div>
           <InsightsDrawer

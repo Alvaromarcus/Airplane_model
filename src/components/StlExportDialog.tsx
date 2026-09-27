@@ -30,7 +30,7 @@ const BED_PRESETS: { label: string; x: number; y: number; z: number }[] = [
 const KIND_KEYS: Record<string, string> = {
   fuselage: 'fuselage', wing: 'wing', aileron: 'ailerons', hstab: 'hstab_short',
   elevator: 'elevator', fin: 'fin_short', rudder: 'rudder', winglet: 'winglets',
-  mount: 'stl_mounts', hatch: 'stl_hatches',
+  mount: 'stl_mounts', hatch: 'stl_hatches', joint: 'stl_joints',
 };
 
 export default function StlExportDialog({ open, onClose, layout, airfoil, settings, onSettingsChange, pockets, balance }: Props) {
@@ -175,6 +175,15 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
                       <li key={sp.id}>{t(sp.part)}: <b>{sp.count} × Ø{sp.diameter} mm × {sp.length} mm</b></li>
                     ))}
                   </ul>
+                )}
+                {balance?.assembly.bands && balance.assembly.sleeve && (
+                  <>
+                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 mt-3">{t('stl_hardware')}</div>
+                    <ul className="text-xs space-y-0.5">
+                      <li>{t('asm_dowels')}: <b>2 × Ø{balance.assembly.dowels[0].d} mm × {Math.round(balance.assembly.dowels[0].len)} mm</b> ({t('stl_drill', { d: balance.assembly.sleeve.od.toFixed(1) })})</li>
+                      <li>{t('asm_bands')}: <b>{balance.assembly.bands.count} × ~{balance.assembly.bands.flatLen} mm</b></li>
+                    </ul>
+                  </>
                 )}
               </>
             )}

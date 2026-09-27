@@ -117,7 +117,7 @@ export function planAndOrient(L: Layout, airfoil: AirfoilType, settings: PrintSe
   return { plan, oriented };
 }
 
-const KIND_ORDER = ['fuselage', 'wing', 'aileron', 'hstab', 'elevator', 'fin', 'rudder', 'winglet', 'mount', 'hatch'];
+const KIND_ORDER = ['fuselage', 'wing', 'aileron', 'hstab', 'elevator', 'fin', 'rudder', 'winglet', 'mount', 'hatch', 'joint'];
 
 export function exportSTLZip(
   L: Layout,
@@ -160,12 +160,12 @@ export function exportSTLZip(
     files[pt ? '00_montado_preview/aviao_montado.stl' : '00_assembled_preview/aircraft_assembled.stl'] = toBinarySTL(merged, 'assembled');
   }
 
-  files[pt ? 'LEIA-ME.txt' : 'README.txt'] = strToU8(readme(plan, oriented, L, pt, t, pockets));
+  files[pt ? 'LEIA-ME.txt' : 'README.txt'] = strToU8(readme(plan, oriented, L, pt, t, pockets, balance));
   const zip = zipSync(files, { level: 6 });
   return { blob: new Blob([zip as BlobPart], { type: 'application/zip' }), plan, oriented };
 }
 
-function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, pt: boolean, t: (k: string, o?: Record<string, unknown>) => string, pockets: Pocket[]): string {
+function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, pt: boolean, t: (k: string, o?: Record<string, unknown>) => string, pockets: Pocket[], balance: BalanceResult | null): string {
   const s = plan.settings;
   const lines: string[] = [];
   const bar = '='.repeat(64);
@@ -259,6 +259,71 @@ function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, pt: boo
       '   to the root. Pushrods exit through the hinge gap next to the horn.',
       '7. Check the CG before the first flight ("Weight & CG" tab and PDF).',
     );
+  }
+  const asm = balance?.assembly;
+  if (asm) {
+    const j = asm.joiner;
+    const W = Math.round(2 * j.halfLen), C = Math.round(j.sb - j.sa);
+    lines.push('', pt ? 'JUNÇÕES E FIXAÇÃO DA ASA (pasta 11_joint, imprimir em modo NORMAL, PETG ou PLA, 100% de preenchimento)' : 'JOINTS AND WING MOUNT (folder 11_joint, print in NORMAL mode, PETG or PLA, 100% infill)', '-'.repeat(40));
+    if (pt) {
+      lines.push(
+        `a) Junção da asa (joint_wing_joiner): placa ${W} × ${C} × ${j.t} mm.`,
+        '   1. Lixe as faces da raiz e cole as duas semi-asas com epóxi, calçando a ponta de uma',
+        '      delas para manter o diedro; espere curar.',
+        j.recessed
+          ? '   2. Cole a placa com epóxi no rebaixo sob a raiz (já recortado no STL), centrada na emenda.'
+          : '   2. Cole a placa com epóxi sob a raiz, centrada na emenda.',
+        '   3. Recomendado: uma volta de fita de fibra de vidro (50 mm) por cima da emenda.',
+      );
+      if (asm.bands && asm.sleeve && asm.teGuard) {
+        const [F, R] = asm.dowels;
+        const top = (d: typeof F) => Math.round((L.fuselage!.section(d.s / (L.toCm * 10)).yc + L.fuselage!.section(d.s / (L.toCm * 10)).h / 2) * L.toCm * 10 - d.y);
+        lines.push(
+          `b) Cavilhas: 2 × Ø${F.d} mm × ${Math.round(F.len)} mm (madeira dura ou carbono).`,
+          `   - Dianteira: estação ${Math.round(F.s)} mm a partir do nariz, eixo ${top(F)} mm abaixo do topo da fuselagem.`,
+          `   - Traseira:  estação ${Math.round(R.s)} mm a partir do nariz, eixo ${top(R)} mm abaixo do topo da fuselagem.`,
+          `   Fure Ø${asm.sleeve.od.toFixed(1)} mm atravessando as duas laterais, cole as luvas impressas`,
+          '   (joint_dowel_sleeve_front/rear) rentes às laterais e passe as cavilhas; deixe',
+          '   ~14 mm para fora de cada lado. As tampas dos compartimentos já vêm interrompidas nesses pontos.',
+          `c) Protetor do bordo de fuga (joint_te_guard): cole sobre o extradorso no centro da asa,`,
+          '   onde os elásticos passam; evita que amassem o bordo de fuga.',
+          `d) Elásticos: ${asm.bands.count} × ~${asm.bands.flatLen} mm. Apoie a asa no topo da fuselagem, centrada,`,
+          '   e passe metade dos elásticos cruzados em X (cavilha dianteira de um lado → traseira do',
+          '   outro) e metade retos. A asa sai inteira: é por ela que se acessa bateria e eletrônica.',
+        );
+      } else if (asm.mount === 'glued') {
+        lines.push('b) Asa: cole no berço da fuselagem com epóxi, conferindo o alinhamento com a cauda.');
+      }
+    } else {
+      lines.push(
+        `a) Wing joiner (joint_wing_joiner): plate ${W} × ${C} × ${j.t} mm.`,
+        '   1. Sand the root faces and glue both wing halves with epoxy, propping one tip to keep',
+        '      the dihedral; let it cure.',
+        j.recessed
+          ? '   2. Epoxy the plate into the recess under the root (already cut in the STL), centred on the joint.'
+          : '   2. Epoxy the plate under the root, centred on the joint.',
+        '   3. Recommended: one wrap of 50 mm glass-fibre tape over the joint.',
+      );
+      if (asm.bands && asm.sleeve && asm.teGuard) {
+        const [F, R] = asm.dowels;
+        const top = (d: typeof F) => Math.round((L.fuselage!.section(d.s / (L.toCm * 10)).yc + L.fuselage!.section(d.s / (L.toCm * 10)).h / 2) * L.toCm * 10 - d.y);
+        lines.push(
+          `b) Dowels: 2 × Ø${F.d} mm × ${Math.round(F.len)} mm (hardwood or carbon).`,
+          `   - Front: station ${Math.round(F.s)} mm from the nose, axis ${top(F)} mm below the fuselage top.`,
+          `   - Rear:  station ${Math.round(R.s)} mm from the nose, axis ${top(R)} mm below the fuselage top.`,
+          `   Drill Ø${asm.sleeve.od.toFixed(1)} mm through both sides, glue the printed sleeves`,
+          '   (joint_dowel_sleeve_front/rear) flush with the sides and insert the dowels, leaving',
+          '   ~14 mm out on each side. The bay hatches are already interrupted there.',
+          'c) Trailing-edge guard (joint_te_guard): glue on the upper skin at the wing centre, where',
+          '   the bands run, so they do not crush the trailing edge.',
+          `d) Rubber bands: ${asm.bands.count} × ~${asm.bands.flatLen} mm. Sit the wing centred on the fuselage and`,
+          '   put half of the bands crossed in an X (front dowel on one side → rear dowel on the other)',
+          '   and half straight. The whole wing comes off: that is how you reach the battery and radio.',
+        );
+      } else if (asm.mount === 'glued') {
+        lines.push('b) Wing: epoxy it onto the fuselage saddle, checking the alignment with the tail.');
+      }
+    }
   }
   if (pockets.length) {
     lines.push('', pt ? 'RECORTES' : 'CUT-OUTS', '-'.repeat(40));

@@ -34,7 +34,7 @@ export const DEFAULT_PRINT_SETTINGS: PrintSettings = {
   slit: 0.2, minTe: 0.8, clearance: 0.3,
 };
 
-export type PrintKind = 'wing' | 'aileron' | 'hstab' | 'elevator' | 'fin' | 'rudder' | 'winglet' | 'fuselage' | 'mount' | 'hatch';
+export type PrintKind = 'wing' | 'aileron' | 'hstab' | 'elevator' | 'fin' | 'rudder' | 'winglet' | 'fuselage' | 'mount' | 'hatch' | 'joint';
 
 export interface PrintSection {
   name: string;               // file-friendly name, e.g. "wing_R_02"
