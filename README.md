@@ -7,6 +7,7 @@
 
 ## Features
 - **Real-Time 2D Visualization:** Instantly see your design changes reflected on a dynamically rendered top and side view, including an accurate Center of Gravity (CG) marker.
+- **Clean workspace:** parameters on the left, the model filling the rest of the screen and the key numbers on top. Power & weight choices (flight category, battery, servos) show their effect right below each selector (share of the total weight, battery position for the CG, suggested motor/ESC/cells); analysis, weight breakdown and electric details open on demand in a side panel from the summary bar.
 - **Flight Assistant (Aerodynamic Consultant):** Automatically calculates key metrics (MAC, CG, Neutral Point, Static Margin, Aspect Ratio) and warns you about potentially unstable or unflyable designs based on proven aerodynamic rules.
 - **1:1 PDF Template Export:** Tiling logic that seamlessly splits your aircraft design across multiple standard A4 pages with alignment crosshairs for easy printing, taping, and cutting.
 - **Internationalization & Unit Conversion:** Supports both English (EN) and Portuguese (PT-BR) languages, and allows toggling between Centimeters (cm) and Millimeters (mm) while retaining physical scale accuracy.

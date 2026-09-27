@@ -22,6 +22,8 @@ interface SidebarProps {
   propCutout: boolean;
   onPropCutoutChange: (v: boolean) => void;
   teCutNeedsElevonStart: number | null;
+  /** Extra section rendered after the propeller (power & weight). */
+  powerSection?: ReactNode;
 }
 
 // Map PropellerType keys to prop specs for the selector
@@ -121,7 +123,7 @@ export default function Sidebar({
   airfoil, onAirfoilChange,
   fuselageStyle, onFuselageStyleChange,
   propeller, onPropellerChange,
-  propCutout, onPropCutoutChange, teCutNeedsElevonStart,
+  propCutout, onPropCutoutChange, teCutNeedsElevonStart, powerSection,
 }: SidebarProps) {
   const { t } = useTranslation();
 
@@ -165,7 +167,7 @@ export default function Sidebar({
 
   return (
     <aside className="w-full h-auto lg:h-full bg-white dark:bg-slate-900 z-20 flex flex-col overflow-y-auto border-r border-slate-200 dark:border-slate-700 transition-colors duration-200">
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/60 backdrop-blur sticky top-0 z-10">
+      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 sticky top-0 z-10">
         <h2 className="text-sm font-semibold text-slate-800 dark:text-white">{t('sidebar_title')}</h2>
         <p className="text-[11px] text-slate-500 dark:text-slate-400">{t('sidebar_subtitle')}</p>
       </div>
@@ -280,6 +282,8 @@ export default function Sidebar({
             </div>
           )}
 </Section>
+
+        {powerSection}
 
         {/* Tail Section */}
         <Section title={t('tail')} icon={<Wind size={16} />}>

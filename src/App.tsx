@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import Sidebar from './components/Sidebar';
-import FlightAssistant from './components/FlightAssistant';
+import InsightsDrawer, { type InsightsTab } from './components/InsightsDrawer';
+import PowerSection from './components/PowerSection';
+import type { PowerCategory } from './utils/electricSystem';
 import CanvasView from './components/CanvasView';
 import Scene3D from './components/Scene3D';
 import Header from './components/Header';
@@ -100,6 +102,9 @@ function App() {
   const [fuselageStyle, setFuselageStyle] = useState<FuselageType>(initial.fuselageStyle);
   const [propeller, setPropeller] = useState<PropellerType>(initial.propeller);
   const [controls, setControls] = useState<ControlSurfaces>(initial.controls);
+  const [insights, setInsights] = useState<InsightsTab | null>(null);
+  const closeInsights = useCallback(() => setInsights(null), []);
+  const [powerCategory, setPowerCategory] = useState<PowerCategory>('trainer');
   const [isExporting, setIsExporting] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(initial.isDarkMode);
   const [viewMode, setViewMode] = useState<'2D' | '3D'>('2D');
@@ -269,10 +274,10 @@ function App() {
         onHelp={() => setWelcomeOpen(true)}
         onExamples={() => setExamplesOpen(true)}
       />
-      <KpiBar metrics={metrics} checks={validationChecks} balance={balance} layout={layout} unit={unit} />
+      <KpiBar metrics={metrics} checks={validationChecks} balance={balance} layout={layout} unit={unit} onOpen={setInsights} />
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden relative">
-        <div className="order-2 lg:order-1 w-full lg:w-72 flex-shrink-0 z-10">
+        <div className="order-2 lg:order-1 w-full lg:w-80 flex-shrink-0 z-10">
           <Sidebar
             dimensions={dimensions}
             onChange={handleDimensionChange}
@@ -290,19 +295,36 @@ function App() {
             propCutout={propCutout}
             onPropCutoutChange={setPropCutout}
             teCutNeedsElevonStart={layout.teCutNeedsElevonStart}
+            powerSection={
+              <PowerSection
+                balance={balance}
+                settings={components}
+                onChange={setComponents}
+                layout={layout}
+                dimensions={dimensions}
+                aircraftType={aircraftType}
+                unit={unit}
+                powerCategory={powerCategory}
+                onPowerCategory={setPowerCategory}
+                onOpenDetails={() => setInsights('weight')}
+              />
+            }
           />
         </div>
 
-        <div className="order-1 lg:order-2 w-full lg:flex-1 relative min-h-[420px] border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 overflow-x-auto bg-white dark:bg-slate-900">
-          {viewMode === '2D' ? (
-            <CanvasView layout={layout} isDarkMode={isDarkMode} airfoil={airfoil} balance={balance} />
-          ) : (
-            <Scene3D layout={layout} airfoil={airfoil} isDarkMode={isDarkMode} printSettings={printSettings} balance={balance} pockets={pockets} />
-          )}
-        </div>
-
-        <div className="order-3 lg:order-3 w-full lg:w-80 flex-shrink-0">
-          <FlightAssistant
+        <div className="order-1 lg:order-2 w-full lg:flex-1 relative min-h-[420px] border-b lg:border-b-0 border-slate-200 dark:border-slate-800 overflow-x-auto bg-white dark:bg-slate-900">
+          {/* The model makes room for the details panel instead of hiding under it */}
+          <div className={`absolute inset-0 ${insights ? 'lg:right-[392px]' : ''}`}>
+            {viewMode === '2D' ? (
+              <CanvasView layout={layout} isDarkMode={isDarkMode} airfoil={airfoil} balance={balance} />
+            ) : (
+              <Scene3D layout={layout} airfoil={airfoil} isDarkMode={isDarkMode} printSettings={printSettings} balance={balance} pockets={pockets} />
+            )}
+          </div>
+          <InsightsDrawer
+            tab={insights}
+            onTab={setInsights}
+            onClose={closeInsights}
             metrics={metrics}
             checks={validationChecks}
             unit={unit}
@@ -313,6 +335,7 @@ function App() {
             components={components}
             onComponentsChange={setComponents}
             layout={layout}
+            powerCategory={powerCategory}
           />
         </div>
       </main>
