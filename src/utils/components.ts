@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import type { AirfoilType } from './calculations';
 import { sectionHalfHeightAt, FUSE_EXPO, type Layout } from './geometry';
 import { getAirfoil } from './airfoils';
-import { buildPrintPlan, DEFAULT_PRINT_SETTINGS, type PrintPlan, type Pocket } from './printParts';
+import { buildPrintPlan, DEFAULT_PRINT_SETTINGS, trimSparLines, type PrintPlan, type Pocket } from './printParts';
 import { computeAssembly, type AssemblySpec, type WingMount } from './assembly';
 
 export type ServoKey = 'micro5' | 'sg90' | 'mg90s' | 'mid17' | 'standard';
@@ -484,7 +484,9 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
       yFallback = secMid.yc * mm - hb + bt.h / 2 + 2;
     } else {
       lo = w.leAt(0) * mm + 8 + along / 2;
-      hi = escPos[2] - esc.l / 2 - 5 - along / 2;
+      // ahead of the ESC — and of the receiver when it had to go in front of the ESC
+      const front = Math.min(escPos[2] - esc.l / 2, rxPos[2] < escPos[2] ? rxPos[2] - RX.l / 2 : Infinity);
+      hi = front - 5 - along / 2;
       const frac = Math.min(0.5, Math.max(0.1, (lo - w.leAt(0) * mm) / (w.rootChord * mm)));
       yFallback = w.mountY * mm + (af.upper(frac) + af.lower(frac)) / 2 * w.rootChord * mm;
     }
@@ -630,7 +632,7 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
   const cgAchieved = items.reduce((a, i) => a + i.mass * i.s, 0) / auw;
   const wingAreaDm2 = ((w.rootChord + w.tipChord) / 2 * w.halfSpan * 2) * mm * mm / 1e4;
 
-  return {
+  const result: BalanceResult = {
     items, linkages, mounts, sparLines: P.sparLines, servo, battery, auw, airframe,
     cgTarget: T, cgAchieved, batteryRange: range, ballast,
     wingLoading: auw / wingAreaDm2,
@@ -640,6 +642,9 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
     linkExits,
     wingServoDepth: servo.w + 3 + servoLift,
   };
+  // Spars stop at the wall of any centre bay they would cross (same rule as the STL)
+  result.sparLines = trimSparLines(P.sparLines, cutoutsFromBalance(result, L), w.halfSpan * mm);
+  return result;
 }
 
 function dist(a: [number, number, number], b: [number, number, number]) {

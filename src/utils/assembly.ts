@@ -72,14 +72,12 @@ export function computeAssembly(L: Layout, airfoil: AirfoilType, pref: WingMount
   const te0 = le0 + c0;
 
   // Joiner just ahead of the main spar (28 %), close to the CG so it does not
-  // upset the balance; ~10 % of the half span on each side of the joint
-  const joiner = {
-    halfLen: Math.min(80, Math.max(35, 0.1 * H)),
-    sa: le0 + 0.09 * c0,
-    sb: le0 + 0.24 * c0,
-    t: JOINER_T,
-    recessed: !L.isFW,
-  };
+  // upset the balance; ~10 % of the half span on each side of the joint.
+  // Flying wing: the spars stop at the centre bays, so the plate (glued under
+  // the belly) is wider and longer and carries the centre on its own.
+  const joiner = L.isFW
+    ? { halfLen: Math.min(100, Math.max(60, 0.25 * H)), sa: le0 + 0.08 * c0, sb: le0 + 0.42 * c0, t: JOINER_T, recessed: false }
+    : { halfLen: Math.min(80, Math.max(35, 0.1 * H)), sa: le0 + 0.09 * c0, sb: le0 + 0.24 * c0, t: JOINER_T, recessed: true };
 
   const fz = L.fuselage;
   const bandsAvailable = !!fz && fz.style === 'trainer';
