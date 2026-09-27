@@ -16,6 +16,7 @@
 - **Weight & Balance:** Estimates the all-up weight (printed LW-PLA shells, carbon spars, motor, prop, ESC, battery, servos, receiver), places the components and pushrods in 2D/3D (x-ray view), and solves the battery position that puts the CG on target — warning when ballast would be needed.
 - **Example Projects:** Six checked designs (trainers, sport, motor glider, flying wings) that balance without ballast — load one and adapt it.
 - **Flying-wing CG (Hepperle):** Neutral point at 25 % of the MAC at its span station; CG placed by a user-set static margin (2–12 %).
+- **Conventional CG by static margin:** Neutral point from wing + horizontal tail (downwash, tail efficiency) minus the fuselage's destabilising contribution (Gilruth/Raymer K_f); CG placed by a user-set static margin (5–25 %, default 12 %), with a warning when it falls outside 20–35 % of the MAC.
 - **Shareable Projects:** "Share" copies a link with the whole design compressed into the URL — it reopens the same aircraft on any device.
 - **Project Summary Bar:** Wingspan, wing area, aspect ratio, estimated weight, wing loading, static margin and CG at a glance, colour-coded.
 - **Dark Mode Support:** A sleek, toggleable dark mode for comfortable designing in any lighting condition.

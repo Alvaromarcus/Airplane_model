@@ -205,6 +205,12 @@ export default function Sidebar({
               <p className="-mt-2 mb-3 text-[11px] leading-snug text-slate-500 dark:text-slate-400">{t('fw_static_margin_hint')}</p>
             </>
           )}
+          {!isFlyingWing && (
+            <>
+              {renderControl('conv_static_margin', 'convStaticMargin', 5, 25)}
+              <p className="-mt-2 mb-3 text-[11px] leading-snug text-slate-500 dark:text-slate-400">{t('conv_static_margin_hint', { cg: (metrics.cgFraction * 100).toFixed(0) })}</p>
+            </>
+          )}
         </Section>
 
         {/* Propeller Section */}

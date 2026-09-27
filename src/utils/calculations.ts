@@ -35,11 +35,16 @@ export interface ControlSurfaces {
    * far ahead of the neutral point (Hepperle: 2–5 % typical, more for beginners).
    */
   fwStaticMargin: number;
+  /**
+   * Conventional only: target static margin (% of MAC). The CG is placed this
+   * far ahead of the estimated neutral point (wing + tail − fuselage).
+   */
+  convStaticMargin: number;
 }
 
 export const DEFAULT_CONTROL_SURFACES: Record<AircraftType, ControlSurfaces> = {
-  conventional: { aileronStart: 50, aileronEnd: 95, aileronChord: 25, elevatorChord: 30, rudderChord: 40, fwStaticMargin: 6 },
-  flying_wing:  { aileronStart: 30, aileronEnd: 95, aileronChord: 22, elevatorChord: 0,  rudderChord: 0, fwStaticMargin: 6 },
+  conventional: { aileronStart: 50, aileronEnd: 95, aileronChord: 25, elevatorChord: 30, rudderChord: 40, fwStaticMargin: 6, convStaticMargin: 12 },
+  flying_wing:  { aileronStart: 30, aileronEnd: 95, aileronChord: 22, elevatorChord: 0,  rudderChord: 0, fwStaticMargin: 6, convStaticMargin: 12 },
 };
 
 /** Clamp control-surface values into physically meaningful ranges. */
@@ -54,11 +59,36 @@ export function sanitizeControls(c: ControlSurfaces): ControlSurfaces {
     elevatorChord: clamp(c.elevatorChord, 0, 60),
     rudderChord: clamp(c.rudderChord, 0, 60),
     fwStaticMargin: clamp(c.fwStaticMargin ?? 6, 1, 20),
+    convStaticMargin: clamp(c.convStaticMargin ?? 12, 5, 25),
   };
 }
 
-/** CG target as a fraction of MAC for conventional aircraft. */
-export const CG_FRACTION_CONVENTIONAL = 0.28;
+/**
+ * Usual CG window for conventional models (fraction of MAC). The CG now
+ * follows the chosen static margin; outside this window the design gets a
+ * warning (tail too weak, or CG unusually far aft for a first flight).
+ */
+export const CG_WINDOW_CONVENTIONAL: [number, number] = [0.20, 0.35];
+
+/**
+ * Fuselage pitch-moment factor K_f (per degree) vs. the position of the wing
+ * root quarter chord as a fraction of fuselage length (Gilruth & White, as
+ * charted in Raymer, "Aircraft Design", fig. 16.14 — approximate).
+ */
+const FUSELAGE_KF: [number, number][] = [
+  [0.1, 0.0045], [0.2, 0.008], [0.3, 0.013], [0.4, 0.020], [0.5, 0.030], [0.6, 0.047],
+];
+function fuselageKf(x: number): number {
+  const t = FUSELAGE_KF;
+  if (x <= t[0][0]) return t[0][1];
+  for (let i = 1; i < t.length; i++) {
+    if (x <= t[i][0]) {
+      const [x0, y0] = t[i - 1], [x1, y1] = t[i];
+      return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+    }
+  }
+  return t[t.length - 1][1];
+}
 
 /** Comfortable static-margin range (% MAC) per layout. */
 export const SM_RANGE: Record<AircraftType, [number, number]> = {
@@ -186,7 +216,8 @@ export interface AircraftMetrics {
   tailVolumeCoefficient: number;  // Vbar
   sweepRatio: number;   // sweepOffset / (wingspan / 2)  — dimensionless
   taperRatio: number;   // tipChord / rootChord           — dimensionless (same as lambda)
-  cgFraction: number;   // CG target as fraction of MAC used for cgPosition
+  cgFraction: number;   // CG position as fraction of MAC (from the MAC leading edge)
+  fuselageNpShift: number; // forward NP shift caused by the fuselage (length units; 0 for flying wings)
 
   aileronArea: number;       // both ailerons / elevons
   aileronAreaRatio: number;  // aileronArea / wingArea
@@ -232,7 +263,7 @@ export function calculateMetrics(
   const lambda = safeTipChord / safeRootChord;
   const mac = safeRootChord * (2/3) * ((1 + lambda + lambda * lambda) / (1 + lambda));
 
-  // CG is typically 28% to 30% of MAC from MAC leading edge.
+  // The CG is derived later from the neutral point and the target margin.
   // We need to find MAC leading edge offset from root chord leading edge.
   // Y-coordinate of MAC from root is (wingspan/6) * ((1 + 2*lambda) / (1 + lambda))
   // Then the X-offset of MAC LE = Y_mac * tan(sweepAngle).
@@ -241,62 +272,61 @@ export function calculateMetrics(
   const sweepAngleTan = dims.sweepOffset / (safeWingspan / 2);
   const macLeOffset = yMac * sweepAngleTan;
 
-  // Theoretical CG from root leading edge.
-  // Conventional: 28 % MAC. Flying wing (M. Hepperle, "Basic Design of Flying
-  // Wing Models"): NP at the quarter chord of the MAC, placed at its span
-  // station (so sweep is already accounted for); CG = NP − SM·MAC.
-  const fwSm = sanitizeControls(controls).fwStaticMargin / 100;
-  const cgFraction = aircraftType === 'flying_wing' ? 0.25 - fwSm : CG_FRACTION_CONVENTIONAL;
-  const cgPosition = macLeOffset + (mac * cgFraction);
-
   const aspectRatio = (safeWingspan * safeWingspan) / wingArea;
+  const cs = sanitizeControls(controls);
 
-  // Tail moment arm: distance from CG to aerodynamic center of horizontal stabilizer (approx quarter chord of HStab)
-  // Position of wing LE from nose = noseLength
-  // Position of CG from nose = noseLength + cgPosition
-  // Position of Wing TE from nose = noseLength + rootChord (approx at root)
-  // Position of HStab LE from nose = Wing TE + wingToTailDistance
-  // Position of HStab AC from nose = HStab LE + (0.25 * hStabChord)
+  // --- NEUTRAL POINT (independent of the CG) ---
+  // Wing aerodynamic centre: quarter chord of the MAC, at its span station
+  // (so sweep is already accounted for).
+  const wingAcPosition = macLeOffset + (0.25 * mac);
+  const wingAcAbsolutePosition = dims.noseLength + wingAcPosition;
+
+  // Horizontal tail AC (approx. quarter chord of the stabiliser), from the nose.
   const wingTePosition = dims.noseLength + dims.rootChord;
   const hStabLePosition = wingTePosition + dims.wingToTailDistance;
   const hStabAcPosition = hStabLePosition + (0.25 * dims.hStabChord);
-
-  const cgAbsolutePosition = dims.noseLength + cgPosition;
-  const tailMomentArm = hStabAcPosition - cgAbsolutePosition;
-
-  // --- NEUTRAL POINT PHYSICS CORRECTION ---
-  // 1. The real moment arm for NP is from Wing Aerodynamic Center (Wing AC) to Tail AC
-  const wingAcPosition = macLeOffset + (0.25 * mac);
-  const wingAcAbsolutePosition = dims.noseLength + wingAcPosition;
   const lt_np = hStabAcPosition - wingAcAbsolutePosition;
 
-  // 2. Wing lift-curve slope — Helmbold's approximation (subsonic)
+  // Wing lift-curve slope — Helmbold's approximation (subsonic)
   const clAlpha = (2 * Math.PI * aspectRatio) / (2 + Math.sqrt(aspectRatio * aspectRatio + 4));
 
-  // 3. Downwash gradient
+  // Downwash gradient
   let downwashGradient = (2 * clAlpha) / (Math.PI * aspectRatio);
   downwashGradient = Math.min(0.8, Math.max(0, downwashGradient)); // clamp to [0, 0.8]
 
-  // 4. Tail Efficiency Factor
+  // Tail efficiency factor
   const preset = AIRCRAFT_PRESETS.find(p => p.type === aircraftType);
   const tailEfficiency = preset?.tailEfficiencyOverride ?? 0.9;
 
-  // 5. Corrected Neutral Point formula
   let neutralPoint: number;
-
-  if (aircraftType === 'flying_wing') {
-    // Tailless wing: NP = aerodynamic centre = 25 % of the MAC, measured from
-    // the MAC leading edge (which already sits aft by the sweep at y_MAC).
+  let fuselageNpShift = 0;
+  if (isFW) {
+    // Tailless wing (M. Hepperle, "Basic Design of Flying Wing Models"):
+    // NP = aerodynamic centre = 25 % of the MAC.
     neutralPoint = wingAcPosition;
   } else {
-    // Conventional formula
-    neutralPoint =
-      wingAcPosition
-      + (hStabArea / wingArea) * lt_np * tailEfficiency * (1 - downwashGradient);
+    // Tail contribution pushes the NP aft…
+    const tailShift = (hStabArea / wingArea) * lt_np * tailEfficiency * (1 - downwashGradient);
+    // …the fuselage pulls it forward: Cmα_fus = K_f·W_f²·L_f / (c̄·S) per degree,
+    // ΔNP/c̄ = Cmα_fus / CLα_wing (per degree).
+    const lf = Math.max(dims.fuselageLength, 0.1);
+    const wf = Math.max(dims.fuselageWidth, 0);
+    const kf = fuselageKf((dims.noseLength + 0.25 * safeRootChord) / lf);
+    const clAlphaDeg = clAlpha * Math.PI / 180;
+    fuselageNpShift = ((kf * wf * wf * lf) / (mac * wingArea)) / clAlphaDeg * mac;
+    neutralPoint = wingAcPosition + tailShift - fuselageNpShift;
   }
 
-  // Static Margin
-  // Formula: SM = (NP - CG) / MAC * 100
+  // --- CG = NP − target static margin · MAC (both layouts) ---
+  const targetSm = (isFW ? cs.fwStaticMargin : cs.convStaticMargin) / 100;
+  const cgPosition = neutralPoint - targetSm * mac;
+  const cgFraction = (cgPosition - macLeOffset) / mac;
+
+  // Tail moment arm: CG to the horizontal tail AC
+  const cgAbsolutePosition = dims.noseLength + cgPosition;
+  const tailMomentArm = hStabAcPosition - cgAbsolutePosition;
+
+  // Static Margin — SM = (NP − CG) / MAC · 100 (equals the target by construction)
   const staticMargin = ((neutralPoint - cgPosition) / mac) * 100;
 
   const tailVolumeCoefficient = isFW ? 0 : (hStabArea * tailMomentArm) / (wingArea * mac);
@@ -327,6 +357,7 @@ export function calculateMetrics(
     sweepRatio: dims.sweepOffset / (safeWingspan / 2),
     taperRatio: lambda,
     cgFraction,
+    fuselageNpShift,
     aileronArea,
     aileronAreaRatio: aileronArea / wingArea,
     elevatorArea,
@@ -421,6 +452,17 @@ export function validateDesign(
     checks.push({ id: 'dihedral_zero', level: 'warning', messageKey: 'dihedral_zero', fixKey: 'fix_dihedral_zero' });
   } else if (dims.dihedral > 15) {
     checks.push({ id: 'dihedral_high', level: 'warning', messageKey: 'dihedral_high', fixKey: 'fix_dihedral_high' });
+  }
+
+  // Conventional: the CG follows the chosen margin, so check that it lands in
+  // the usual window — outside it the tail (or the NP estimate) needs a look.
+  if (aircraftType === 'conventional') {
+    const [cgLo, cgHi] = CG_WINDOW_CONVENTIONAL;
+    if (metrics.cgFraction < cgLo) {
+      checks.push({ id: 'cg_fwd', level: 'warning', messageKey: 'cg_fwd', fixKey: 'fix_cg_fwd' });
+    } else if (metrics.cgFraction > cgHi) {
+      checks.push({ id: 'cg_aft', level: 'warning', messageKey: 'cg_aft', fixKey: 'fix_cg_aft' });
+    }
   }
 
   // Static Margin validation (flying wings fly with much smaller margins)
