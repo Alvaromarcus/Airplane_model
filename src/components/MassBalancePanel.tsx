@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Scale, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { BATTERIES, SERVOS, COMPONENT_COLORS, type BalanceResult, type ComponentSettings, type ServoKey } from '../utils/components';
 import type { Layout } from '../utils/geometry';
 
@@ -8,11 +8,13 @@ interface Props {
   settings: ComponentSettings;
   onChange: (s: ComponentSettings) => void;
   layout: Layout;
+  /** Hide the servo/battery selectors when they are already shown elsewhere. */
+  showChoices?: boolean;
 }
 
 const selectCls = 'w-full px-2 py-1.5 border border-slate-300 dark:border-slate-600 rounded-md text-xs bg-white dark:bg-slate-800 text-slate-900 dark:text-white';
 
-export default function MassBalancePanel({ balance, settings, onChange, layout }: Props) {
+export default function MassBalancePanel({ balance, settings, onChange, layout, showChoices = true }: Props) {
   const { t } = useTranslation();
   if (!balance) return <div className="p-4 text-sm text-slate-500">—</div>;
   const b = balance;
@@ -33,13 +35,9 @@ export default function MassBalancePanel({ balance, settings, onChange, layout }
 
   return (
     <div className="p-4 space-y-4 text-slate-800 dark:text-slate-200 text-sm">
-      <div className="flex items-center gap-2 pb-1 border-b border-slate-200 dark:border-slate-700">
-        <Scale size={16} className="text-violet-500" />
-        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100">{t('mb_title')}</h3>
-      </div>
 
       {/* Component choices */}
-      <div className="grid grid-cols-2 gap-2">
+      {showChoices && <div className="grid grid-cols-2 gap-2">
         <label className="text-xs">
           <span className="block text-slate-500 dark:text-slate-400 mb-1">{t('mb_servos')}</span>
           <select className={selectCls} value={settings.servo} onChange={e => onChange({ ...settings, servo: e.target.value as ServoKey })}>
@@ -53,7 +51,7 @@ export default function MassBalancePanel({ balance, settings, onChange, layout }
             {BATTERIES.map(bt => <option key={bt.key} value={bt.key}>{bt.label} · {bt.mass} g</option>)}
           </select>
         </label>
-      </div>
+      </div>}
 
       {/* Key figures */}
       <div className="grid grid-cols-2 gap-2 text-xs">

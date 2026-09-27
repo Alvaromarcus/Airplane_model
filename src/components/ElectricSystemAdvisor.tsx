@@ -9,6 +9,9 @@ interface ElectricSystemAdvisorProps {
   dimensions: AircraftDimensions;
   aircraftType: AircraftType;
   unit: 'cm' | 'mm';
+  powerCategory: PowerCategory;
+  /** All-up weight from the weight & balance model (g). */
+  auw?: number;
 }
 
 const CATEGORY_LABELS: Record<PowerCategory, { pt: string; en: string; desc_pt: string; desc_en: string }> = {
@@ -32,14 +35,13 @@ const CATEGORY_LABELS: Record<PowerCategory, { pt: string; en: string; desc_pt: 
   },
 };
 
-export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit }: ElectricSystemAdvisorProps) {
+export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit, powerCategory, auw }: ElectricSystemAdvisorProps) {
   const { i18n } = useTranslation();
   const lang = i18n.language === 'pt' ? 'pt' : 'en';
 
-  const [powerCategory, setPowerCategory] = useState<PowerCategory>('trainer');
   const [notesOpen, setNotesOpen] = useState(false);
 
-  const rec = recommendMotorAndProp(dimensions, aircraftType, powerCategory, unit);
+  const rec = recommendMotorAndProp(dimensions, aircraftType, powerCategory, unit, auw);
 
   const cellColor = rec.batteryCell === 2
     ? 'text-green-700 bg-green-50 dark:text-green-300 dark:bg-green-900/30 border-green-200 dark:border-green-800'
@@ -52,49 +54,16 @@ export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit }
   return (
     <div className="p-4 space-y-4 text-slate-800 dark:text-slate-200">
 
-      {/* Header */}
-      <div className="flex items-center gap-2 pb-1 border-b border-slate-200 dark:border-slate-700">
-        <Zap size={16} className="text-amber-500" />
-        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100">
-          {lang === 'pt' ? 'Sistema Elétrico — Motor & Hélice' : 'Electric System — Motor & Propeller'}
-        </h3>
-      </div>
-
-      {/* Category selector */}
-      <div>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-          {lang === 'pt' ? 'Categoria de voo' : 'Flight category'}
-        </p>
-        <div className="flex gap-2 flex-wrap">
-          {(Object.keys(CATEGORY_LABELS) as PowerCategory[]).map(cat => {
-            const label = CATEGORY_LABELS[cat];
-            const isActive = powerCategory === cat;
-            return (
-              <button
-                key={cat}
-                onClick={() => setPowerCategory(cat)}
-                className={[
-                  'flex-1 min-w-[90px] px-2 py-2 rounded border text-xs font-medium transition-colors text-center',
-                  isActive
-                    ? 'bg-amber-500 border-amber-500 text-white'
-                    : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:border-amber-400',
-                ].join(' ')}
-              >
-                <div className="font-semibold">{lang === 'pt' ? label.pt : label.en}</div>
-                <div className={`mt-0.5 ${isActive ? 'text-amber-100' : 'text-slate-400 dark:text-slate-500'}`}>
-                  {lang === 'pt' ? label.desc_pt : label.desc_en}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {/* Category (chosen in the sidebar) */}
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        {lang === 'pt' ? 'Categoria de voo' : 'Flight category'}: <b className="text-slate-800 dark:text-slate-200">{lang === 'pt' ? CATEGORY_LABELS[powerCategory].pt : CATEGORY_LABELS[powerCategory].en}</b> · {lang === 'pt' ? CATEGORY_LABELS[powerCategory].desc_pt : CATEGORY_LABELS[powerCategory].desc_en}
+      </p>
 
       {/* AUW estimate */}
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="bg-slate-50 dark:bg-slate-900/40 rounded border border-slate-200 dark:border-slate-700 p-2">
           <p className="text-slate-500 dark:text-slate-400">
-            {lang === 'pt' ? 'Peso estimado (AUW)' : 'Estimated weight (AUW)'}
+            {auw ? (lang === 'pt' ? 'Peso total (balanceamento)' : 'All-up weight (balance)') : (lang === 'pt' ? 'Peso estimado (AUW)' : 'Estimated weight (AUW)')}
           </p>
           <p className="text-lg font-semibold text-slate-900 dark:text-white mt-0.5">
             {rec.estimatedAUW_g} g
@@ -206,7 +175,7 @@ export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit }
       {/* ESC + Battery cell */}
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-2.5 text-xs">
-          <p className="text-slate-500 dark:text-slate-400 mb-1">ESC mínimo</p>
+          <p className="text-slate-500 dark:text-slate-400 mb-1">{lang === 'pt' ? 'ESC mínimo' : 'Min. ESC'}</p>
           <p className="text-xl font-bold text-slate-900 dark:text-white">{rec.esc_A} A</p>
           <p className="text-slate-400 mt-0.5">
             {lang === 'pt' ? '+ 25% margem segurança' : '+ 25% safety margin'}
@@ -218,7 +187,7 @@ export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit }
           </p>
           <p className="text-xl font-bold">{rec.batteryCell}S LiPo</p>
           <p className="mt-0.5 opacity-70">
-            {rec.batteryCell * 3.7} V nominal
+            {(rec.batteryCell * 3.7).toFixed(1)} V nominal
           </p>
         </div>
       </div>

@@ -255,7 +255,9 @@ export function recommendMotorAndProp(
   dims: AircraftDimensions,
   aircraftType: AircraftType,
   powerCategory: PowerCategory,
-  unit: 'cm' | 'mm'
+  unit: 'cm' | 'mm',
+  /** All-up weight from the weight & balance model; falls back to a wing-loading estimate. */
+  auwOverride_g?: number
 ): MotorRecommendation {
   const s = unit === 'mm' ? 0.1 : 1;
   const wingspanCm = dims.wingspan * s;
@@ -266,7 +268,9 @@ export function recommendMotorAndProp(
   const wingAreaDm2 = wingAreaCm2 / 100;
 
   const wingLoading = WING_LOADING_G_DM2[powerCategory];
-  const estimatedAUW_g = Math.round(wingAreaDm2 * wingLoading);
+  const estimatedAUW_g = auwOverride_g && auwOverride_g > 0
+    ? Math.round(auwOverride_g)
+    : Math.round(wingAreaDm2 * wingLoading);
 
   const powerLoading = POWER_LOADING_W_KG[powerCategory];
   const powerRequired_W = Math.round((estimatedAUW_g / 1000) * powerLoading);
@@ -285,7 +289,7 @@ export function recommendMotorAndProp(
     batteryCell,
     estimatedAUW_g,
     powerRequired_W,
-    wingLoading_g_dm2: wingLoading,
+    wingLoading_g_dm2: auwOverride_g && auwOverride_g > 0 && wingAreaDm2 > 0 ? Math.round((auwOverride_g / wingAreaDm2) * 10) / 10 : wingLoading,
     powerLoading_W_kg: powerLoading,
     notes,
   };
