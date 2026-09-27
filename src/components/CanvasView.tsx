@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { AirfoilType } from '../utils/calculations';
 import { aileronOutline, type Layout } from '../utils/geometry';
 import { getAirfoil, airfoilSegment } from '../utils/airfoils';
-import { COMPONENT_COLORS, type BalanceResult } from '../utils/components';
+import { COMPONENT_COLORS, ASSEMBLY_COLORS, type BalanceResult } from '../utils/components';
 
 interface CanvasViewProps {
   layout: Layout;
@@ -248,6 +248,39 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil, balance }: 
           }
           poly(pts, isDarkMode ? '#cbd5e1aa' : '#cbd5e1cc', isDarkMode ? '#e2e8f0' : '#64748b', 1);
         });
+        // ── Joints: wing joiner (dashed outline), dowels and rubber bands ──
+        const asm = balance.assembly;
+        {
+          const j = asm.joiner;
+          const X = j.halfLen / mmU, sa = j.sa / mmU, sb = j.sb / mmU;
+          if (proj === 'top') {
+            poly([top(-X, sa), top(X, sa), top(X, sb), top(-X, sb)], ASSEMBLY_COLORS.joiner + '55', ASSEMBLY_COLORS.joiner, 1.5, [4, 2]);
+          } else {
+            const yl = w.mountY + wingAf.lower(((sa + sb) / 2 - w.leS) / w.rootChord) * w.rootChord;
+            poly([side(sa, yl), side(sb, yl), side(sb, yl + j.t / mmU), side(sa, yl + j.t / mmU)], ASSEMBLY_COLORS.joiner, ASSEMBLY_COLORS.joiner, 1.5);
+          }
+        }
+        if (asm.bands) {
+          ctx.save();
+          ctx.strokeStyle = ASSEMBLY_COLORS.band; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.9;
+          asm.bands.paths.forEach(p => {
+            const pts = p.pts.map(([x, y, s]) => (proj === 'top' ? top(x / mmU, s / mmU) : side(s / mmU, y / mmU)));
+            ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+            pts.slice(1).forEach(([px, py]) => ctx.lineTo(px, py));
+            ctx.stroke();
+          });
+          ctx.restore();
+        }
+        asm.dowels.forEach(d => {
+          if (proj === 'top') {
+            const r = d.d / 2 / mmU, hl = d.len / 2 / mmU, st = d.s / mmU;
+            poly([top(-hl, st - r), top(hl, st - r), top(hl, st + r), top(-hl, st + r)], ASSEMBLY_COLORS.dowel, ASSEMBLY_COLORS.dowel, 1);
+          } else {
+            const [px, py] = side(d.s / mmU, d.y / mmU);
+            ctx.beginPath(); ctx.arc(px, py, Math.max(2.5, (d.d / 2 / mmU) * k), 0, Math.PI * 2);
+            ctx.fillStyle = ASSEMBLY_COLORS.dowel; ctx.fill();
+          }
+        });
         ctx.strokeStyle = isDarkMode ? '#e5e7eb' : '#111827';
         ctx.lineWidth = 1;
         balance.linkages.forEach(l => {
@@ -412,7 +445,8 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil, balance }: 
       }
 
       if (cw < 560) return; // compact screens: the legend would cover the drawing
-      const lx = 10, ly = ch - (balance ? 80 : 64);
+      const hasBands = !!balance?.assembly.bands;
+      const lx = 10, ly = ch - (balance ? 96 : 64);
       ctx.font = '11px sans-serif'; ctx.fillStyle = C.text;
       ctx.fillText(t('legend'), lx, ly);
       drawCG(ctx, lx + 6, ly + 14, 6, isDarkMode);
@@ -431,6 +465,14 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil, balance }: 
         chips.forEach(([col, lbl]) => {
           ctx.fillStyle = col; ctx.fillRect(cx2, ly + 60, 10, 10);
           ctx.fillStyle = C.text; ctx.fillText(lbl, cx2 + 13, ly + 69);
+          cx2 += 22 + ctx.measureText(lbl).width;
+        });
+        const chips2: [string, string][] = [[ASSEMBLY_COLORS.joiner, t('asm_joiner_short')]];
+        if (hasBands) chips2.push([ASSEMBLY_COLORS.dowel, t('asm_dowels_short')], [ASSEMBLY_COLORS.band, t('asm_bands_short')]);
+        cx2 = lx;
+        chips2.forEach(([col, lbl]) => {
+          ctx.fillStyle = col; ctx.fillRect(cx2, ly + 76, 10, 10);
+          ctx.fillStyle = C.text; ctx.fillText(lbl, cx2 + 13, ly + 85);
           cx2 += 22 + ctx.measureText(lbl).width;
         });
       }

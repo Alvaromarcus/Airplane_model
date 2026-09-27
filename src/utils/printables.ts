@@ -2,6 +2,7 @@
  * Extra printable parts that are NOT printed in vase mode:
  *  - servo mounts (flat plates with the servo window and screw holes)
  *  - hatches (thin covers that follow the skin over each compartment)
+ *  - joints: wing joiner plate, dowel sleeves and the trailing-edge band guard
  *
  * Geometry is built in millimetres in the assembled aircraft frame
  * (X = right, Y = up, Z = -station), like the vase-mode sections, so the same
@@ -18,7 +19,7 @@ type V3 = [number, number, number];
 
 export interface ExtraPart {
   name: string;
-  kind: 'mount' | 'hatch';
+  kind: 'mount' | 'hatch' | 'joint';
   side: 'R' | 'L' | 'C';
   axis: V3;                        // becomes +Z (up) when printing
   geometry: THREE.BufferGeometry;  // assembled position, mm
@@ -85,21 +86,22 @@ export function buildExtraParts(L: Layout, airfoil: AirfoilType, balance: Balanc
 
   // ── Wing hatches (skin-following covers) ──
   const N = 16;
-  const wingSurfaceRing = (f: number, sa: number, sb: number, side: 'upper' | 'lower', xMm: number): V3[] => {
+  const wingSurfaceRing = (f: number, sa: number, sb: number, side: 'upper' | 'lower', xMm: number, T = HATCH_T, inset = 0): V3[] => {
     const c = chordAt(f), le = leAt(f);
     const a = Math.max((sa - le) / c, 0.01), b = Math.min((sb - le) / c, 0.99);
     const inner: V3[] = [], outer: V3[] = [];
     for (let i = 0; i < N; i++) {
       const x = a + ((b - a) * i) / (N - 1);
-      const y = yAt(f) + (side === 'upper' ? af.upper(x) : af.lower(x)) * c;
+      // inset > 0 sinks the part into the skin (flush in a recess)
+      const y = yAt(f) + (side === 'upper' ? af.upper(x) : af.lower(x)) * c + (side === 'upper' ? -inset : inset);
       const s = le + x * c;
       inner.push([xMm, y, -s]);
-      outer.push([xMm, y + (side === 'upper' ? HATCH_T : -HATCH_T), -s]);
+      outer.push([xMm, y + (side === 'upper' ? T : -T), -s]);
     }
     return strip(inner, outer);
   };
 
-  pockets.filter(p => p.part === 'wing').forEach(p => {
+  pockets.filter(p => p.part === 'wing' && p.id !== 'joiner').forEach(p => {
     const sa = p.sa - OVERLAP, sb = p.sb + OVERLAP;
     if (p.id === 'servo_wing') {
       // Leave the outboard end open for the servo arm
@@ -117,22 +119,59 @@ export function buildExtraParts(L: Layout, airfoil: AirfoilType, balance: Balanc
     }
   });
 
+  // ── Joints ──
+  const asm = balance.assembly;
+  {
+    // Joiner plate: follows the lower skin across the root (a shallow V with the
+    // dihedral), flush in its recess; 0.15 mm clearance on each side
+    const j = asm.joiner;
+    const X = j.halfLen - 0.3;
+    const rings = [-X, 0, X].map(xm => wingSurfaceRing(Math.abs(xm) / H, j.sa + 0.15, j.sb - 0.15, 'lower', xm, j.t, j.recessed ? j.t : 0));
+    parts.push({ name: 'joint_wing_joiner', kind: 'joint', side: 'C', axis: [0, -1, 0], geometry: loftSolid(rings) });
+  }
+  if (asm.teGuard) {
+    const g = asm.teGuard;
+    const rings = [-g.halfWidth, 0, g.halfWidth].map(xm => wingSurfaceRing(Math.abs(xm) / H, g.sa, g.sb, 'upper', xm, g.t));
+    parts.push({ name: 'joint_te_guard', kind: 'joint', side: 'C', axis: [0, 1, 0], geometry: loftSolid(rings) });
+  }
+  if (asm.sleeve) {
+    const sl = asm.sleeve;
+    asm.dowels.forEach(d => {
+      const shape = new THREE.Shape();
+      shape.absarc(0, 0, sl.od / 2, 0, Math.PI * 2, false);
+      const hole = new THREE.Path();
+      hole.absarc(0, 0, sl.id / 2, 0, Math.PI * 2, true);
+      shape.holes.push(hole);
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: d.width, bevelEnabled: false, curveSegments: 24 });
+      geo.translate(0, 0, -d.width / 2);
+      // local (u, v, z) → aircraft (x = z, y = v, Z = -u), proper rotation
+      const mat = new THREE.Matrix4().set(0, 0, 1, 0, 0, 1, 0, d.y, -1, 0, 0, -d.s, 0, 0, 0, 1);
+      geo.applyMatrix4(mat);
+      geo.computeVertexNormals();
+      parts.push({ name: `joint_dowel_sleeve_${d.id}`, kind: 'joint', side: 'C', axis: [1, 0, 0], geometry: geo });
+    });
+  }
+
   // ── Fuselage bay hatches ──
   if (L.fuselage) {
     const fz = L.fuselage;
     const expo = fz.style === 'trainer' ? 6 : 2.4;
     // A high wing covers the top of the fuselage between its LE and TE
     const covered: [number, number] | null = fz.style === 'trainer' ? [w.leS * mm, (w.leS + w.rootChord) * mm] : null;
+    // …and where a wing dowel crosses the opening the cover is interrupted
+    const gaps: [number, number][] = covered ? [covered] : [];
+    asm.dowels.forEach(d => gaps.push([d.s - d.d / 2 - 3, d.s + d.d / 2 + 3]));
     pockets.filter(p => p.part === 'fuselage').forEach(p => {
       let intervals: [number, number][] = [[p.sa - OVERLAP, p.sb + OVERLAP]];
-      if (covered) {
+      gaps.forEach(g => {
         intervals = intervals.flatMap(([a, b]) => {
+          if (b <= g[0] || a >= g[1]) return [[a, b] as [number, number]];
           const out: [number, number][] = [];
-          if (a < covered[0]) out.push([a, Math.min(b, covered[0] - 1)]);
-          if (b > covered[1]) out.push([Math.max(a, covered[1] + 1), b]);
+          if (a < g[0]) out.push([a, g[0] - 1]);
+          if (b > g[1]) out.push([g[1] + 1, b]);
           return out;
         });
-      }
+      });
       // Long covers are split so each piece lies flat on the bed
       intervals = intervals.flatMap(([a, b]) => {
         const n = Math.max(1, Math.ceil((b - a) / maxHatchLen - 1e-9));

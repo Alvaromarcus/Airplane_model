@@ -24,6 +24,8 @@ interface SidebarProps {
   teCutNeedsElevonStart: number | null;
   /** Extra section rendered after the propeller (power & weight). */
   powerSection?: ReactNode;
+  /** Section rendered last (assembly & wing mount). */
+  assemblySection?: ReactNode;
 }
 
 // Map PropellerType keys to prop specs for the selector
@@ -123,7 +125,7 @@ export default function Sidebar({
   airfoil, onAirfoilChange,
   fuselageStyle, onFuselageStyleChange,
   propeller, onPropellerChange,
-  propCutout, onPropCutoutChange, teCutNeedsElevonStart, powerSection,
+  propCutout, onPropCutoutChange, teCutNeedsElevonStart, powerSection, assemblySection,
 }: SidebarProps) {
   const { t } = useTranslation();
 
@@ -381,6 +383,8 @@ export default function Sidebar({
             {t('flying_wing_fuselage_note')}
           </div>
         )}
+
+        {assemblySection}
       </div>
     </aside>
   );

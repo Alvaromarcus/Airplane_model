@@ -7,8 +7,8 @@ import { useTranslation } from 'react-i18next';
 import type { AirfoilType } from '../utils/calculations';
 import type { Layout } from '../utils/geometry';
 import { buildAircraftParts, disposeParts, type PartMesh } from '../utils/mesh';
-import { buildPrintPlan, type PrintSettings, type Pocket } from '../utils/printParts';
-import { COMPONENT_COLORS, type BalanceResult } from '../utils/components';
+import { buildPrintPlan, type PrintSettings, type Pocket, type PrintSection } from '../utils/printParts';
+import { COMPONENT_COLORS, ASSEMBLY_COLORS, type BalanceResult } from '../utils/components';
 import { buildExtraParts, disposeExtraParts } from '../utils/printables';
 
 interface Scene3DProps {
@@ -18,11 +18,77 @@ interface Scene3DProps {
   printSettings: PrintSettings;
   balance: BalanceResult | null;
   pockets: Pocket[];
+  /** 0 = assembled, 1 = fully exploded */
+  explode: number;
+  onExplode: (v: number) => void;
+}
+
+type V3 = [number, number, number];
+
+/**
+ * Exploded-view offsets (mm). The wing lifts off the fuselage (showing the
+ * dowels and the saddle) and its halves separate (showing the joiner); in the
+ * print-section view every section also moves away from its neighbour.
+ */
+function explodeOffsets(L: Layout, e: number) {
+  const mm = L.toCm * 10;
+  const lift = L.isFW ? 0 : e * Math.max((L.fuselage?.height ?? 0) * mm * 1.3 + 50, 0.14 * L.wing.halfSpan * 2 * mm);
+  const gap = e * Math.max(20, 0.06 * L.wing.halfSpan * mm);
+  const secGap = e * 18;
+  const wing = (side: number): V3 => [side * gap, lift, 0];
+  const section = (s: PrintSection): V3 => {
+    const i = s.index - 1;
+    const sg = s.side === 'R' ? 1 : s.side === 'L' ? -1 : 0;
+    switch (s.kind) {
+      case 'wing': case 'winglet': return [sg * (gap + i * secGap), lift, 0];
+      case 'aileron': return [sg * (gap + i * secGap), lift, -secGap];
+      case 'fuselage': return [0, 0, -i * secGap * 1.5];
+      case 'hstab': return [sg * i * secGap, 0, 0];
+      case 'elevator': return [sg * i * secGap, 0, -secGap];
+      case 'fin': return [0, i * secGap, 0];
+      case 'rudder': return [0, i * secGap, -secGap];
+      default: return [0, 0, 0];
+    }
+  };
+  /** Offsets for onboard parts, by id / name. */
+  const byId = (id: string): V3 => {
+    const side = /_R(_|$)/.test(id) ? 1 : /_L(_|$)/.test(id) ? -1 : 0;
+    if (/^(servo_wing|mount_wing|hatch_servo|link_wing|wing_)/.test(id)) return wing(side);
+    if (/^(joint_wing_joiner|joint_te_guard)$/.test(id)) return [0, lift, 0];
+    return [0, 0, 0];
+  };
+  return { lift, gap, wing, section, byId, active: e > 0.01 };
 }
 
 
+/** Wing dowels and rubber bands (mm). Bands are hidden in the exploded view. */
+function Assembly({ balance, showBands }: { balance: BalanceResult; showBands: boolean }) {
+  const asm = balance.assembly;
+  const bandGeos = useMemo(() => (asm.bands?.paths ?? []).map(p => {
+    const curve = new THREE.CatmullRomCurve3(p.pts.map(([x, y, s]) => new THREE.Vector3(x, y, -s)), false, 'centripetal');
+    return { id: p.id, geo: new THREE.TubeGeometry(curve, 48, 1.1, 6, false) };
+  }), [asm]);
+  useEffect(() => () => bandGeos.forEach(b => b.geo.dispose()), [bandGeos]);
+  return (
+    <group>
+      {asm.dowels.map(d => (
+        <mesh key={d.id} position={[0, d.y, -d.s]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[d.d / 2, d.d / 2, d.len, 20]} />
+          <meshStandardMaterial color={ASSEMBLY_COLORS.dowel} roughness={0.7} />
+        </mesh>
+      ))}
+      {showBands && bandGeos.map(b => (
+        <mesh key={b.id} geometry={b.geo}>
+          <meshStandardMaterial color={ASSEMBLY_COLORS.band} roughness={0.8} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 /** Servos, battery, ESC, receiver, ballast and pushrods (positions in mm). */
-function Components({ L, balance, airfoil, pockets }: { L: Layout; balance: BalanceResult; airfoil: AirfoilType; pockets: Pocket[] }) {
+function Components({ L, balance, airfoil, pockets, explode }: { L: Layout; balance: BalanceResult; airfoil: AirfoilType; pockets: Pocket[]; explode: number }) {
+  const ex = explodeOffsets(L, explode);
   const k = 1 / (L.toCm * 10); // mm → layout units
   const extras = useMemo(() => buildExtraParts(L, airfoil, balance, pockets), [L, airfoil, balance, pockets]);
   useEffect(() => () => disposeExtraParts(extras), [extras]);
@@ -33,7 +99,7 @@ function Components({ L, balance, airfoil, pockets }: { L: Layout; balance: Bala
       const b = new THREE.Vector3(sg * sp.b[0], sp.b[1], -sp.b[2]);
       const dir = b.clone().sub(a);
       return {
-        key: `${sp.id}_${sg}`, d: sp.d, len: dir.length(),
+        key: `${sp.id}_${sg}`, d: sp.d, len: dir.length(), wing: sp.id === 'main' || sp.id === 'rear', sg,
         mid: a.clone().add(b).multiplyScalar(0.5),
         q: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize()),
       };
@@ -43,19 +109,22 @@ function Components({ L, balance, airfoil, pockets }: { L: Layout; balance: Bala
     <group scale={k}>
       {/* Carbon spars */}
       {sparMeshes.map(m => (
-        <mesh key={m.key} position={m.mid} quaternion={m.q}>
+        <mesh key={m.key} position={m.wing ? m.mid.clone().add(new THREE.Vector3(...ex.wing(m.sg))) : m.mid} quaternion={m.q}>
           <cylinderGeometry args={[m.d / 2, m.d / 2, m.len, 16]} />
           <meshStandardMaterial color={COMPONENT_COLORS.spar} roughness={0.35} metalness={0.4} />
         </mesh>
       ))}
       {/* Printed servo mounts and hatches */}
       {extras.map(x => (
-        <mesh key={x.name} geometry={x.geometry}>
-          {x.kind === 'mount'
+        <mesh key={x.name} geometry={x.geometry} position={ex.byId(x.name)}>
+          {x.kind === 'mount' || x.name.startsWith('joint_dowel_sleeve')
             ? <meshStandardMaterial color={COMPONENT_COLORS.mount} roughness={0.6} />
-            : <meshStandardMaterial color={COMPONENT_COLORS.hatch} roughness={0.5} transparent opacity={0.45} depthWrite={false} side={THREE.DoubleSide} />}
+            : x.kind === 'joint'
+              ? <meshStandardMaterial color={ASSEMBLY_COLORS.joiner} roughness={0.5} />
+              : <meshStandardMaterial color={COMPONENT_COLORS.hatch} roughness={0.5} transparent opacity={0.45} depthWrite={false} side={THREE.DoubleSide} />}
         </mesh>
       ))}
+      <Assembly balance={balance} showBands={!ex.active} />
       {balance.items.filter(i => i.size || i.kind === 'ballast').map(i => (
         i.kind === 'ballast' ? (
           <mesh key={i.id} position={[i.x, i.y, -i.s]}>
@@ -63,15 +132,16 @@ function Components({ L, balance, airfoil, pockets }: { L: Layout; balance: Bala
             <meshStandardMaterial color={COMPONENT_COLORS.ballast} metalness={0.6} roughness={0.3} />
           </mesh>
         ) : (
-          <mesh key={i.id} position={[i.x, i.y, -i.s]}>
+          <mesh key={i.id} position={new THREE.Vector3(i.x, i.y, -i.s).add(new THREE.Vector3(...ex.byId(i.id)))}>
             <boxGeometry args={[i.size![0], i.size![1], i.size![2]]} />
             <meshStandardMaterial color={COMPONENT_COLORS[i.kind] ?? '#9ca3af'} roughness={0.5} />
           </mesh>
         )
       ))}
       {balance.linkages.map(l => {
-        const a = new THREE.Vector3(l.from[0], l.from[1], -l.from[2]);
-        const b = new THREE.Vector3(l.to[0], l.to[1], -l.to[2]);
+        const lo = new THREE.Vector3(...ex.byId(l.id));
+        const a = new THREE.Vector3(l.from[0], l.from[1], -l.from[2]).add(lo);
+        const b = new THREE.Vector3(l.to[0], l.to[1], -l.to[2]).add(lo);
         const mid = a.clone().add(b).multiplyScalar(0.5);
         const dir = b.clone().sub(a);
         const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
@@ -102,14 +172,15 @@ const KIND_OFFSET: Record<string, number> = { wing: 0, aileron: 5, hstab: 2, ele
 const SECTION_COLORS = ['#0ea5e9', '#f97316', '#22c55e', '#a855f7', '#eab308', '#ef4444', '#14b8a6', '#ec4899'];
 
 /** Print sections (mm) drawn in their assembled position, alternating colours. */
-function PrintSections({ L, airfoil, settings, pockets }: { L: Layout; airfoil: AirfoilType; settings: PrintSettings; pockets: Pocket[] }) {
+function PrintSections({ L, airfoil, settings, pockets, explode }: { L: Layout; airfoil: AirfoilType; settings: PrintSettings; pockets: Pocket[]; explode: number }) {
+  const ex = explodeOffsets(L, explode);
   const plan = useMemo(() => buildPrintPlan(L, airfoil, settings, pockets), [L, airfoil, settings, pockets]);
   useEffect(() => () => plan.sections.forEach(s => s.geometry.dispose()), [plan]);
   const mmToLayout = 1 / (L.toCm * 10);
   return (
     <group scale={mmToLayout}>
       {plan.sections.map(s => (
-        <mesh key={s.name} geometry={s.geometry}>
+        <mesh key={s.name} geometry={s.geometry} position={ex.section(s)}>
           <meshStandardMaterial color={SECTION_COLORS[(s.index + (s.name.endsWith('b') ? 4 : 0) + KIND_OFFSET[s.kind]) % SECTION_COLORS.length]} roughness={0.5} side={THREE.DoubleSide} />
         </mesh>
       ))}
@@ -234,7 +305,7 @@ function BalanceMarkers({ L }: { L: Layout }) {
   );
 }
 
-function Aircraft({ L, airfoil, isRotating, sections, printSettings, balance, pockets }: { L: Layout; airfoil: AirfoilType; isRotating: boolean; sections: boolean; printSettings: PrintSettings; balance: BalanceResult | null; pockets: Pocket[] }) {
+function Aircraft({ L, airfoil, isRotating, sections, printSettings, balance, pockets, explode }: { L: Layout; airfoil: AirfoilType; isRotating: boolean; sections: boolean; printSettings: PrintSettings; balance: BalanceResult | null; pockets: Pocket[]; explode: number }) {
   const groupRef = useRef<THREE.Group>(null);
   useFrame((_, delta) => {
     if (groupRef.current && isRotating) groupRef.current.rotation.y += delta * 0.25;
@@ -242,6 +313,11 @@ function Aircraft({ L, airfoil, isRotating, sections, printSettings, balance, po
 
   const parts = useMemo(() => buildAircraftParts(L, airfoil), [L, airfoil]);
   useEffect(() => () => disposeParts(parts), [parts]);
+  const isWingPart = (p: PartMesh) => p.kind === 'wing' || p.kind === 'aileron' || p.kind === 'winglet';
+  const wingR = parts.right.filter(isWingPart);
+  const otherR = parts.right.filter(p => !isWingPart(p));
+  const ex = explodeOffsets(L, explode);
+  const toL = (v: V3): V3 => v.map(c => c / (L.toCm * 10)) as V3;
 
   // Centre the model on the origin (stations run along −Z)
   const midS = (L.bounds.sMin + L.bounds.sMax) / 2;
@@ -251,15 +327,17 @@ function Aircraft({ L, airfoil, isRotating, sections, printSettings, balance, po
     <group ref={groupRef} scale={L.toCm}>
       <group position={[0, -midY, midS]}>
         {sections ? (
-          <PrintSections L={L} airfoil={airfoil} settings={printSettings} pockets={pockets} />
+          <PrintSections L={L} airfoil={airfoil} settings={printSettings} pockets={pockets} explode={explode} />
         ) : (
           <>
-            <PartMeshes parts={parts.right} xray={!!balance} />
-            <PartMeshes parts={parts.right} mirror xray={!!balance} />
+            <group position={toL(ex.wing(1))}><PartMeshes parts={wingR} xray={!!balance} /></group>
+            <group position={toL(ex.wing(-1))}><PartMeshes parts={wingR} mirror xray={!!balance} /></group>
+            <PartMeshes parts={otherR} xray={!!balance} />
+            <PartMeshes parts={otherR} mirror xray={!!balance} />
             <PartMeshes parts={parts.center} xray={!!balance} />
           </>
         )}
-        {balance && <Components L={L} balance={balance} airfoil={airfoil} pockets={pockets} />}
+        {balance && <Components L={L} balance={balance} airfoil={airfoil} pockets={pockets} explode={explode} />}
         <Powertrain L={L} />
         <BalanceMarkers L={L} />
       </group>
@@ -267,7 +345,7 @@ function Aircraft({ L, airfoil, isRotating, sections, printSettings, balance, po
   );
 }
 
-export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, balance, pockets }: Scene3DProps) {
+export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, balance, pockets, explode, onExplode }: Scene3DProps) {
   const { t } = useTranslation();
   const [isRotating, setIsRotating] = useState(true);
   const [showSections, setShowSections] = useState(false);
@@ -276,7 +354,7 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
   // Everything is rendered in centimetres
   const b = layout.bounds;
   const sizeCm = Math.max(b.xMax * 2, b.sMax - b.sMin, 10) * layout.toCm;
-  const dist = sizeCm * 1.35;
+  const dist = sizeCm * 1.15;
   const floorY = -((b.yMax - b.yMin) / 2) * layout.toCm - sizeCm * 0.08;
 
   const fallback = (
@@ -296,7 +374,7 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
           <hemisphereLight args={[isDarkMode ? '#cbd5e1' : '#ffffff', '#475569', 0.9]} />
           <directionalLight position={[sizeCm, sizeCm * 1.5, sizeCm * 0.8]} intensity={1.6} castShadow />
           <directionalLight position={[-sizeCm, sizeCm * 0.3, -sizeCm]} intensity={0.35} />
-          <Aircraft L={layout} airfoil={airfoil} isRotating={isRotating} sections={showSections} printSettings={printSettings} balance={showComponents && !showSections ? balance : null} pockets={pockets} />
+          <Aircraft L={layout} airfoil={airfoil} isRotating={isRotating} sections={showSections} printSettings={printSettings} balance={showComponents && !showSections ? balance : null} pockets={pockets} explode={explode} />
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
             <circleGeometry args={[sizeCm * 0.9, 64]} />
             <meshStandardMaterial color={isDarkMode ? '#1f2937' : '#e2e8f0'} transparent opacity={0.6} />
@@ -317,6 +395,13 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
             <span className="flex items-center gap-1"><i className="inline-block w-3 h-1.5 rounded-sm" style={{ background: COMPONENT_COLORS.spar }} />{t('mb_spars')}</span>
             <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-sm border border-slate-300" style={{ background: COMPONENT_COLORS.mount }} />{t('stl_mounts')}</span>
             <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-sm opacity-60" style={{ background: COMPONENT_COLORS.hatch }} />{t('stl_hatches')}</span>
+            <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-sm" style={{ background: ASSEMBLY_COLORS.joiner }} />{t('asm_joiner_short')}</span>
+            {balance.assembly.bands && (
+              <>
+                <span className="flex items-center gap-1"><i className="inline-block w-3 h-1.5 rounded-sm" style={{ background: ASSEMBLY_COLORS.dowel }} />{t('asm_dowels_short')}</span>
+                <span className="flex items-center gap-1"><i className="inline-block w-3 h-1 rounded-full" style={{ background: ASSEMBLY_COLORS.band }} />{t('asm_bands_short')}</span>
+              </>
+            )}
           </>
         )}
         <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-full bg-slate-900 dark:bg-white" />CG</span>
@@ -333,6 +418,10 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={showSections} onChange={e => setShowSections(e.target.checked)} className="accent-emerald-600" />
           {t('show_print_sections')}
+        </label>
+        <label className="flex flex-col gap-1 pt-1 mt-0.5 border-t border-slate-200 dark:border-slate-700">
+          <span className="flex items-center justify-between gap-2">{t('explode_view')}<b className="font-medium tabular-nums">{Math.round(explode * 100)}%</b></span>
+          <input type="range" min={0} max={1} step={0.05} value={explode} onChange={e => onExplode(parseFloat(e.target.value))} className="accent-sky-600 w-36" aria-label={t('explode_view')} />
         </label>
       </div>
       <button

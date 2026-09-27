@@ -11,6 +11,7 @@ import type { AirfoilType } from './calculations';
 import { sectionHalfHeightAt, type Layout } from './geometry';
 import { getAirfoil } from './airfoils';
 import { buildPrintPlan, DEFAULT_PRINT_SETTINGS, type PrintPlan, type Pocket } from './printParts';
+import { computeAssembly, type AssemblySpec, type WingMount } from './assembly';
 
 export type ServoKey = 'micro5' | 'sg90' | 'mg90s' | 'mid17' | 'standard';
 export type BatteryKey = 'auto' | string;
@@ -45,10 +46,10 @@ export const BATTERIES: BatterySpec[] = [
   { key: '4s3300', cells: 4, mAh: 3300, label: '4S 3300 mAh', mass: 340, l: 135, w: 43, h: 31 },
 ];
 
-export interface ComponentSettings { servo: ServoKey; battery: BatteryKey }
-export const DEFAULT_COMPONENTS: ComponentSettings = { servo: 'sg90', battery: 'auto' };
+export interface ComponentSettings { servo: ServoKey; battery: BatteryKey; wingMount?: WingMount }
+export const DEFAULT_COMPONENTS: ComponentSettings = { servo: 'sg90', battery: 'auto', wingMount: 'bands' };
 
-export type ItemKind = 'airframe' | 'spar' | 'motor' | 'prop' | 'esc' | 'battery' | 'servo' | 'rx' | 'misc' | 'ballast' | 'mount' | 'hatch';
+export type ItemKind = 'airframe' | 'spar' | 'motor' | 'prop' | 'esc' | 'battery' | 'servo' | 'rx' | 'misc' | 'ballast' | 'mount' | 'hatch' | 'hardware';
 
 export const COMPONENT_COLORS: Partial<Record<ItemKind, string>> = {
   servo: '#7c3aed',
@@ -59,7 +60,11 @@ export const COMPONENT_COLORS: Partial<Record<ItemKind, string>> = {
   spar: '#1e293b',
   mount: '#e2e8f0',
   hatch: '#38bdf8',
+  hardware: '#92400e',
 };
+
+/** Colours of the assembly parts in the 2D/3D views. */
+export const ASSEMBLY_COLORS = { dowel: '#92400e', band: '#d97706', joiner: '#0d9488', guard: '#0d9488', sleeve: '#e2e8f0' };
 
 export interface MassItem {
   id: string;
@@ -108,6 +113,8 @@ export interface BalanceResult {
   ballast: { mass: number; s: number } | null;
   wingLoading: number;        // g/dm²
   warnings: { key: string; params?: Record<string, string | number> }[];
+  /** Joints: wing joiner, dowels and rubber bands (see assembly.ts). */
+  assembly: AssemblySpec;
 }
 
 // LW-PLA vase-mode shell: ~0.45 mm wall at ~0.7 g/cm³ (foamed at ~230 °C)
@@ -330,6 +337,27 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
   const miscS = items.reduce((a, i) => a + i.mass * i.s, 0) / sub;
   items.push({ id: 'misc', kind: 'misc', labelKey: 'mb_misc', mass: miscMass, s: miscS, x: 0, y: 0 });
 
+  // ── Joints: wing joiner plate, dowels + sleeves + bands, trailing-edge guard ──
+  const PLA = 1.24e-3, WOOD = 0.7e-3; // g/mm³
+  const preAuw = items.reduce((a, i) => a + i.mass, 0) * 1.3;
+  const assembly = computeAssembly(L, airfoil, settings.wingMount ?? 'bands', preAuw);
+  {
+    const j = assembly.joiner;
+    items.push({ id: 'joiner', kind: 'mount', labelKey: 'asm_joiner', detail: 'PETG/PLA', mass: 2 * j.halfLen * (j.sb - j.sa) * j.t * PLA, s: (j.sa + j.sb) / 2, x: 0, y: w.mountY * mm });
+  }
+  if (assembly.bands && assembly.sleeve) {
+    const ds = assembly.dowels;
+    const dm = ds.reduce((a, d) => a + Math.PI * (d.d / 2) ** 2 * d.len * WOOD, 0);
+    items.push({ id: 'dowels', kind: 'hardware', labelKey: 'asm_dowels', detail: `2 × Ø${ds[0].d} × ${Math.round(ds[0].len)} mm`, mass: dm, s: (ds[0].s + ds[1].s) / 2, x: 0, y: ds[0].y });
+    const sl = assembly.sleeve;
+    const sm = ds.reduce((a, d) => a + Math.PI * ((sl.od / 2) ** 2 - (sl.id / 2) ** 2) * d.width * PLA, 0);
+    items.push({ id: 'sleeves', kind: 'mount', labelKey: 'asm_sleeves', mass: sm, s: (ds[0].s + ds[1].s) / 2, x: 0, y: ds[0].y });
+    const b = assembly.bands;
+    items.push({ id: 'bands', kind: 'hardware', labelKey: 'asm_bands', detail: `${b.count} × ~${b.flatLen} mm`, mass: b.count * 1.3, s: w.leS * mm + w.rootChord * mm * 0.5, x: 0, y: w.mountY * mm });
+    const g = assembly.teGuard!;
+    items.push({ id: 'te_guard', kind: 'mount', labelKey: 'asm_te_guard', mass: 2 * g.halfWidth * (g.sb - g.sa) * g.t * PLA, s: (g.sa + g.sb) / 2, x: 0, y: w.mountY * mm });
+  }
+
   // ── Battery: bay limits, then position that puts the CG on target ──
   const M0 = items.reduce((a, i) => a + i.mass, 0);
   const S0 = items.reduce((a, i) => a + i.mass * i.s, 0);
@@ -370,7 +398,8 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
       const S = S0 + b.mass * r.pos;
       const sN = L.isFW ? w.leAt(0) * mm + 10 : 5;
       const need = r.ideal < r.range[0] - 1 ? Math.max(0, (S - T * Mt) / (T - sN)) : 0;
-      return need * 3 + Math.abs(b.mass - want) + (b.mass > want * 1.8 ? 1000 : 0);
+      // Any ballast is dead weight: prefer a pack that balances without it
+      return need * 3 + (need > 0.5 ? 15 : 0) + Math.abs(b.mass - want) + (b.mass > want * 1.8 ? 1000 : 0);
     };
     battery = pool.reduce((best, b) => (score(b) < score(best) ? b : best), pool[0]);
   }
@@ -422,6 +451,7 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
     cgTarget: T, cgAchieved, batteryRange: range, ballast,
     wingLoading: auw / wingAreaDm2,
     warnings,
+    assembly,
   };
 }
 
@@ -439,6 +469,9 @@ function dist(a: [number, number, number], b: [number, number, number]) {
 export function cutoutsFromBalance(b: BalanceResult, L: Layout): Pocket[] {
   const out: Pocket[] = [];
   const it = (id: string) => b.items.find(i => i.id === id);
+  // Recess for the wing joiner plate: lower skin, across the root
+  const j = b.assembly.joiner;
+  if (j.recessed) out.push({ id: 'joiner', part: 'wing', side: 'lower', xa: 0, xb: j.halfLen, sa: j.sa, sb: j.sb, depth: j.t + 0.2 });
   const sv = it('servo_wing_R');
   const plate = b.mounts.find(m => m.id === 'mount_wing_R');
   if (sv?.size) {
