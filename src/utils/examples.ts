@@ -90,14 +90,14 @@ export const EXAMPLES: ExampleProject[] = [
     id: 'zagi90',
     name: { pt: 'Asa voadora estilo Zagi 90 cm', en: 'Zagi-style flying wing 90 cm' },
     description: {
-      pt: 'Asa bem enflechada com MH45, winglets e hélice pusher no recorte do bordo de fuga. Balanceia com 3S 1800 no bico, sem lastro.',
-      en: 'Strongly swept wing with MH45, winglets and a pusher prop in the trailing-edge cut-out. Balances with a 3S 1800 in the nose, no ballast.',
+      pt: 'Asa bem enflechada com MH45, winglets e hélice pusher no recorte do bordo de fuga. Balanceia com 3S 1800 deitada na transversal no bico (margem estática 5 %), sem lastro.',
+      en: 'Strongly swept wing with MH45, winglets and a pusher prop in the trailing-edge cut-out. Balances with a 3S 1800 lying across the nose (5 % static margin), no ballast.',
     },
     tags: [{ pt: 'Asa voadora', en: 'Flying wing' }, { pt: 'Rápida', en: 'Fast' }],
     state: {
       dimensions: { wingspan: 90, rootChord: 26, tipChord: 13, sweepOffset: 30, dihedral: 2, hStabSpan: 0, hStabChord: 0, vStabSpan: 8, vStabChord: 6, fuselageLength: 30, noseLength: 0, wingToTailDistance: 0, fuselageWidth: 0, fuselageHeight: 0 },
       unit: 'cm', aircraftType: 'flying_wing', airfoil: 'mh45', fuselageStyle: 'trainer', propeller: 'prop_8x45P',
-      controls: { aileronStart: 30, aileronEnd: 95, aileronChord: 22, elevatorChord: 0, rudderChord: 0, fwStaticMargin: 6, convStaticMargin: 12 },
+      controls: { aileronStart: 30, aileronEnd: 95, aileronChord: 22, elevatorChord: 0, rudderChord: 0, fwStaticMargin: 5, convStaticMargin: 12 },
       components: { servo: 'sg90', battery: 'auto' }, propCutout: true,
     },
   },

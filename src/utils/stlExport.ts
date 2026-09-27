@@ -325,6 +325,33 @@ function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, pt: boo
       }
     }
   }
+  const exits = balance?.linkExits ?? [];
+  if (exits.length && L.fuselage) {
+    const fz = L.fuselage, mmU = L.toCm * 10;
+    const where = (p: [number, number, number], wall = false) => {
+      const sec = fz.section(p[2] / mmU);
+      const bottom = (sec.yc - sec.h / 2) * mmU, yc = sec.yc * mmU, hh = (sec.h / 2) * mmU;
+      const face = p[1] > yc + 0.45 * hh ? (pt ? 'topo' : 'top')
+        : p[1] < yc - 0.45 * hh ? (pt ? 'fundo' : 'bottom')
+        : p[0] < 0 ? (pt ? 'lateral esquerda' : 'left side') : (pt ? 'lateral direita' : 'right side');
+      const off = Math.abs(p[0]) < 3 ? (pt ? 'no centro' : 'on the centreline')
+        : pt ? `${Math.round(Math.abs(p[0]))} mm à ${p[0] < 0 ? 'esquerda' : 'direita'} do eixo` : `${Math.round(Math.abs(p[0]))} mm ${p[0] < 0 ? 'left' : 'right'} of the centreline`;
+      return pt
+        ? `estação ${Math.round(p[2])} mm, ${Math.round(p[1] - bottom)} mm acima do fundo, ${off}${wall ? '' : ` (${face})`}`
+        : `station ${Math.round(p[2])} mm, ${Math.round(p[1] - bottom)} mm above the bottom, ${off}${wall ? '' : ` (${face})`}`;
+    };
+    lines.push('', pt ? 'SAÍDAS DAS VARETAS DA CAUDA (furar na montagem — no modo vaso as paredes não têm furos)' : 'TAIL PUSHROD EXITS (drill at assembly — vase-mode walls have no holes)', '-'.repeat(40));
+    exits.forEach(e => {
+      const name = e.id === 'link_elev' ? (pt ? 'Profundor' : 'Elevator') : (pt ? 'Leme' : 'Rudder');
+      lines.push(`${name}:`);
+      if (e.through) lines.push(`  - ${e.throughKind === 'wall' ? (pt ? 'parede traseira do compartimento' : 'aft wall of the bay') : (pt ? 'fundo do compartimento' : 'floor of the bay')}: ${where(e.through, true)}`);
+      if (e.skin) lines.push(`  - ${pt ? 'saída na fuselagem' : 'exit through the skin'}: ${where(e.skin)}`);
+      if (e.guide > 0) lines.push(pt
+        ? `  - tubo-guia (externo Ø3 / interno Ø2 mm) de ~${Math.round(e.guide + 20)} mm entre os dois furos, colado com CA; vareta de aço ou carbono Ø1,2–1,5 mm.`
+        : `  - guide tube (Ø3 outer / Ø2 inner mm), ~${Math.round(e.guide + 20)} mm between the two holes, CA-glued; Ø1.2–1.5 mm steel or carbon pushrod.`);
+    });
+    lines.push(pt ? '  Fure Ø3,2 mm. As varetas das asas passam por fora, sob a asa, saindo pelo bolsão do servo.' : '  Drill Ø3.2 mm. The wing pushrods run outside, under the wing, from the servo pocket.');
+  }
   if (pockets.length) {
     lines.push('', pt ? 'RECORTES' : 'CUT-OUTS', '-'.repeat(40));
     pockets.forEach(p => {

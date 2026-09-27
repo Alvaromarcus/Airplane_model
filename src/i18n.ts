@@ -329,8 +329,13 @@ const resources = {
       "mb_warn_servo_fuse": "The fuselage is too narrow for the elevator/rudder servos side by side.",
       "mb_warn_nose_ballast": "Tail heavy: even with the battery all the way forward, ~{{g}} g of nose ballast is needed. Try a heavier battery, a lighter motor/prop, or move the tail/motor forward.",
       "mb_warn_tail_ballast": "Nose heavy: even with the battery all the way back, ~{{g}} g of tail ballast is needed. Try a lighter battery or a shorter nose.",
-      "mb_warn_battery_fit": "The battery does not fit the fuselage cross-section ({{w}} × {{h}} mm). Increase the fuselage width/height.",
-      "mb_warn_battery_thick": "The battery is thicker than the wing centre ({{t}} mm). It will need a pod/bulge.",
+      "mb_warn_battery_thick": "The battery does not fit inside the wing centre anywhere ahead of the ESC (root thickness ≈ {{t}} mm). Pick a thinner pack or it will need a pod/bulge.",
+      "mb_warn_battery_fit": "The battery does not fit inside the fuselage anywhere between the firewall and the wing ({{w}} × {{h}} mm at its position). Pick a smaller pack or enlarge the fuselage.",
+      "mb_warn_parts_fit": "Not enough room inside the wing for: {{parts}}. A thicker airfoil or a larger root chord is needed.",
+      "mb_warn_link_inside": "A tail pushrod ends inside the fuselage — check the control horn position.",
+      "mb_warn_link_dowel": "A tail pushrod would cross a wing-dowel sleeve.",
+      "link_exit_short": "Pushrod exits (drill)",
+      "pw_battery_across": "lies across the wing",
     }
   },
   pt: {
@@ -660,8 +665,13 @@ const resources = {
       "mb_warn_servo_fuse": "A fuselagem é estreita demais para os servos de profundor e leme lado a lado.",
       "mb_warn_nose_ballast": "Cauda pesada: mesmo com a bateria o mais à frente possível, são necessários ~{{g}} g de lastro no nariz. Tente uma bateria mais pesada, motor/hélice mais leves, ou avançar a cauda/motor.",
       "mb_warn_tail_ballast": "Nariz pesado: mesmo com a bateria o mais atrás possível, são necessários ~{{g}} g de lastro na cauda. Tente uma bateria mais leve ou um nariz mais curto.",
-      "mb_warn_battery_fit": "A bateria não cabe na seção da fuselagem ({{w}} × {{h}} mm). Aumente a largura/altura da fuselagem.",
-      "mb_warn_battery_thick": "A bateria é mais grossa que o centro da asa ({{t}} mm). Vai precisar de uma carenagem.",
+      "mb_warn_battery_thick": "A bateria não cabe dentro do centro da asa em nenhum ponto à frente do ESC (espessura da raiz ≈ {{t}} mm). Escolha uma bateria mais fina ou ela vai precisar de uma carenagem.",
+      "mb_warn_battery_fit": "A bateria não cabe dentro da fuselagem em nenhum ponto entre o firewall e a asa ({{w}} × {{h}} mm na posição dela). Escolha uma bateria menor ou aumente a fuselagem.",
+      "mb_warn_parts_fit": "Falta espaço dentro da asa para: {{parts}}. É preciso um perfil mais grosso ou uma corda na raiz maior.",
+      "mb_warn_link_inside": "Uma vareta da cauda termina dentro da fuselagem — confira a posição do horn.",
+      "mb_warn_link_dowel": "Uma vareta da cauda cruzaria a luva de uma cavilha da asa.",
+      "link_exit_short": "Saídas das varetas (furar)",
+      "pw_battery_across": "deitada na transversal",
     }
   }
 };
