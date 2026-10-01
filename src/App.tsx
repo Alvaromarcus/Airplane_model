@@ -13,6 +13,9 @@ import Header from './components/Header';
 import KpiBar from './components/KpiBar';
 import WelcomeModal from './components/WelcomeModal';
 import ExamplesDialog from './components/ExamplesDialog';
+import ConsentBanner from './components/ConsentBanner';
+import PrivacyDialog from './components/PrivacyDialog';
+import { getConsent, consentDate, setConsent, type Consent } from './utils/consent';
 import type { ExampleProject } from './utils/examples';
 import { projectFromUrl, shareUrl } from './utils/share';
 import {
@@ -115,6 +118,13 @@ function App() {
   const [printSettings, setPrintSettings] = useState<PrintSettings>(initial.printSettings);
   const [stlOpen, setStlOpen] = useState(false);
   const [examplesOpen, setExamplesOpen] = useState(false);
+  const [consent, setConsentState] = useState<Consent>(() => getConsent());
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const chooseConsent = (v: 'granted' | 'denied') => {
+    setConsent(v);
+    setConsentState(v);
+    if (v === 'granted') setPrivacyOpen(false);
+  };
   const [welcomeOpen, setWelcomeOpen] = useState(() => {
     try { return !localStorage.getItem('aerobuilder_welcome_seen') && !projectFromUrl(); } catch { return false; }
   });
@@ -363,12 +373,25 @@ function App() {
       />
       <WelcomeModal open={welcomeOpen} onClose={closeWelcome} onExamples={() => { closeWelcome(); setExamplesOpen(true); }} />
       <ExamplesDialog open={examplesOpen} onClose={() => setExamplesOpen(false)} onLoad={loadExample} />
+      <PrivacyDialog
+        open={privacyOpen}
+        consent={consent}
+        consentAt={consent ? consentDate() : null}
+        onClose={() => setPrivacyOpen(false)}
+        onAccept={() => chooseConsent('granted')}
+        onReject={() => chooseConsent('denied')}
+      />
+      {consent === null && !privacyOpen && (
+        <ConsentBanner onAccept={() => chooseConsent('granted')} onReject={() => chooseConsent('denied')} onMore={() => setPrivacyOpen(true)} />
+      )}
       <footer className="flex-shrink-0 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-3 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 z-20">
         <span>{t('developed_by')} <a href="https://www.linkedin.com/in/alvaromarcus/" target="_blank" rel="noopener noreferrer" className="text-sky-700 dark:text-sky-400 hover:underline">Alvaro Marcus</a></span>
         <span aria-hidden="true">·</span>
         <a href="https://github.com/Alvaromarcus/Airplane_model" target="_blank" rel="noopener noreferrer" className="hover:underline">GitHub</a>
         <span aria-hidden="true">·</span>
         <span>{t('footer_disclaimer')}</span>
+        <span aria-hidden="true">·</span>
+        <button type="button" onClick={() => setPrivacyOpen(true)} className="hover:underline">{t('privacy_footer_link')}</button>
       </footer>
     </div>
   );
