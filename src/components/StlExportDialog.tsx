@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { track } from '../utils/analytics';
 import { X, Download, Printer, AlertTriangle, Info } from 'lucide-react';
 import type { AirfoilType } from '../utils/calculations';
 import type { Layout } from '../utils/geometry';
@@ -81,7 +82,9 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
       const url = URL.createObjectURL(r.blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `aerobuilder-${layout.isFW ? 'asa-voadora' : 'convencional'}-stl.zip`;
+      const pt = i18n.language.startsWith('pt');
+      a.download = `aerobuilder-${layout.isFW ? (pt ? 'asa-voadora' : 'flying-wing') : (pt ? 'convencional' : 'conventional')}-stl.zip`;
+      track('export_stl', { aircraft_type: layout.isFW ? 'flying_wing' : 'conventional', parts: r.oriented.length });
       document.body.appendChild(a);
       a.click();
       a.remove();

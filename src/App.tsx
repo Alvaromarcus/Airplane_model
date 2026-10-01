@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { setLanguage, currentLang } from './i18n';
+import { setLanguage, currentLang, type LangCode } from './i18n';
+import { track } from './utils/analytics';
 import Sidebar from './components/Sidebar';
 import InsightsDrawer, { type InsightsTab } from './components/InsightsDrawer';
 import PowerSection from './components/PowerSection';
@@ -197,6 +198,7 @@ function App() {
       const pdfLang = currentLang() === 'zh' ? 'en' : currentLang();
       const pdfT = pdfLang === currentLang() ? t : i18n.getFixedT('en');
       await exportToPDF(dimensions, metrics, validationChecks, unit, pdfLang, (k, o) => pdfT(k, o) as string, layout, controls, aircraftType, airfoil, balance);
+      track('export_pdf', { aircraft_type: aircraftType });
     } catch (error) {
       console.error("PDF Export failed", error);
     }
@@ -216,6 +218,7 @@ function App() {
   };
 
   const handleShare = async (): Promise<boolean> => {
+    track('share_link', { aircraft_type: aircraftType });
     const url = shareUrl({ dimensions, unit, aircraftType, airfoil, fuselageStyle, propeller, controls, printSettings, components, propCutout });
     try {
       await navigator.clipboard.writeText(url);
@@ -227,6 +230,7 @@ function App() {
   };
 
   const loadExample = (ex: ExampleProject) => {
+    track('load_example', { example_id: ex.id });
     const st = ex.state;
     setDimensions(dimsInUnit(st.dimensions, unit));
     setAircraftType(st.aircraftType);
@@ -265,7 +269,7 @@ function App() {
         onUnit={handleUnitToggle}
         isDarkMode={isDarkMode}
         onToggleDark={() => setIsDarkMode(!isDarkMode)}
-        onLanguage={setLanguage}
+        onLanguage={(code: LangCode) => { track('change_language', { to: code }); setLanguage(code); }}
         onReset={handleReset}
         onExportPDF={handleExportPDF}
         isExporting={isExporting}
