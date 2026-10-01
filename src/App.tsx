@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { setLanguage, currentLang } from './i18n';
 import Sidebar from './components/Sidebar';
 import InsightsDrawer, { type InsightsTab } from './components/InsightsDrawer';
 import PowerSection from './components/PowerSection';
@@ -188,17 +189,14 @@ function App() {
     setControls(prev => ({ ...prev, [key]: value }));
   };
 
-  const toggleLanguage = () => {
-    const newLang = i18n.language === 'en' ? 'pt' : 'en';
-    i18n.changeLanguage(newLang);
-    try { localStorage.setItem('aerobuilder_lang', newLang); } catch { /* ignore */ }
-    document.documentElement.lang = newLang === 'pt' ? 'pt-BR' : 'en-US';
-  };
 
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
-      await exportToPDF(dimensions, metrics, validationChecks, unit, i18n.language, t, layout, controls, aircraftType, airfoil, balance);
+      // The PDF's built-in fonts have no CJK glyphs: Chinese exports in English
+      const pdfLang = currentLang() === 'zh' ? 'en' : currentLang();
+      const pdfT = pdfLang === currentLang() ? t : i18n.getFixedT('en');
+      await exportToPDF(dimensions, metrics, validationChecks, unit, pdfLang, (k, o) => pdfT(k, o) as string, layout, controls, aircraftType, airfoil, balance);
     } catch (error) {
       console.error("PDF Export failed", error);
     }
@@ -267,7 +265,7 @@ function App() {
         onUnit={handleUnitToggle}
         isDarkMode={isDarkMode}
         onToggleDark={() => setIsDarkMode(!isDarkMode)}
-        onToggleLanguage={toggleLanguage}
+        onLanguage={setLanguage}
         onReset={handleReset}
         onExportPDF={handleExportPDF}
         isExporting={isExporting}

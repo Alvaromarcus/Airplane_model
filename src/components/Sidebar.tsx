@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AircraftDimensions, AircraftMetrics, AircraftType, AirfoilType, ControlSurfaces, FuselageType, PropellerType } from '../utils/calculations';
-import { TRACTOR_PROPS, PUSHER_PROPS } from '../utils/electricSystem';
+import { TRACTOR_PROPS, PUSHER_PROPS, propNote, type PropSpec } from '../utils/electricSystem';
 import { Plane, Fan, Wind, SlidersHorizontal, Box } from 'lucide-react';
 import Section from './ui/Section';
 
@@ -29,7 +29,7 @@ interface SidebarProps {
 }
 
 // Map PropellerType keys to prop specs for the selector
-const TRACTOR_KEY_MAP: { key: PropellerType; label: string; notes: string }[] = [
+const TRACTOR_KEY_MAP: { key: PropellerType; label: string; notes: PropSpec['notes'] }[] = [
   { key: 'prop_6x4',   label: '6×4',    notes: TRACTOR_PROPS[0].notes },
   { key: 'prop_7x4',   label: '7×4',    notes: TRACTOR_PROPS[1].notes },
   { key: 'prop_8x4',   label: '8×4',    notes: TRACTOR_PROPS[2].notes },
@@ -42,7 +42,7 @@ const TRACTOR_KEY_MAP: { key: PropellerType; label: string; notes: string }[] = 
   { key: 'prop_12x8',  label: '12×8',   notes: TRACTOR_PROPS[9].notes },
 ];
 
-const PUSHER_KEY_MAP: { key: PropellerType; label: string; notes: string }[] = [
+const PUSHER_KEY_MAP: { key: PropellerType; label: string; notes: PropSpec['notes'] }[] = [
   { key: 'prop_7x4P',   label: '7×4P',    notes: PUSHER_PROPS[0].notes },
   { key: 'prop_8x45P',  label: '8×4.5P',  notes: PUSHER_PROPS[1].notes },
   { key: 'prop_9x47P',  label: '9×4.7P',  notes: PUSHER_PROPS[2].notes },
@@ -267,7 +267,7 @@ export default function Sidebar({
                 ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
                 : 'bg-sky-50 dark:bg-sky-900/20 border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-300'
             }`}>
-              {selectedPropInfo.notes}
+              {propNote(t, { ...TRACTOR_PROPS[0], notes: selectedPropInfo.notes })}
             </div>
           )}
                   {isFlyingWing && (

@@ -48,7 +48,6 @@ export async function exportToPDF(
   airfoil: AirfoilType = 'clarky',
   balance: BalanceResult | null = null,
 ): Promise<void> {
-  const pt = lang === 'pt';
   const isFW = aircraftType === 'flying_wing';
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const fmt = (n: number, d = 1) => `${n.toFixed(unit === 'mm' ? 0 : d)} ${unit}`;
@@ -62,8 +61,8 @@ export async function exportToPDF(
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100);
-  doc.text(pt ? 'Relatório de Projeto de Aeromodelo' : 'RC Aircraft Design Report', 15, 30);
-  doc.text(`${new Date().toLocaleDateString(pt ? 'pt-BR' : 'en-US')}`, 195, 22, { align: 'right' });
+  doc.text(t('pdf_title'), 15, 30);
+  doc.text(`${new Date().toLocaleDateString(lang)}`, 195, 22, { align: 'right' });
   doc.text(`${t(isFW ? 'preset_flying_wing' : 'preset_conventional')} · ${t('airfoil_' + airfoil)}`, 195, 30, { align: 'right' });
   doc.setDrawColor(220, 220, 220);
   doc.line(15, 35, 195, 35);
@@ -93,7 +92,7 @@ export async function exportToPDF(
     });
   };
 
-  tableHeader(pt ? 'Parâmetro' : 'Parameter', pt ? 'Valor' : 'Value');
+  tableHeader(t('pdf_parameter'), t('pdf_value'));
   const rows = [
     { label: t('wing_area'), value: `${metrics.wingArea.toFixed(0)} ${unit}²` },
     { label: t('mac'), value: fmt(metrics.mac) },
@@ -114,7 +113,7 @@ export async function exportToPDF(
 
   // Control surfaces table
   y += 5;
-  tableHeader(t('control_surfaces_title'), pt ? 'Dimensões' : 'Dimensions');
+  tableHeader(t('control_surfaces_title'), t('pdf_dimensions'));
   const semi = dims.wingspan / 2;
   const chordAt = (f: number) => dims.rootChord + (dims.tipChord - dims.rootChord) * f;
   const f0 = controls.aileronStart / 100, f1 = controls.aileronEnd / 100;
@@ -124,7 +123,7 @@ export async function exportToPDF(
       value: `${fmt(semi * (f1 - f0))} × ${fmt(chordAt(f0) * controls.aileronChord / 100)} > ${fmt(chordAt(f1) * controls.aileronChord / 100)}  ·  ${(metrics.aileronAreaRatio * 100).toFixed(1)}%`,
     },
     {
-      label: pt ? '   posição na semi-asa' : '   position on semi-span',
+      label: '   ' + t('pdf_pos_semispan'),
       value: `${controls.aileronStart.toFixed(0)}%  >  ${controls.aileronEnd.toFixed(0)}%  (${fmt(semi * f0)}  >  ${fmt(semi * f1)})`,
     },
   ];
@@ -177,7 +176,7 @@ export async function exportToPDF(
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(0, 0, 0);
-    doc.text(pt ? 'Fórmulas Aerodinâmicas' : 'Aerodynamic Formulas', 15, y);
+    doc.text(t('pdf_formulas'), 15, y);
     y += 6;
     doc.setFont('courier', 'normal');
     doc.setFontSize(8);
@@ -227,7 +226,7 @@ export async function exportToPDF(
     ];
     summary.forEach(line => { doc.text(doc.splitTextToSize(line, 180), 15, y); y += 5.5; });
     y += 3;
-    tableHeader(t('mb_breakdown'), pt ? 'Massa / posição' : 'Mass / station');
+    tableHeader(t('mb_breakdown'), t('pdf_mass_station'));
     const mbRows = balance.items.map(i => ({
       label: `${t(i.labelKey)}${i.detail ? ' — ' + i.detail : ''}`.slice(0, 60),
       value: `${i.mass.toFixed(0)} g   @ ${Math.round(i.s)} mm`,
@@ -282,7 +281,7 @@ export async function exportToPDF(
     const hingeLine: Pt[] = [ail[0], ail[1]];
     const cg = P(0, L.cgS);
     parts.push(makePart(
-      pt ? `Semi-asa direita (espelhe para a esquerda) — ${t(isFW ? 'elevons' : 'ailerons')} tracejados` : `Right half wing (mirror for left) — ${t(isFW ? 'elevons' : 'ailerons')} dashed`,
+      t('pdf_right_half', { cs: t(isFW ? 'elevons' : 'ailerons') }),
       [
         { pts: outline, closed: true, color: BLUE, width: 0.5 },
         { pts: ail, closed: true, dash: true, color: AMBER, width: 0.4 },
@@ -310,9 +309,9 @@ export async function exportToPDF(
     ribs.push({ pts: tip, closed: true, width: 0.4 });
     const hingeX = (1 - L.aileron.chordFrac);
     ribs.push({ pts: [[hingeX * w.rootChord * mm, -wingAf.upper(hingeX) * w.rootChord * mm - 3], [hingeX * w.rootChord * mm, -wingAf.lower(hingeX) * w.rootChord * mm + 3]], closed: false, dash: true, color: AMBER });
-    labels.push({ text: pt ? `Nervura da raiz (${fmt(w.rootChord)})` : `Root rib (${fmt(w.rootChord)})`, x: 0, y: -wingAf.thickness * w.rootChord * mm - 4 });
-    labels.push({ text: pt ? `Nervura da ponta (${fmt(w.tipChord)})` : `Tip rib (${fmt(w.tipChord)})`, x: 0, y: gap - wingAf.thickness * w.tipChord * mm - 4 });
-    parts.push(makePart(pt ? 'Perfis 1:1' : 'Airfoils 1:1', ribs, labels));
+    labels.push({ text: t('pdf_root_rib', { c: fmt(w.rootChord) }), x: 0, y: -wingAf.thickness * w.rootChord * mm - 4 });
+    labels.push({ text: t('pdf_tip_rib', { c: fmt(w.tipChord) }), x: 0, y: gap - wingAf.thickness * w.tipChord * mm - 4 });
+    parts.push(makePart(t('pdf_airfoils'), ribs, labels));
   }
 
   // 3. Horizontal stabiliser (half) + elevator
@@ -322,7 +321,7 @@ export async function exportToPDF(
     const hs = h.span / 2;
     const hinge = h.leS + h.rootChord * (1 - h.hingeFrac);
     parts.push(makePart(
-      pt ? 'Semi-estabilizador horizontal + profundor' : 'Half horizontal stabilizer + elevator',
+      t('pdf_half_hstab'),
       [
         { pts: [P(0, h.leS), P(hs, h.leS), P(hs, h.leS + h.rootChord), P(0, h.leS + h.rootChord)], closed: true, color: [219, 39, 119], width: 0.5 },
         ...(h.hingeFrac > 0 ? [{ pts: [P(0, hinge), P(hs, hinge)], closed: false, dash: true, color: AMBER, width: 0.5 } as Shape] : []),
@@ -337,7 +336,7 @@ export async function exportToPDF(
     const P = (s: number, z: number): Pt => [(s - f.leS) * mm, -z * mm];
     const hinge = f.leS + f.rootChord * (1 - f.hingeFrac);
     parts.push(makePart(
-      pt ? 'Estabilizador vertical + leme' : 'Vertical stabilizer + rudder',
+      t('pdf_vstab'),
       [
         { pts: [P(f.leS, 0), P(f.leS + f.sweep, f.span), P(f.leS + f.sweep + f.tipChord, f.span), P(f.leS + f.rootChord, 0)], closed: true, color: [202, 138, 4], width: 0.5 },
         ...(f.hingeFrac > 0 ? [{ pts: [P(hinge, 0), P(hinge, f.span)], closed: false, dash: true, color: AMBER, width: 0.5 } as Shape] : []),
@@ -349,7 +348,7 @@ export async function exportToPDF(
     const g = L.winglet;
     const P = (s: number, z: number): Pt => [(s - g.leS) * mm, -z * mm];
     parts.push(makePart(
-      pt ? 'Winglet (faça 2)' : 'Winglet (make 2)',
+      t('pdf_winglet'),
       [{ pts: [P(g.leS, 0), P(g.leS + g.sweep, g.span), P(g.leS + g.sweep + g.tipChord, g.span), P(g.leS + g.rootChord, 0)], closed: true, color: [202, 138, 4], width: 0.5 }],
       [{ text: `${t('winglet_span')}: ${fmt(g.span)} · ${t('winglet_chord')}: ${fmt(g.rootChord)}`, x: 2, y: -g.span * mm - 3 }],
     ));
@@ -371,7 +370,7 @@ export async function exportToPDF(
     }
     const wingMark: Pt[] = [[w.leS * mm, -w.mountY * mm], [(w.leS + w.rootChord) * mm, -w.mountY * mm]];
     parts.push(makePart(
-      pt ? 'Fuselagem: perfil lateral (cima) e vista superior (baixo)' : 'Fuselage: side profile (top) and plan view (bottom)',
+      t('pdf_fuselage'),
       [
         { pts: [...sideTop, ...sideBot], closed: true, width: 0.5 },
         { pts: [...planR, ...planL], closed: true, width: 0.5 },
@@ -468,18 +467,16 @@ export async function exportToPDF(
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(0, 0, 0);
-    doc.text(pt ? 'Gabarito em escala 1:1 — recorte e monte' : '1:1 Scale Template — cut out and assemble', MX, 10);
+    doc.text(t('pdf_template_title'), MX, 10);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
     const pos = tile.rows * tile.cols > 1
-      ? (pt ? ` — ${tile.region.name} [linha ${tile.r + 1}/${tile.rows}, coluna ${tile.c + 1}/${tile.cols}]` : ` — ${tile.region.name} [row ${tile.r + 1}/${tile.rows}, column ${tile.c + 1}/${tile.cols}]`)
+      ? t('pdf_tile_pos', { name: tile.region.name, r: tile.r + 1, rows: tile.rows, c: tile.c + 1, cols: tile.cols })
       : '';
-    doc.text(`${pt ? 'Folha' : 'Sheet'} ${idx + 1}/${tiles.length}${pos}`, MX, 15);
+    doc.text(`${t('pdf_sheet')} ${idx + 1}/${tiles.length}${pos}`, MX, 15);
     doc.text(
-      pt
-        ? `Imprima em 100% (sem "ajustar à página"). ${tile.rows * tile.cols > 1 ? `Sobreponha ${OVERLAP} mm alinhando as cruzes.` : ''}`
-        : `Print at 100% (no "fit to page"). ${tile.rows * tile.cols > 1 ? `Overlap ${OVERLAP} mm aligning the crosses.` : ''}`,
+      `${t('pdf_print100')} ${tile.rows * tile.cols > 1 ? t('pdf_overlap', { mm: OVERLAP }) : ''}`,
       MX, 19.5,
     );
 
@@ -541,7 +538,7 @@ export async function exportToPDF(
     doc.line(PW - MX, by - 2, PW - MX, by + 2);
     doc.setFontSize(7);
     doc.setTextColor(0, 0, 0);
-    doc.text(pt ? '50 mm — confira com a régua' : '50 mm — check with a ruler', PW - MX - 25, by - 2.5, { align: 'center' });
+    doc.text(t('pdf_ruler'), PW - MX - 25, by - 2.5, { align: 'center' });
   });
 
   doc.save('aerobuilder-templates.pdf');

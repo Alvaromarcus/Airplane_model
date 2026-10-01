@@ -188,7 +188,7 @@ export default function CanvasView({ layout: L, isDarkMode, airfoil, balance }: 
         poly([top(-half, p.s - th / 2), top(half, p.s - th / 2), top(half, p.s + th / 2), top(-half, p.s + th / 2)], C.propFill, C.propStroke, 1.2);
         ctx.font = '10px sans-serif'; ctx.fillStyle = C.propStroke;
         const [lx, ly] = top(half, p.s);
-        ctx.fillText(`${p.label}″ ${m.pusher ? '(pusher)' : '(tractor)'}`, lx + 6, ly + 3);
+        ctx.fillText(`${p.label}″ (${t(m.pusher ? 'el_pusher' : 'el_puller')})`, lx + 6, ly + 3);
       };
 
       if (L.fuselage && L.fuselage.style === 'trainer') {

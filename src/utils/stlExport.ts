@@ -129,7 +129,8 @@ export function exportSTLZip(
   balance: BalanceResult | null = null,
 ): ExportResult {
   const { plan, oriented } = planAndOrient(L, airfoil, settings, pockets, balance);
-  const pt = lang === 'pt';
+  const pt = lang.startsWith('pt');
+  const readmeName = ({ pt: 'LEIA-ME.txt', es: 'LEAME.txt', fr: 'LISEZMOI.txt' } as Record<string, string>)[lang.slice(0, 2)] ?? 'README.txt';
   const files: Record<string, Uint8Array> = {};
   const folder = (k: string) => String(KIND_ORDER.indexOf(k) + 1).padStart(2, '0') + '_' + k;
 
@@ -160,211 +161,108 @@ export function exportSTLZip(
     files[pt ? '00_montado_preview/aviao_montado.stl' : '00_assembled_preview/aircraft_assembled.stl'] = toBinarySTL(merged, 'assembled');
   }
 
-  files[pt ? 'LEIA-ME.txt' : 'README.txt'] = strToU8(readme(plan, oriented, L, pt, t, pockets, balance));
+  // UTF-8 BOM so Windows Notepad shows accents and Chinese correctly
+  files[readmeName] = strToU8('\uFEFF' + readme(plan, oriented, L, t, pockets, balance));
   const zip = zipSync(files, { level: 6 });
   return { blob: new Blob([zip as BlobPart], { type: 'application/zip' }), plan, oriented };
 }
 
-function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, pt: boolean, t: (k: string, o?: Record<string, unknown>) => string, pockets: Pocket[], balance: BalanceResult | null): string {
+function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, t: (k: string, o?: Record<string, unknown>) => string, pockets: Pocket[], balance: BalanceResult | null): string {
   const s = plan.settings;
+  const r = (k: string, o?: Record<string, unknown>) => t('rd_' + k, o);
   const lines: string[] = [];
   const bar = '='.repeat(64);
-  lines.push(bar, pt ? 'AeroBuilder — peças para impressão 3D (LW-PLA, modo vaso)' : 'AeroBuilder — 3D printable parts (LW-PLA, vase mode)', bar, '');
-  lines.push(pt ? `Mesa configurada: ${s.bedX} × ${s.bedY} × ${s.bedZ} mm` : `Configured bed: ${s.bedX} × ${s.bedY} × ${s.bedZ} mm`);
-  lines.push(pt ? `Envergadura: ${Math.round(L.wing.halfSpan * 2 * L.toCm * 10)} mm   Peças: ${oriented.length}` : `Wingspan: ${Math.round(L.wing.halfSpan * 2 * L.toCm * 10)} mm   Parts: ${oriented.length}`, '');
+  const head = (k: string) => lines.push('', r(k), '-'.repeat(40));
+  lines.push(bar, r('title'), bar, '');
+  lines.push(r('bed', { x: s.bedX, y: s.bedY, z: s.bedZ }));
+  lines.push(r('span_parts', { span: Math.round(L.wing.halfSpan * 2 * L.toCm * 10), n: oriented.length }));
 
-  lines.push(pt ? 'CONFIGURAÇÃO DO FATIADOR' : 'SLICER SETTINGS', '-'.repeat(40));
-  if (pt) {
-    lines.push(
-      '- Modo vaso / "Spiral vase" (PrusaSlicer/Orca) ou "Spiralize outer contour" (Cura).',
-      '- 1 perímetro, 0 camadas de topo, 2–3 camadas de fundo (viram a nervura da base).',
-      '- Altura de camada 0,2 mm; largura de linha 0,4–0,5 mm.',
-      '- LW-PLA: ajuste o fluxo/temperatura conforme o fabricante para a densidade desejada.',
-      '- NÃO use "fechar furos"/"slice closing radius" alto: a fenda de ' + s.slit + ' mm das',
-      '  longarinas precisa ser mantida (PrusaSlicer: slice_closing_radius ≤ 0,05).',
-      '- As peças já vêm posicionadas em pé, no centro da mesa. Não gire.',
-    );
-  } else {
-    lines.push(
-      '- "Spiral vase" (PrusaSlicer/Orca) or "Spiralize outer contour" (Cura).',
-      '- 1 perimeter, 0 top layers, 2–3 bottom layers (they become the base rib).',
-      '- 0.2 mm layers; 0.4–0.5 mm line width.',
-      '- LW-PLA: tune flow/temperature per the manufacturer for the target density.',
-      `- Do NOT use a large "slice closing radius": the ${s.slit} mm spar slits must survive`,
-      '  (PrusaSlicer: slice_closing_radius ≤ 0.05).',
-      '- Parts are already standing and centred on the bed. Do not rotate them.',
-    );
-  }
-  lines.push('');
+  head('slicer');
+  lines.push(r('slicer_1'), r('slicer_2'), r('slicer_3'), r('slicer_4'), r('slicer_5', { slit: s.slit }), r('slicer_6'));
 
   if (oriented.some(o => o.section.kind === 'mount' || o.section.kind === 'hatch')) {
-    lines.push(pt ? 'SUPORTES DE SERVO E TAMPAS (pastas 09_mount e 10_hatch)' : 'SERVO MOUNTS AND HATCHES (folders 09_mount and 10_hatch)', '-'.repeat(40));
-    lines.push(...(pt ? [
-      '- NÃO use modo vaso nessas peças: PLA ou PETG comum, 3 perímetros, 40–100% de preenchimento.',
-      '- Suportes: cole dentro do bolsão do servo (asa) ou no compartimento central (fuselagem);',
-      '  o servo encaixa na janela e é parafusado pelas abas (furos Ø1,8 mm para parafusos M2).',
-      '- Tampas: casca de 1 mm que acompanha a superfície; prenda com fita, ímãs ou velcro.',
-      '  A tampa do servo da asa deixa aberta a ponta externa para o braço do servo.',
-    ] : [
-      '- Do NOT use vase mode for these: regular PLA or PETG, 3 perimeters, 40–100% infill.',
-      '- Mounts: glue inside the wing servo pocket or the fuselage middle bay; the servo drops',
-      '  into the window and is screwed through its tabs (Ø1.8 mm holes for M2 screws).',
-      '- Hatches: 1 mm shells that follow the skin; hold them with tape, magnets or velcro.',
-      '  The wing servo hatch leaves the outboard end open for the servo arm.',
-    ]), '');
+    head('mounts');
+    lines.push(r('mounts_1'), r('mounts_2'), r('mounts_3'));
   }
-  lines.push(pt ? 'LONGARINAS (tubo/vareta de carbono)' : 'SPARS (carbon tube/rod)', '-'.repeat(40));
-  if (plan.spars.length === 0) lines.push(pt ? '(nenhuma — perfil fino demais para longarina)' : '(none — airfoil too thin for a spar)');
+
+  head('spars');
+  if (plan.spars.length === 0) lines.push(r('spars_none'));
   plan.spars.forEach(sp => {
-    lines.push(`- ${t(sp.part)}: ${sp.count} × Ø${sp.diameter} mm × ${sp.length} mm  (${pt ? 'furo' : 'hole'} Ø${(sp.diameter + s.clearance).toFixed(1)} mm)`);
+    lines.push(`- ${t(sp.part)}: ${sp.count} × Ø${sp.diameter} mm × ${sp.length} mm  (${r('hole')} Ø${(sp.diameter + s.clearance).toFixed(1)} mm)`);
   });
   if (L.wing.dihedralRad !== 0 && plan.spars.some(sp => sp.id === 'main')) {
-    lines.push(pt
-      ? `  Diedro de ${(L.wing.dihedralRad * 180 / Math.PI).toFixed(1)}°: as longarinas das duas semi-asas se encontram na raiz em ângulo;\n  use uma luva/junta de carbono ou cole as raízes com as longarinas cortadas no ângulo.`
-      : `  ${(L.wing.dihedralRad * 180 / Math.PI).toFixed(1)}° dihedral: the two half-wing spars meet at the root at an angle;\n  use a carbon joiner sleeve or glue the roots with the spars cut to the angle.`);
+    lines.push(r('dihedral', { deg: (L.wing.dihedralRad * 180 / Math.PI).toFixed(1) }));
   }
-  lines.push('');
 
-  lines.push(pt ? 'LISTA DE PEÇAS (tamanho na mesa, mm)' : 'PARTS LIST (size on the bed, mm)', '-'.repeat(40));
+  head('parts');
   oriented.forEach(o => {
     const [x, y, z] = o.size.map(v => v.toFixed(0));
-    lines.push(`${o.fits ? '  ' : '! '}${o.section.name.padEnd(18)} ${x} × ${y} × ${z}${o.fits ? '' : pt ? '   <- NÃO CABE NA MESA' : '   <- DOES NOT FIT THE BED'}`);
+    lines.push(`${o.fits ? '  ' : '! '}${o.section.name.padEnd(18)} ${x} × ${y} × ${z}${o.fits ? '' : r('not_fit')}`);
   });
-  lines.push('');
 
-  lines.push(pt ? 'MONTAGEM' : 'ASSEMBLY', '-'.repeat(40));
-  if (pt) {
-    lines.push(
-      '1. Numeração: _01 é a seção mais próxima da raiz (ou do nariz). _R = direita, _L = esquerda.',
-      '2. Passe a longarina pelas seções de cada semi-asa, colando com CA médio ou epóxi.',
-      '3. Ailerons/elevons e superfícies móveis: dobradiça de fita ou pinos; o vão de dobradiça já está previsto.',
-      '4. Recortes já incluídos (veja RECORTES abaixo). No modo vaso, cada recorte vira um',
-      '   compartimento com paredes próprias; o resto da peça continua oco.',
-      '5. Fuselagem: imprima a seção _01 com 3 camadas de fundo (vira o firewall do motor) e as',
-      '   demais com 0 camadas de fundo (tubos abertos) para passar varetas e fios.',
-      '6. Asa: as camadas de fundo viram nervuras; fure-as (Ø5 mm) para passar o cabo dos servos',
-      '   até a raiz. As varetas saem pela fenda da dobradiça, ao lado do horn.',
-      '7. Confira o CG antes do primeiro voo (aba "Peso & CG" e PDF).',
-    );
-  } else {
-    lines.push(
-      '1. Numbering: _01 is the section closest to the root (or nose). _R = right, _L = left.',
-      '2. Slide the spar through each half-wing\'s sections, gluing with medium CA or epoxy.',
-      '3. Ailerons/elevons and moving surfaces: tape or pin hinges; the hinge gap is built in.',
-      '4. Cut-outs are already included (see CUT-OUTS below). In vase mode each cut-out becomes',
-      '   a compartment with its own walls; the rest of the part stays hollow.',
-      '5. Fuselage: print section _01 with 3 bottom layers (it becomes the motor firewall) and',
-      '   the others with 0 bottom layers (open tubes) so pushrods and wires can pass.',
-      '6. Wing: the bottom layers become ribs; drill them (Ø5 mm) to route the servo leads',
-      '   to the root. Pushrods exit through the hinge gap next to the horn.',
-      '7. Check the CG before the first flight ("Weight & CG" tab and PDF).',
-    );
-  }
+  head('assembly');
+  lines.push(r('asm_1'), r('asm_2'), r('asm_3'), r('asm_4'), r('asm_5'), r('asm_6'), r('asm_7'));
+
   const asm = balance?.assembly;
   if (asm) {
     const j = asm.joiner;
-    const W = Math.round(2 * j.halfLen), C = Math.round(j.sb - j.sa);
-    lines.push('', pt ? 'JUNÇÕES E FIXAÇÃO DA ASA (pasta 11_joint, imprimir em modo NORMAL, PETG ou PLA, 100% de preenchimento)' : 'JOINTS AND WING MOUNT (folder 11_joint, print in NORMAL mode, PETG or PLA, 100% infill)', '-'.repeat(40));
-    if (pt) {
+    head('joints');
+    lines.push(
+      r('j_a', { w: Math.round(2 * j.halfLen), c: Math.round(j.sb - j.sa), t: j.t }),
+      r('j_a1'),
+      r(j.recessed ? 'j_a2_rec' : 'j_a2_surf'),
+      r('j_a3'),
+    );
+    if (asm.bands && asm.sleeve && asm.teGuard && L.fuselage) {
+      const fz = L.fuselage, mmU = L.toCm * 10;
+      const [F, R] = asm.dowels;
+      const top = (d: typeof F) => { const sec = fz.section(d.s / mmU); return Math.round((sec.yc + sec.h / 2) * mmU - d.y); };
       lines.push(
-        `a) Junção da asa (joint_wing_joiner): placa ${W} × ${C} × ${j.t} mm.`,
-        '   1. Lixe as faces da raiz e cole as duas semi-asas com epóxi, calçando a ponta de uma',
-        '      delas para manter o diedro; espere curar.',
-        j.recessed
-          ? '   2. Cole a placa com epóxi no rebaixo sob a raiz (já recortado no STL), centrada na emenda.'
-          : '   2. Cole a placa com epóxi sob a raiz, centrada na emenda.',
-        '   3. Recomendado: uma volta de fita de fibra de vidro (50 mm) por cima da emenda.',
+        r('j_b', { d: F.d, len: Math.round(F.len) }),
+        r('j_b_front', { s: Math.round(F.s), top: top(F) }),
+        r('j_b_rear', { s: Math.round(R.s), top: top(R) }),
+        r('j_b_drill', { hole: asm.sleeve.od.toFixed(1) }),
+        r('j_c'),
+        r('j_d', { n: asm.bands.count, len: asm.bands.flatLen }),
       );
-      if (asm.bands && asm.sleeve && asm.teGuard) {
-        const [F, R] = asm.dowels;
-        const top = (d: typeof F) => Math.round((L.fuselage!.section(d.s / (L.toCm * 10)).yc + L.fuselage!.section(d.s / (L.toCm * 10)).h / 2) * L.toCm * 10 - d.y);
-        lines.push(
-          `b) Cavilhas: 2 × Ø${F.d} mm × ${Math.round(F.len)} mm (madeira dura ou carbono).`,
-          `   - Dianteira: estação ${Math.round(F.s)} mm a partir do nariz, eixo ${top(F)} mm abaixo do topo da fuselagem.`,
-          `   - Traseira:  estação ${Math.round(R.s)} mm a partir do nariz, eixo ${top(R)} mm abaixo do topo da fuselagem.`,
-          `   Fure Ø${asm.sleeve.od.toFixed(1)} mm atravessando as duas laterais, cole as luvas impressas`,
-          '   (joint_dowel_sleeve_front/rear) rentes às laterais e passe as cavilhas; deixe',
-          '   ~14 mm para fora de cada lado. As tampas dos compartimentos já vêm interrompidas nesses pontos.',
-          `c) Protetor do bordo de fuga (joint_te_guard): cole sobre o extradorso no centro da asa,`,
-          '   onde os elásticos passam; evita que amassem o bordo de fuga.',
-          `d) Elásticos: ${asm.bands.count} × ~${asm.bands.flatLen} mm. Apoie a asa no topo da fuselagem, centrada,`,
-          '   e passe metade dos elásticos cruzados em X (cavilha dianteira de um lado → traseira do',
-          '   outro) e metade retos. A asa sai inteira: é por ela que se acessa bateria e eletrônica.',
-        );
-      } else if (asm.mount === 'glued') {
-        lines.push('b) Asa: cole no berço da fuselagem com epóxi, conferindo o alinhamento com a cauda.');
-      }
-    } else {
-      lines.push(
-        `a) Wing joiner (joint_wing_joiner): plate ${W} × ${C} × ${j.t} mm.`,
-        '   1. Sand the root faces and glue both wing halves with epoxy, propping one tip to keep',
-        '      the dihedral; let it cure.',
-        j.recessed
-          ? '   2. Epoxy the plate into the recess under the root (already cut in the STL), centred on the joint.'
-          : '   2. Epoxy the plate under the root, centred on the joint.',
-        '   3. Recommended: one wrap of 50 mm glass-fibre tape over the joint.',
-      );
-      if (asm.bands && asm.sleeve && asm.teGuard) {
-        const [F, R] = asm.dowels;
-        const top = (d: typeof F) => Math.round((L.fuselage!.section(d.s / (L.toCm * 10)).yc + L.fuselage!.section(d.s / (L.toCm * 10)).h / 2) * L.toCm * 10 - d.y);
-        lines.push(
-          `b) Dowels: 2 × Ø${F.d} mm × ${Math.round(F.len)} mm (hardwood or carbon).`,
-          `   - Front: station ${Math.round(F.s)} mm from the nose, axis ${top(F)} mm below the fuselage top.`,
-          `   - Rear:  station ${Math.round(R.s)} mm from the nose, axis ${top(R)} mm below the fuselage top.`,
-          `   Drill Ø${asm.sleeve.od.toFixed(1)} mm through both sides, glue the printed sleeves`,
-          '   (joint_dowel_sleeve_front/rear) flush with the sides and insert the dowels, leaving',
-          '   ~14 mm out on each side. The bay hatches are already interrupted there.',
-          'c) Trailing-edge guard (joint_te_guard): glue on the upper skin at the wing centre, where',
-          '   the bands run, so they do not crush the trailing edge.',
-          `d) Rubber bands: ${asm.bands.count} × ~${asm.bands.flatLen} mm. Sit the wing centred on the fuselage and`,
-          '   put half of the bands crossed in an X (front dowel on one side → rear dowel on the other)',
-          '   and half straight. The whole wing comes off: that is how you reach the battery and radio.',
-        );
-      } else if (asm.mount === 'glued') {
-        lines.push('b) Wing: epoxy it onto the fuselage saddle, checking the alignment with the tail.');
-      }
+    } else if (asm.mount === 'glued') {
+      lines.push(r('j_glued'));
     }
   }
+
   const exits = balance?.linkExits ?? [];
   if (exits.length && L.fuselage) {
     const fz = L.fuselage, mmU = L.toCm * 10;
     const where = (p: [number, number, number], wall = false) => {
       const sec = fz.section(p[2] / mmU);
       const bottom = (sec.yc - sec.h / 2) * mmU, yc = sec.yc * mmU, hh = (sec.h / 2) * mmU;
-      const face = p[1] > yc + 0.45 * hh ? (pt ? 'topo' : 'top')
-        : p[1] < yc - 0.45 * hh ? (pt ? 'fundo' : 'bottom')
-        : p[0] < 0 ? (pt ? 'lateral esquerda' : 'left side') : (pt ? 'lateral direita' : 'right side');
-      const off = Math.abs(p[0]) < 3 ? (pt ? 'no centro' : 'on the centreline')
-        : pt ? `${Math.round(Math.abs(p[0]))} mm à ${p[0] < 0 ? 'esquerda' : 'direita'} do eixo` : `${Math.round(Math.abs(p[0]))} mm ${p[0] < 0 ? 'left' : 'right'} of the centreline`;
-      return pt
-        ? `estação ${Math.round(p[2])} mm, ${Math.round(p[1] - bottom)} mm acima do fundo, ${off}${wall ? '' : ` (${face})`}`
-        : `station ${Math.round(p[2])} mm, ${Math.round(p[1] - bottom)} mm above the bottom, ${off}${wall ? '' : ` (${face})`}`;
+      const face = p[1] > yc + 0.45 * hh ? r('face_top') : p[1] < yc - 0.45 * hh ? r('face_bottom') : p[0] < 0 ? r('face_left') : r('face_right');
+      const off = Math.abs(p[0]) < 3 ? r('ex_centre') : r(p[0] < 0 ? 'ex_left' : 'ex_right', { mm: Math.round(Math.abs(p[0])) });
+      return r('ex_where', { s: Math.round(p[2]), h: Math.round(p[1] - bottom), off }) + (wall ? '' : ` (${face})`);
     };
-    lines.push('', pt ? 'SAÍDAS DAS VARETAS DA CAUDA (furar na montagem — no modo vaso as paredes não têm furos)' : 'TAIL PUSHROD EXITS (drill at assembly — vase-mode walls have no holes)', '-'.repeat(40));
+    head('exits');
     exits.forEach(e => {
-      const name = e.id === 'link_elev' ? (pt ? 'Profundor' : 'Elevator') : (pt ? 'Leme' : 'Rudder');
-      lines.push(`${name}:`);
-      if (e.through) lines.push(`  - ${e.throughKind === 'wall' ? (pt ? 'parede traseira do compartimento' : 'aft wall of the bay') : (pt ? 'fundo do compartimento' : 'floor of the bay')}: ${where(e.through, true)}`);
-      if (e.skin) lines.push(`  - ${pt ? 'saída na fuselagem' : 'exit through the skin'}: ${where(e.skin)}`);
-      if (e.guide > 0) lines.push(pt
-        ? `  - tubo-guia (externo Ø3 / interno Ø2 mm) de ~${Math.round(e.guide + 20)} mm entre os dois furos, colado com CA; vareta de aço ou carbono Ø1,2–1,5 mm.`
-        : `  - guide tube (Ø3 outer / Ø2 inner mm), ~${Math.round(e.guide + 20)} mm between the two holes, CA-glued; Ø1.2–1.5 mm steel or carbon pushrod.`);
+      lines.push(`${r(e.id === 'link_elev' ? 'ex_elev' : 'ex_rudder')}:`);
+      if (e.through) lines.push(`  - ${r(e.throughKind === 'wall' ? 'ex_wall' : 'ex_floor')}: ${where(e.through, true)}`);
+      if (e.skin) lines.push(`  - ${r('ex_skin')}: ${where(e.skin)}`);
+      if (e.guide > 0) lines.push(r('ex_guide', { len: Math.round(e.guide + 20) }));
     });
-    lines.push(pt ? '  Fure Ø3,2 mm. As varetas das asas passam por fora, sob a asa, saindo pelo bolsão do servo.' : '  Drill Ø3.2 mm. The wing pushrods run outside, under the wing, from the servo pocket.');
+    lines.push(r('ex_drill'));
   }
+
   if (pockets.length) {
-    lines.push('', pt ? 'RECORTES' : 'CUT-OUTS', '-'.repeat(40));
+    head('cutouts');
     pockets.forEach(p => {
       const name = t('cut_' + p.id);
       if (p.part === 'wing') {
-        lines.push(`- ${name}: ${Math.round(p.xb - p.xa)} × ${Math.round(p.sb - p.sa)} mm, ${pt ? 'profundidade' : 'depth'} ${Math.round(p.depth)} mm (${p.side === 'lower' ? (pt ? 'intradorso' : 'lower skin') : (pt ? 'extradorso' : 'upper skin')}${p.xa <= 0 ? (pt ? ', centro da asa' : ', wing centre') : ''})`);
+        lines.push(`- ${name}: ${Math.round(p.xb - p.xa)} × ${Math.round(p.sb - p.sa)} mm, ${r('depth')} ${Math.round(p.depth)} mm (${r(p.side === 'lower' ? 'lower' : 'upper')}${p.xa <= 0 ? r('wing_centre') : ''})`);
       } else {
-        lines.push(`- ${name}: ${Math.round(p.sb - p.sa)} × ${Math.round((p.halfWidth ?? 0) * 2)} mm, ${pt ? 'aberto em cima' : 'open on top'} (${pt ? 'estação' : 'station'} ${Math.round(p.sa)}–${Math.round(p.sb)} mm)`);
+        lines.push(`- ${name}: ${Math.round(p.sb - p.sa)} × ${Math.round((p.halfWidth ?? 0) * 2)} mm, ${r('open_top')} (${r('station')} ${Math.round(p.sa)}–${Math.round(p.sb)} mm)`);
       }
     });
   }
   if (plan.warnings.length) {
-    lines.push('', pt ? 'AVISOS' : 'WARNINGS', '-'.repeat(40));
+    head('warnings');
     plan.warnings.forEach(w => lines.push('- ' + t(w.key, w.params)));
   }
   lines.push('', 'https://aerobuilder-calc.netlify.app');
