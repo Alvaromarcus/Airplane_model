@@ -1,12 +1,14 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { writeFileSync } from 'fs';
+import seoPlugin from './seo/seoPlugin';
 
 const buildVersion = Date.now().toString();
 
 export default defineConfig({
   plugins: [
     react(),
+    seoPlugin(),
     {
       name: 'generate-version-file',
       closeBundle() {
