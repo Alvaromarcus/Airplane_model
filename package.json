@@ -2,6 +2,8 @@
   "name": "aeroplan",
   "private": true,
   "version": "0.0.0",
+  "license": "MIT",
+  "author": "Álvaro Severo Marcus",
   "type": "module",
   "scripts": {
     "dev": "vite",
