@@ -64,3 +64,9 @@
    ```bash
    npm run preview
    ```
+
+## License
+
+[MIT](LICENSE) © 2026 Álvaro Severo Marcus. You may use, copy, modify and distribute this software, including commercially, as long as the copyright notice and the license text are kept.
+
+Version 1.0 (tag `v1.0`) is registered with INPI (Brazil) as a computer program.
