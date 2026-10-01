@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { LANGUAGES, currentLang, type LangCode } from '../i18n';
 import { Moon, Sun, Printer, FileText, Share2, Settings, Download, Check, RotateCcw, Box, PenLine, HelpCircle, LayoutGrid } from 'lucide-react';
 import AppLogo from './AppLogo';
 import type { AircraftType } from '../utils/calculations';
@@ -15,7 +16,7 @@ interface HeaderProps {
   onUnit: (u: 'cm' | 'mm') => void;
   isDarkMode: boolean;
   onToggleDark: () => void;
-  onToggleLanguage: () => void;
+  onLanguage: (code: LangCode) => void;
   onReset: () => void;
   onExportPDF: () => void;
   isExporting: boolean;
@@ -63,7 +64,7 @@ function Segmented<T extends string>({ value, options, onChange, label }: { valu
 const menuItem = 'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200';
 
 export default function Header(p: HeaderProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [exportOpen, setExportOpen, exportRef] = usePopover();
   const [settingsOpen, setSettingsOpen, settingsRef] = usePopover();
   const [copied, setCopied] = useState(false);
@@ -168,12 +169,15 @@ export default function Header(p: HeaderProps) {
                 </div>
                 <div>
                   <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{t('language')}</div>
-                  <Segmented
-                    label={t('language')}
-                    value={i18n.language === 'pt' ? 'pt' : 'en'}
-                    onChange={v => { if ((i18n.language === 'pt' ? 'pt' : 'en') !== v) p.onToggleLanguage(); }}
-                    options={[{ v: 'pt', label: 'Português' }, { v: 'en', label: 'English' }]}
-                  />
+                  <select
+                    aria-label={t('language')}
+                    value={currentLang()}
+                    onChange={e => p.onLanguage(e.target.value as LangCode)}
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-slate-100"
+                  >
+                    {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+                  </select>
+                  {currentLang() === 'zh' && <p className="mt-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">{t('pdf_cjk_note')}</p>}
                 </div>
                 <button className={menuItem} onClick={p.onToggleDark}>
                   {p.isDarkMode ? <Sun size={16} /> : <Moon size={16} />}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Zap, Wind, Info, ChevronDown, ChevronUp } from 'lucide-react';
-import { recommendMotorAndProp } from '../utils/electricSystem';
+import { recommendMotorAndProp, propNote } from '../utils/electricSystem';
 import type { PowerCategory } from '../utils/electricSystem';
 import type { AircraftDimensions, AircraftType } from '../utils/calculations';
 
@@ -14,30 +14,9 @@ interface ElectricSystemAdvisorProps {
   auw?: number;
 }
 
-const CATEGORY_LABELS: Record<PowerCategory, { pt: string; en: string; desc_pt: string; desc_en: string }> = {
-  trainer: {
-    pt: 'Treinador',
-    en: 'Trainer',
-    desc_pt: '~100 W/kg · voo suave',
-    desc_en: '~100 W/kg · relaxed flight',
-  },
-  sport: {
-    pt: 'Esporte',
-    en: 'Sport',
-    desc_pt: '~200 W/kg · ágil',
-    desc_en: '~200 W/kg · agile',
-  },
-  aerobatic: {
-    pt: 'Aerobático',
-    en: 'Aerobatic',
-    desc_pt: '~300 W/kg · 3D',
-    desc_en: '~300 W/kg · 3D',
-  },
-};
-
 export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit, powerCategory, auw }: ElectricSystemAdvisorProps) {
-  const { i18n } = useTranslation();
-  const lang = i18n.language === 'pt' ? 'pt' : 'en';
+  const { t, i18n } = useTranslation();
+  const nf = new Intl.NumberFormat(i18n.language);
 
   const [notesOpen, setNotesOpen] = useState(false);
 
@@ -56,14 +35,14 @@ export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit, 
 
       {/* Category (chosen in the sidebar) */}
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        {lang === 'pt' ? 'Categoria de voo' : 'Flight category'}: <b className="text-slate-800 dark:text-slate-200">{lang === 'pt' ? CATEGORY_LABELS[powerCategory].pt : CATEGORY_LABELS[powerCategory].en}</b> · {lang === 'pt' ? CATEGORY_LABELS[powerCategory].desc_pt : CATEGORY_LABELS[powerCategory].desc_en}
+        {t('el_category')}: <b className="text-slate-800 dark:text-slate-200">{t(`pw_cat_${powerCategory}`)}</b> · {t(`el_cat_desc_${powerCategory}`)}
       </p>
 
       {/* AUW estimate */}
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="bg-slate-50 dark:bg-slate-900/40 rounded border border-slate-200 dark:border-slate-700 p-2">
           <p className="text-slate-500 dark:text-slate-400">
-            {auw ? (lang === 'pt' ? 'Peso total (balanceamento)' : 'All-up weight (balance)') : (lang === 'pt' ? 'Peso estimado (AUW)' : 'Estimated weight (AUW)')}
+            {auw ? t('el_auw_balance') : t('el_auw_est')}
           </p>
           <p className="text-lg font-semibold text-slate-900 dark:text-white mt-0.5">
             {rec.estimatedAUW_g} g
@@ -74,7 +53,7 @@ export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit, 
           ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
           : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
           <p className={`${powerOk ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-            {lang === 'pt' ? 'Potência necessária' : 'Power required'}
+            {t('el_power_req')}
           </p>
           <p className="text-lg font-semibold text-slate-900 dark:text-white mt-0.5">
             {rec.powerRequired_W} W
@@ -88,7 +67,7 @@ export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit, 
         <div className="flex items-center gap-1.5 mb-2">
           <Zap size={14} className="text-amber-600 dark:text-amber-400" />
           <span className="text-xs font-bold uppercase text-amber-700 dark:text-amber-400 tracking-wider">
-            {lang === 'pt' ? 'Motor Brushless' : 'Brushless Motor'}
+            {t('el_motor')}
           </span>
         </div>
 
@@ -103,22 +82,22 @@ export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit, 
 
         <div className="grid grid-cols-3 gap-2 text-xs mb-2">
           <div>
-            <p className="text-slate-500 dark:text-slate-400">{lang === 'pt' ? 'Potência máx' : 'Max power'}</p>
+            <p className="text-slate-500 dark:text-slate-400">{t('el_max_power')}</p>
             <p className="font-semibold text-slate-800 dark:text-slate-100">{rec.motor.maxPower_W} W</p>
           </div>
           <div>
-            <p className="text-slate-500 dark:text-slate-400">{lang === 'pt' ? 'Corrente máx' : 'Max current'}</p>
+            <p className="text-slate-500 dark:text-slate-400">{t('el_max_current')}</p>
             <p className="font-semibold text-slate-800 dark:text-slate-100">{rec.motor.maxCurrent_A} A</p>
           </div>
           <div>
-            <p className="text-slate-500 dark:text-slate-400">{lang === 'pt' ? 'Peso' : 'Weight'}</p>
+            <p className="text-slate-500 dark:text-slate-400">{t('el_weight')}</p>
             <p className="font-semibold text-slate-800 dark:text-slate-100">{rec.motor.weight_g} g</p>
           </div>
         </div>
 
         <div className="text-xs mb-2">
           <p className="text-slate-500 dark:text-slate-400 mb-0.5">
-            {lang === 'pt' ? 'Padrão de furos' : 'Mount pattern'}
+            {t('el_mount')}
           </p>
           <span className="font-mono bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded text-xs">
             {rec.motor.mountPattern_mm} mm
@@ -127,7 +106,7 @@ export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit, 
 
         <div className="text-xs">
           <p className="text-slate-500 dark:text-slate-400 mb-1">
-            {lang === 'pt' ? 'Exemplos compatíveis' : 'Compatible examples'}
+            {t('el_examples')}
           </p>
           <div className="space-y-0.5">
             {rec.motor.examples.map(ex => (
@@ -142,11 +121,11 @@ export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit, 
         <div className="flex items-center gap-1.5 mb-2">
           <Wind size={14} className="text-blue-600 dark:text-blue-400" />
           <span className="text-xs font-bold uppercase text-blue-700 dark:text-blue-400 tracking-wider">
-            {lang === 'pt' ? 'Hélice' : 'Propeller'}
+            {t('el_prop')}
             <span className="ml-1 normal-case font-normal">
               ({rec.prop.type === 'pusher'
-                ? (lang === 'pt' ? 'empurradora' : 'pusher')
-                : (lang === 'pt' ? 'tratora' : 'puller')})
+                ? t('el_pusher')
+                : t('el_puller')})
             </span>
           </span>
         </div>
@@ -154,40 +133,40 @@ export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit, 
         <div className="flex items-baseline gap-2 mb-2">
           <span className="text-2xl font-bold text-slate-900 dark:text-white">{rec.prop.label}</span>
           <span className="text-sm text-blue-600 dark:text-blue-300">
-            {lang === 'pt' ? 'pol' : 'inch'}
+            {t('el_inch')}
           </span>
         </div>
 
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div>
-            <p className="text-slate-500 dark:text-slate-400">{lang === 'pt' ? 'Diâmetro' : 'Diameter'}</p>
+            <p className="text-slate-500 dark:text-slate-400">{t('el_diameter')}</p>
             <p className="font-semibold">{rec.prop.diameter_inch}"</p>
           </div>
           <div>
-            <p className="text-slate-500 dark:text-slate-400">{lang === 'pt' ? 'Passo' : 'Pitch'}</p>
+            <p className="text-slate-500 dark:text-slate-400">{t('el_pitch')}</p>
             <p className="font-semibold">{rec.prop.pitch_inch}"</p>
           </div>
         </div>
 
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">{rec.prop.notes}</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">{propNote(t, rec.prop)}</p>
       </div>
 
       {/* ESC + Battery cell */}
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-2.5 text-xs">
-          <p className="text-slate-500 dark:text-slate-400 mb-1">{lang === 'pt' ? 'ESC mínimo' : 'Min. ESC'}</p>
+          <p className="text-slate-500 dark:text-slate-400 mb-1">{t('el_esc_min')}</p>
           <p className="text-xl font-bold text-slate-900 dark:text-white">{rec.esc_A} A</p>
           <p className="text-slate-400 mt-0.5">
-            {lang === 'pt' ? '+ 25% margem segurança' : '+ 25% safety margin'}
+            {t('el_esc_margin')}
           </p>
         </div>
         <div className={`rounded border p-2.5 text-xs ${cellColor}`}>
           <p className="mb-1 opacity-70">
-            {lang === 'pt' ? 'Bateria recomendada' : 'Recommended battery'}
+            {t('el_battery_rec')}
           </p>
           <p className="text-xl font-bold">{rec.batteryCell}S LiPo</p>
           <p className="mt-0.5 opacity-70">
-            {(rec.batteryCell * 3.7).toFixed(1)} V nominal
+            {t('el_nominal', { v: nf.format(+(rec.batteryCell * 3.7).toFixed(1)) })}
           </p>
         </div>
       </div>
@@ -201,7 +180,7 @@ export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit, 
           >
             <span className="flex items-center gap-1.5">
               <Info size={13} />
-              {lang === 'pt' ? 'Observações técnicas' : 'Technical notes'}
+              {t('el_notes')}
             </span>
             {notesOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
@@ -209,7 +188,7 @@ export default function ElectricSystemAdvisor({ dimensions, aircraftType, unit, 
             <div className="px-3 py-2 space-y-1.5 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-200 dark:border-slate-700">
               {rec.notes.map((note, i) => (
                 <p key={i} className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  • {note}
+                  • {t(note.key, { ...note.params, rpm: typeof note.params?.rpm === 'number' ? nf.format(note.params.rpm) : note.params?.rpm })}
                 </p>
               ))}
             </div>

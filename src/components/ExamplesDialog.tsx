@@ -35,8 +35,7 @@ function Thumb({ ex }: { ex: ExampleProject }) {
 }
 
 export default function ExamplesDialog({ open, onClose, onLoad }: Props) {
-  const { t, i18n } = useTranslation();
-  const lang = i18n.language === 'pt' ? 'pt' : 'en';
+  const { t } = useTranslation();
 
   const stats = useMemo(() => {
     if (!open) return {};
@@ -82,10 +81,10 @@ export default function ExamplesDialog({ open, onClose, onLoad }: Props) {
               >
                 <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-3 pt-2"><Thumb ex={ex} /></div>
                 <div className="p-3">
-                  <div className="font-semibold text-sm text-slate-900 dark:text-white group-hover:text-sky-700 dark:group-hover:text-sky-300">{ex.name[lang]}</div>
-                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 leading-snug">{ex.description[lang]}</p>
+                  <div className="font-semibold text-sm text-slate-900 dark:text-white group-hover:text-sky-700 dark:group-hover:text-sky-300">{t(`ex_${ex.id}_name`)}</div>
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 leading-snug">{t(`ex_${ex.id}_desc`)}</p>
                   <div className="mt-2 flex flex-wrap gap-1">
-                    {ex.tags.map(tg => <span key={tg.en} className="px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-300 text-[10.5px] font-medium">{tg[lang]}</span>)}
+                    {ex.tags.map(tg => <span key={tg} className="px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-300 text-[10.5px] font-medium">{tg.startsWith('tag_') ? t(tg) : tg}</span>)}
                   </div>
                   <div className="mt-2 grid grid-cols-3 gap-1 text-[10.5px] text-slate-500 dark:text-slate-400">
                     <span><b className="block text-slate-800 dark:text-slate-100 text-xs tabular-nums">{ex.state.dimensions.wingspan} cm</b>{t('wingspan')}</span>

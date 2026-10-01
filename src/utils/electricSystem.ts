@@ -18,7 +18,16 @@ export interface PropSpec {
   pitch_inch: number;
   label: string;
   type: 'puller' | 'pusher';
-  notes: string;
+  /** Rendered with the `prop_note` key: size class (`prop_sz_*`), weight range, examples. */
+  notes: { size: string; min: number; max: number; ex: string };
+}
+
+/** A translatable note: i18n key + interpolation values. */
+export interface Note { key: string; params?: Record<string, string | number> }
+
+/** Human text of a propeller note in the current language. */
+export function propNote(t: (k: string, o?: Record<string, unknown>) => string, p: PropSpec): string {
+  return t('prop_note', { size: t('prop_sz_' + p.notes.size), min: p.notes.min, max: p.notes.max, ex: p.notes.ex });
 }
 
 export interface BatterySpec {
@@ -40,7 +49,7 @@ export interface MotorRecommendation {
   powerRequired_W: number;
   wingLoading_g_dm2: number;
   powerLoading_W_kg: number;
-  notes: string[];
+  notes: Note[];
 }
 
 const WING_LOADING_G_DM2: Record<PowerCategory, number> = {
@@ -132,26 +141,26 @@ const MOTORS: MotorSpec[] = [
 
 // All tractor (puller) props — for conventional nose-motor layout
 const PROPS_TRACTOR: PropSpec[] = [
-  { diameter_inch: 6,  pitch_inch: 4,   label: '6×4',    type: 'puller', notes: 'Micro/Small 200–400g. Ex: Gemfan 6040, APC 6×4' },
-  { diameter_inch: 7,  pitch_inch: 4,   label: '7×4',    type: 'puller', notes: 'Small 350–550g. Ex: APC 7×4, Gemfan 7040' },
-  { diameter_inch: 8,  pitch_inch: 4,   label: '8×4',    type: 'puller', notes: 'Small-medium 450–700g. Ex: APC 8×4, Gemfan 8040' },
-  { diameter_inch: 8,  pitch_inch: 6,   label: '8×6',    type: 'puller', notes: 'Medium 500–800g, mais velocidade. Ex: APC 8×6E, Graupner 8×6' },
-  { diameter_inch: 9,  pitch_inch: 4.7, label: '9×4.7',  type: 'puller', notes: 'Medium 600–950g. Ex: APC 9×4.7, Gemfan 9047' },
-  { diameter_inch: 10, pitch_inch: 4.5, label: '10×4.5', type: 'puller', notes: 'Medium-large 800–1200g. Ex: APC 10×4.5E, Turnigy 10×4.5' },
-  { diameter_inch: 10, pitch_inch: 4.7, label: '10×4.7', type: 'puller', notes: 'Medium-large 850–1300g. Ex: APC 10×4.7E, T-Motor 10×4.7' },
-  { diameter_inch: 11, pitch_inch: 5.5, label: '11×5.5', type: 'puller', notes: 'Large 1000–1500g. Ex: APC 11×5.5E, Aeronaut 11×5.5' },
-  { diameter_inch: 12, pitch_inch: 6,   label: '12×6',   type: 'puller', notes: 'Large 1200–1800g. Ex: APC 12×6E, Xoar 12×6' },
-  { diameter_inch: 12, pitch_inch: 8,   label: '12×8',   type: 'puller', notes: 'Grande velocidade 1400–2000g. Ex: APC 12×8E' },
+  { diameter_inch: 6,  pitch_inch: 4,   label: '6×4',    type: 'puller', notes: { size: 'micro', min: 200, max: 400, ex: 'Gemfan 6040, APC 6×4' } },
+  { diameter_inch: 7,  pitch_inch: 4,   label: '7×4',    type: 'puller', notes: { size: 'small', min: 350, max: 550, ex: 'APC 7×4, Gemfan 7040' } },
+  { diameter_inch: 8,  pitch_inch: 4,   label: '8×4',    type: 'puller', notes: { size: 'smallmed', min: 450, max: 700, ex: 'APC 8×4, Gemfan 8040' } },
+  { diameter_inch: 8,  pitch_inch: 6,   label: '8×6',    type: 'puller', notes: { size: 'medfast', min: 500, max: 800, ex: 'APC 8×6E, Graupner 8×6' } },
+  { diameter_inch: 9,  pitch_inch: 4.7, label: '9×4.7',  type: 'puller', notes: { size: 'medium', min: 600, max: 950, ex: 'APC 9×4.7, Gemfan 9047' } },
+  { diameter_inch: 10, pitch_inch: 4.5, label: '10×4.5', type: 'puller', notes: { size: 'medlarge', min: 800, max: 1200, ex: 'APC 10×4.5E, Turnigy 10×4.5' } },
+  { diameter_inch: 10, pitch_inch: 4.7, label: '10×4.7', type: 'puller', notes: { size: 'medlarge', min: 850, max: 1300, ex: 'APC 10×4.7E, T-Motor 10×4.7' } },
+  { diameter_inch: 11, pitch_inch: 5.5, label: '11×5.5', type: 'puller', notes: { size: 'large', min: 1000, max: 1500, ex: 'APC 11×5.5E, Aeronaut 11×5.5' } },
+  { diameter_inch: 12, pitch_inch: 6,   label: '12×6',   type: 'puller', notes: { size: 'large', min: 1200, max: 1800, ex: 'APC 12×6E, Xoar 12×6' } },
+  { diameter_inch: 12, pitch_inch: 8,   label: '12×8',   type: 'puller', notes: { size: 'fast', min: 1400, max: 2000, ex: 'APC 12×8E' } },
 ];
 
 // All pusher props — for flying wing / pusher layout (motor behind wing)
 const PROPS_PUSHER: PropSpec[] = [
-  { diameter_inch: 7,  pitch_inch: 4,   label: '7×4P',    type: 'pusher', notes: 'Pusher pequeno 300–500g. Ex: APC 7×4P, Gemfan 7040R' },
-  { diameter_inch: 8,  pitch_inch: 4.5, label: '8×4.5P',  type: 'pusher', notes: 'Pusher 450–700g. Ex: APC 8×4.5P, KP 8045P' },
-  { diameter_inch: 9,  pitch_inch: 4.7, label: '9×4.7P',  type: 'pusher', notes: 'Pusher médio 600–900g. Ex: APC 9×4.7P, Gemfan 9047R' },
-  { diameter_inch: 10, pitch_inch: 4.7, label: '10×4.7P', type: 'pusher', notes: 'Pusher médio-grande 800–1200g. Ex: APC 10×4.7P' },
-  { diameter_inch: 10, pitch_inch: 7,   label: '10×7P',   type: 'pusher', notes: 'Pusher rápido 900–1300g. Ex: APC 10×7P, Graupner 10×7P' },
-  { diameter_inch: 11, pitch_inch: 5.5, label: '11×5.5P', type: 'pusher', notes: 'Pusher grande 1100–1600g. Ex: APC 11×5.5P' },
+  { diameter_inch: 7,  pitch_inch: 4,   label: '7×4P',    type: 'pusher', notes: { size: 'push_small', min: 300, max: 500, ex: 'APC 7×4P, Gemfan 7040R' } },
+  { diameter_inch: 8,  pitch_inch: 4.5, label: '8×4.5P',  type: 'pusher', notes: { size: 'push', min: 450, max: 700, ex: 'APC 8×4.5P, KP 8045P' } },
+  { diameter_inch: 9,  pitch_inch: 4.7, label: '9×4.7P',  type: 'pusher', notes: { size: 'push_med', min: 600, max: 900, ex: 'APC 9×4.7P, Gemfan 9047R' } },
+  { diameter_inch: 10, pitch_inch: 4.7, label: '10×4.7P', type: 'pusher', notes: { size: 'push_medlarge', min: 800, max: 1200, ex: 'APC 10×4.7P' } },
+  { diameter_inch: 10, pitch_inch: 7,   label: '10×7P',   type: 'pusher', notes: { size: 'push_fast', min: 900, max: 1300, ex: 'APC 10×7P, Graupner 10×7P' } },
+  { diameter_inch: 11, pitch_inch: 5.5, label: '11×5.5P', type: 'pusher', notes: { size: 'push_large', min: 1100, max: 1600, ex: 'APC 11×5.5P' } },
 ];
 
 const PROPS = [...PROPS_TRACTOR, ...PROPS_PUSHER];
@@ -221,31 +230,31 @@ function buildNotes(
   batteryCell: number,
   aircraftType: AircraftType,
   powerCategory: PowerCategory
-): string[] {
-  const notes: string[] = [];
+): Note[] {
+  const notes: Note[] = [];
 
   if (powerCategory === 'trainer') {
-    notes.push('Trainer: voe em 50–60% do acelerador para autonomia máxima.');
+    notes.push({ key: 'el_note_trainer' });
   } else if (powerCategory === 'sport') {
-    notes.push('Sport: relação peso-potência para manobras dinâmicas.');
+    notes.push({ key: 'el_note_sport' });
   } else {
-    notes.push('Aerobático: potência excess. para voo 3D e manobras verticais.');
+    notes.push({ key: 'el_note_aerobatic' });
   }
 
   if (aircraftType === 'flying_wing') {
-    notes.push(`Asa voadora: use hélice pusher ${prop.label} para evitar interferência na sustentação.`);
+    notes.push({ key: 'el_note_fw', params: { prop: prop.label } });
   }
 
   const voltageNominal = batteryCell === 2 ? 7.4 : batteryCell === 3 ? 11.1 : 14.8;
   const estimatedRPM = Math.round(motor.kv * voltageNominal);
-  notes.push(`RPM estimado sem carga: ~${estimatedRPM.toLocaleString()} rpm em ${batteryCell}S.`);
+  notes.push({ key: 'el_note_rpm', params: { rpm: estimatedRPM, cells: batteryCell } });
 
   if (prop.diameter_inch >= 10 && motor.kv > 1200) {
-    notes.push('Atenção: KV alto com hélice grande pode sobrecarregar o motor. Verifique a corrente máx.');
+    notes.push({ key: 'el_note_kv' });
   }
 
   if (auw_g > 1200) {
-    notes.push('Aeronave pesada: considere 4S para melhor eficiência e menor corrente.');
+    notes.push({ key: 'el_note_heavy' });
   }
 
   return notes;
