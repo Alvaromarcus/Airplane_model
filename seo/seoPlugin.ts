@@ -1,11 +1,11 @@
 /**
- * Build-time SEO for a single-page app in five languages.
+ * Build-time SEO for a single-page app in seven languages.
  *
  * The app is one SPA, but search engines and link previews need one URL per
  * language with its own <title>, description, Open Graph tags, hreflang links
  * and some crawlable text. This plugin:
  *  - fills the SEO block of index.html (the root page = x-default, English text)
- *  - writes dist/{pt,en,es,fr,zh}/index.html, each fully localised
+ *  - writes dist/{pt,en,es,fr,it,zh,hi}/index.html, each fully localised
  *  - writes dist/sitemap.xml (with hreflang alternates) and dist/robots.txt
  * The visible text sits inside #root, so it doubles as the loading screen and
  * React replaces it as soon as the app starts.
@@ -22,8 +22,8 @@ interface SeoConfig { site: string; default: string; langs: Record<string, LangS
 const seo: SeoConfig = JSON.parse(readFileSync(new URL('./seo.json', import.meta.url), 'utf8'));
 const LANGS = Object.keys(seo.langs);
 /** hreflang codes: language only (all regions), Simplified Chinese by script. */
-const HREFLANG: Record<string, string> = { pt: 'pt', en: 'en', es: 'es', fr: 'fr', zh: 'zh-Hans' };
-const NAMES: Record<string, string> = { pt: 'Português', en: 'English', es: 'Español', fr: 'Français', zh: '中文' };
+const HREFLANG: Record<string, string> = { pt: 'pt', en: 'en', es: 'es', fr: 'fr', zh: 'zh-Hans', it: 'it', hi: 'hi' };
+const NAMES: Record<string, string> = { pt: 'Português', en: 'English', es: 'Español', fr: 'Français', zh: '中文', it: 'Italiano', hi: 'हिन्दी' };
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const urlOf = (lang: string | null) => `${seo.site}/${lang ? `${lang}/` : ''}`;

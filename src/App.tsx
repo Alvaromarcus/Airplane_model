@@ -205,7 +205,7 @@ function App() {
     setIsExporting(true);
     try {
       // The PDF's built-in fonts have no CJK glyphs: Chinese exports in English
-      const pdfLang = currentLang() === 'zh' ? 'en' : currentLang();
+      const pdfLang = currentLang() === 'zh' || currentLang() === 'hi' ? 'en' : currentLang();
       const pdfT = pdfLang === currentLang() ? t : i18n.getFixedT('en');
       await exportToPDF(dimensions, metrics, validationChecks, unit, pdfLang, (k, o) => pdfT(k, o) as string, layout, controls, aircraftType, airfoil, balance);
       track('export_pdf', { aircraft_type: aircraftType });

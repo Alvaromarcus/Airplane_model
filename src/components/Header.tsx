@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LANGUAGES, currentLang, type LangCode } from '../i18n';
-import { Moon, Sun, Printer, FileText, Share2, Settings, Download, Check, RotateCcw, Box, PenLine, HelpCircle, LayoutGrid } from 'lucide-react';
+import { Moon, Sun, Printer, FileText, Share2, Settings, Download, Check, RotateCcw, Box, PenLine, HelpCircle, LayoutGrid, Globe, ChevronDown } from 'lucide-react';
 import AppLogo from './AppLogo';
 import type { AircraftType } from '../utils/calculations';
 import { AIRCRAFT_PRESETS } from '../utils/calculations';
@@ -67,6 +67,9 @@ export default function Header(p: HeaderProps) {
   const { t } = useTranslation();
   const [exportOpen, setExportOpen, exportRef] = usePopover();
   const [settingsOpen, setSettingsOpen, settingsRef] = usePopover();
+  const [langOpen, setLangOpen, langRef] = usePopover();
+  const lang = currentLang();
+  const pdfInEnglish = lang === 'zh' || lang === 'hi';
   const [copied, setCopied] = useState(false);
 
   const share = async () => {
@@ -108,6 +111,40 @@ export default function Header(p: HeaderProps) {
           >
             <LayoutGrid size={16} /><span className="hidden md:inline">{t('examples')}</span>
           </button>
+          {/* Language: always visible, current language code + globe */}
+          <div className="relative" ref={langRef}>
+            <button
+              onClick={() => setLangOpen(!langOpen)}
+              aria-haspopup="menu"
+              aria-expanded={langOpen}
+              aria-label={`${t('language')}: ${LANGUAGES.find(l => l.code === lang)?.label}`}
+              title={t('language')}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm font-semibold border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              <Globe size={16} className="text-sky-600 dark:text-sky-400" />
+              <span className="uppercase">{lang}</span>
+              <ChevronDown size={13} className="hidden sm:block text-slate-400" />
+            </button>
+            {langOpen && (
+              <div role="menu" aria-label={t('language')} className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 mt-2 w-56 p-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl z-50">
+                {LANGUAGES.map(l => (
+                  <button
+                    key={l.code}
+                    role="menuitemradio"
+                    aria-checked={l.code === lang}
+                    lang={l.html}
+                    onClick={() => { setLangOpen(false); if (l.code !== lang) p.onLanguage(l.code); }}
+                    className={`${menuItem} ${l.code === lang ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-800 dark:text-sky-200' : ''}`}
+                  >
+                    <span className="w-7 text-xs font-semibold uppercase text-slate-400">{l.code}</span>
+                    <span className="flex-1">{l.label}</span>
+                    {l.code === lang && <Check size={15} className="text-sky-600" />}
+                  </button>
+                ))}
+                {pdfInEnglish && <p className="px-3 pt-1.5 pb-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">{t('pdf_cjk_note')}</p>}
+              </div>
+            )}
+          </div>
           <button onClick={p.onHelp} className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800" title={t('help')} aria-label={t('help')}>
             <HelpCircle size={18} />
           </button>
@@ -166,18 +203,6 @@ export default function Header(p: HeaderProps) {
                 <div>
                   <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{t('units')}</div>
                   <Segmented label={t('units')} value={p.unit} onChange={p.onUnit} options={[{ v: 'cm', label: 'cm' }, { v: 'mm', label: 'mm' }]} />
-                </div>
-                <div>
-                  <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{t('language')}</div>
-                  <select
-                    aria-label={t('language')}
-                    value={currentLang()}
-                    onChange={e => p.onLanguage(e.target.value as LangCode)}
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-slate-100"
-                  >
-                    {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-                  </select>
-                  {currentLang() === 'zh' && <p className="mt-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">{t('pdf_cjk_note')}</p>}
                 </div>
                 <button className={menuItem} onClick={p.onToggleDark}>
                   {p.isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
