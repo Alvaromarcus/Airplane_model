@@ -1,5 +1,5 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { Play, Pause } from 'lucide-react';
@@ -203,9 +203,11 @@ function PrintSections({ L, airfoil, settings, pockets, explode }: { L: Layout; 
   const mmToLayout = 1 / (L.toCm * 10);
   return (
     <group scale={mmToLayout}>
-      {plan.sections.map(s => (
+      {plan.sections.map((s, i) => (
         <mesh key={s.name} geometry={s.geometry} position={ex.section(s)}>
-          <meshStandardMaterial color={SECTION_COLORS[(s.index + (s.name.endsWith('b') ? 4 : 0) + KIND_OFFSET[s.kind]) % SECTION_COLORS.length]} roughness={0.5} side={THREE.DoubleSide} />
+          {/* Neighbouring sections touch at the cut: alternate a depth offset so
+              the shared faces don't z-fight (flicker) on some GPUs */}
+          <meshStandardMaterial color={SECTION_COLORS[(s.index + (s.name.endsWith('b') ? 4 : 0) + KIND_OFFSET[s.kind]) % SECTION_COLORS.length]} roughness={0.5} side={THREE.DoubleSide} polygonOffset={i % 2 === 1} polygonOffsetFactor={1} polygonOffsetUnits={1} />
         </mesh>
       ))}
     </group>
@@ -231,11 +233,16 @@ class SceneErrorBoundary extends Component<{ fallback: ReactNode; children: Reac
   render() { return this.state.failed ? this.props.fallback : this.props.children; }
 }
 
+const MOVABLE = new Set<PartMesh['kind']>(['aileron', 'elevator', 'rudder']);
+
 function PartMeshes({ parts, mirror, xray }: { parts: PartMesh[]; mirror?: boolean; xray?: boolean }) {
   return (
     <group scale={mirror ? [-1, 1, 1] : [1, 1, 1]}>
-      {parts.map(p => (
-        <mesh key={p.id} geometry={p.geometry} castShadow={!xray} receiveShadow>
+      {parts.map((p, i) => (
+        // No self-shadowing (it caused shimmering "shadow acne" while rotating);
+        // the floor still gets the model's shadow. Transparent (x-ray) parts get
+        // a fixed draw order so they don't pop/flicker as the model turns.
+        <mesh key={p.id} geometry={p.geometry} castShadow={!xray} renderOrder={xray ? 10 + i : 0}>
           <meshStandardMaterial
             color={COLORS[p.kind]}
             roughness={p.kind === 'fuselage' ? 0.55 : 0.4}
@@ -244,11 +251,22 @@ function PartMeshes({ parts, mirror, xray }: { parts: PartMesh[]; mirror?: boole
             transparent={xray}
             opacity={xray ? 0.28 : 1}
             depthWrite={!xray}
+            polygonOffset={MOVABLE.has(p.kind)}
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
           />
         </mesh>
       ))}
     </group>
   );
+}
+
+/** Soft light from the viewer's side, so whatever angle you look from (even from below) is lit. */
+function HeadLight() {
+  const ref = useRef<THREE.DirectionalLight>(null);
+  const camera = useThree(st => st.camera);
+  useFrame(() => { ref.current?.position.copy(camera.position); });
+  return <directionalLight ref={ref} intensity={0.75} />;
 }
 
 function Powertrain({ L }: { L: Layout }) {
@@ -394,10 +412,28 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
           key={layout.isFW ? 'fw' : 'conv'}
           camera={{ position: [dist * 0.75, dist * 0.45, dist * 0.8], fov: 38, near: 0.5, far: sizeCm * 20 }}
           shadows
+          dpr={[1, 2]}
         >
-          <hemisphereLight args={[isDarkMode ? '#cbd5e1' : '#ffffff', '#475569', 0.9]} />
-          <directionalLight position={[sizeCm, sizeCm * 1.5, sizeCm * 0.8]} intensity={1.6} castShadow />
-          <directionalLight position={[-sizeCm, sizeCm * 0.3, -sizeCm]} intensity={0.35} />
+          {/* Sky + a light ground bounce, so the underside isn't dark */}
+          <hemisphereLight args={[isDarkMode ? '#cbd5e1' : '#ffffff', isDarkMode ? '#64748b' : '#cbd5e1', 0.85]} />
+          <directionalLight
+            position={[sizeCm, sizeCm * 1.5, sizeCm * 0.8]}
+            intensity={1.3}
+            castShadow
+            shadow-mapSize={[2048, 2048]}
+            shadow-bias={-0.0005}
+            shadow-normalBias={0.02}
+            shadow-camera-left={-sizeCm}
+            shadow-camera-right={sizeCm}
+            shadow-camera-top={sizeCm}
+            shadow-camera-bottom={-sizeCm}
+            shadow-camera-near={1}
+            shadow-camera-far={sizeCm * 5}
+          />
+          <directionalLight position={[-sizeCm, sizeCm * 0.3, -sizeCm]} intensity={0.3} />
+          {/* Fill from below */}
+          <directionalLight position={[0, -sizeCm * 1.5, sizeCm * 0.3]} intensity={0.45} />
+          <HeadLight />
           <Aircraft L={layout} airfoil={airfoil} isRotating={isRotating} sections={showSections} printSettings={printSettings} balance={showComponents && !showSections ? balance : null} pockets={pockets} explode={explode} />
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
             <circleGeometry args={[sizeCm * 0.9, 64]} />
@@ -408,7 +444,7 @@ export default function Scene3D({ layout, airfoil, isDarkMode, printSettings, ba
       </SceneErrorBoundary>
 
       {/* Legend */}
-      <div className="absolute top-3 left-3 flex flex-wrap gap-x-3 gap-y-1 text-xs bg-white/80 dark:bg-slate-900/70 backdrop-blur rounded-md px-2 py-1.5 text-slate-700 dark:text-slate-300 shadow-sm">
+      <div className="absolute top-3 left-3 max-w-[calc(100%-4.5rem)] flex flex-wrap gap-x-3 gap-y-1 text-xs bg-white/80 dark:bg-slate-900/70 backdrop-blur rounded-md px-2 py-1.5 text-slate-700 dark:text-slate-300 shadow-sm">
         <span className="flex items-center gap-1"><i className="inline-block w-3 h-3 rounded-sm" style={{ background: COLORS.aileron }} />{t(layout.isFW ? 'elevons' : 'control_surfaces_short')}</span>
         {showComponents && !showSections && balance && (
           <>
