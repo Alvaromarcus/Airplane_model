@@ -5,6 +5,8 @@ import pt from './locales/pt';
 import es from './locales/es';
 import fr from './locales/fr';
 import zh from './locales/zh';
+import it from './locales/it';
+import hi from './locales/hi';
 import seo from '../seo/seo.json';
 
 export const LANGUAGES = [
@@ -12,7 +14,9 @@ export const LANGUAGES = [
   { code: 'en', label: 'English', html: 'en-US' },
   { code: 'es', label: 'Español', html: 'es' },
   { code: 'fr', label: 'Français', html: 'fr' },
+  { code: 'it', label: 'Italiano', html: 'it' },
   { code: 'zh', label: '中文', html: 'zh-CN' },
+  { code: 'hi', label: 'हिन्दी', html: 'hi' },
 ] as const;
 export type LangCode = (typeof LANGUAGES)[number]['code'];
 
@@ -22,11 +26,13 @@ const resources = {
   es: { translation: es },
   fr: { translation: fr },
   zh: { translation: zh },
+  it: { translation: it },
+  hi: { translation: hi },
 };
 
 const isLang = (v: string | null | undefined): v is LangCode => !!v && LANGUAGES.some(l => l.code === v);
 
-/** Language in the URL path (/pt/, /en/, /es/, /fr/, /zh/), if any. */
+/** Language in the URL path (/pt/, /en/, /es/, /fr/, /it/, /zh/, /hi/), if any. */
 function langFromPath(): LangCode | null {
   if (typeof window === 'undefined') return null;
   const m = window.location.pathname.match(/^\/([a-z]{2})(\/|$)/);
