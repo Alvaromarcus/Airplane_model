@@ -64,7 +64,7 @@ export const COMPONENT_COLORS: Partial<Record<ItemKind, string>> = {
 };
 
 /** Colours of the assembly parts in the 2D/3D views. */
-export const ASSEMBLY_COLORS = { dowel: '#92400e', band: '#d97706', joiner: '#0d9488', guard: '#0d9488', sleeve: '#e2e8f0', drill: '#e11d48', guide: '#94a3b8' };
+export const ASSEMBLY_COLORS = { dowel: '#92400e', band: '#d97706', joiner: '#0d9488', guard: '#0d9488', sleeve: '#e2e8f0', drill: '#e11d48', guide: '#94a3b8', tail: '#2563eb', pin: '#1e293b' };
 
 export interface MassItem {
   id: string;
@@ -129,6 +129,10 @@ export interface BalanceResult {
   warnings: { key: string; params?: Record<string, string | number> }[];
   /** Joints: wing joiner, dowels and rubber bands (see assembly.ts). */
   assembly: AssemblySpec;
+  /** Two-piece tail with the stab seat and fin slot (null = glued tail). */
+  tailFit: PrintPlan['tailFit'];
+  /** Carbon alignment pins across the fuselage joints. */
+  pins: PrintPlan['pins'];
   /** Flying wing: the pack lies across the wing (length along the span). */
   batteryAcross: boolean;
   /** Wing servo pocket depth from the lower skin (mm). */
@@ -254,7 +258,8 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
     let s = w.leAt(0.5) * mm + w.chordAt(0.5) * mm * (sp.id === 'rear' ? 0.6 : 0.28);
     if (sp.id === 'tail' && L.hStab) s = (L.hStab.leS + L.hStab.rootChord * 0.3) * mm;
     if (sp.id === 'fin' && L.fin) s = (L.fin.leS + L.fin.rootChord * 0.3) * mm;
-    items.push({ id: `spar_${sp.id}`, kind: 'spar', labelKey: sp.part, detail: `Ø${sp.diameter} × ${sp.length} mm × ${sp.count}`, mass: m, s, x: 0, y: w.mountY * mm });
+    if (sp.s !== undefined) s = sp.s;
+    items.push({ id: `spar_${sp.id}`, kind: 'spar', labelKey: sp.part, detail: `Ø${sp.diameter} × ${sp.length} mm × ${sp.count}`, mass: m, s, x: 0, y: sp.y ?? w.mountY * mm });
   });
   if (ownPlan) P.sections.forEach(s => s.geometry.dispose());
   const airframe = items.reduce((a, i) => a + i.mass, 0);
@@ -638,6 +643,8 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
     wingLoading: auw / wingAreaDm2,
     warnings,
     assembly,
+    tailFit: P.tailFit,
+    pins: P.pins,
     batteryAcross: !!sol.across,
     linkExits,
     wingServoDepth: servo.w + 3 + servoLift,

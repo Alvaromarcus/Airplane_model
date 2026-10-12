@@ -47,11 +47,24 @@ export interface PrintSection {
 }
 
 export interface SparSpec {
-  id: 'main' | 'rear' | 'tail' | 'fin';
+  id: 'main' | 'rear' | 'tail' | 'fin' | 'fuse_pin';
   part: string;               // human description key
   diameter: number;           // rod diameter (mm), hole is diameter + clearance
   length: number;             // one piece, mm
   count: number;
+  /** Where its mass sits (mm, station / height), when it is not on the wing. */
+  s?: number;
+  y?: number;
+}
+
+/** How the tail is fitted to the fuselage (for the assembly notes and the UI). */
+export interface TailFit {
+  /** Station where the fuselage splits into the lower/upper tail pieces. */
+  sTail: number;
+  /** Fin tab depth into the slot on top of the upper tail piece (0 = glued flat). */
+  finTab: number;
+  /** Elevator deflection the cavity behind the hinge allows (degrees). */
+  elevatorDeflection: number;
 }
 
 export interface PrintPlan {
@@ -61,11 +74,23 @@ export interface PrintPlan {
   sparLines: { id: string; d: number; a: [number, number, number]; b: [number, number, number]; mirror: boolean }[];
   warnings: { key: string; params?: Record<string, string | number> }[];
   settings: PrintSettings;
+  /** Null when the tail is simply glued on (no fuselage, flying wing, or no room). */
+  tailFit: TailFit | null;
+  /** Alignment pins across the fuselage joints (count per joint = 2). */
+  pins: { d: number; length: number; joints: number[] } | null;
 }
 
 const ROD_SIZES = [2, 3, 4, 5, 6, 8, 10, 12];
 const WALL = 1.2;       // mm of material kept around a spar hole
 const GAP = 0.012;      // hinge gap (chord fraction) — matches the 3D view
+// Tail fit and fuselage alignment pins
+const PIN_LEN = 40;          // mm, one carbon pin across each fuselage joint (20 mm each side)
+const PIN_TAPER = 8;         // mm over which the pin channel closes beyond the pin
+const TAIL_CL = 0.25;        // mm clearance around the stab / fin in their seats
+const ELEV_DEFLECT = 22;     // degrees the cavity behind the elevator hinge allows
+const FIN_TAB = 8;           // mm the fin root sinks into its slot
+const TAIL_MARGIN = 8;       // mm of the tail pieces ahead of the stab / fin
+const TAIL_WALL = 2.5;       // mm kept above / below the stab cavity
 
 // ───────────────────────── Geometry helpers ─────────────────────────
 
@@ -583,7 +608,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     const pieces: [number, number, PrintKind, string][] = [[0, hasElev ? eh - GAP / 2 : 1, 'hstab', 'hstab']];
     if (hasElev) pieces.push([eh + GAP / 2, 1, 'elevator', 'elevator']);
     pieces.forEach(([x0, x1, kind, label]) => {
-      const f0 = kind === 'elevator' ? 0.01 : 0;
+      const f0 = 0; // elevator halves are glued into one piece at the centre
       const fs = splits(f0, 1, hs, maxLen);
       for (let i = 0; i < fs.length - 1; i++) {
         const rings = [fs[i], fs[i + 1]].map(f => keyholeOutline(tailAf, x0, x1, hc, kind === 'hstab' ? holes : [], s)
@@ -594,6 +619,57 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
         sections.push({ name: `${label}_L_${pad(i + 1)}`, kind, side: 'L', index: i + 1, axis: [-1, 0, 0], geometry: mirrorX(geo), length: len });
       }
     });
+  }
+
+  // ── Tail fit: the stab is sandwiched between a lower and an upper tail piece
+  //    whose faces follow its airfoil; the fin root sinks into a slot on top ──
+  const fexpo = L.fuselage ? (L.fuselage.style === 'trainer' ? 6 : 2.4) : 2;
+  const fsec = (sm: number) => {
+    const q = L.fuselage!.section(Math.min(Math.max(sm, 0), L.fuselage!.length * mm) / mm);
+    return { W: q.w * mm, H: q.h * mm, yc: q.yc * mm };
+  };
+  let tailFit: TailFit | null = null;
+  let cavity: ((sm: number, inStab: boolean) => [number, number]) | null = null;
+  let finSlot: { s0: number; s1: number; hw: number; floor: number } | null = null;
+  if (L.fuselage && L.hStab && L.fin) {
+    const h = L.hStab, f = L.fin;
+    const Lmm = L.fuselage.length * mm;
+    const hLe = h.leS * mm, hc = h.rootChord * mm, hy = h.y * mm;
+    const eh = 1 - h.hingeFrac, hasElev = h.hingeFrac > 0.001;
+    const fLe = f.leS * mm, fc = f.rootChord * mm, fy = f.y * mm;
+    const feh = f.hingeFrac > 0.001 ? 1 - f.hingeFrac - GAP / 2 : 1;
+    const sTail = Math.min(hLe, fLe) - TAIL_MARGIN;
+    const bayInTail = pockets.some(p => p.part === 'fuselage' && p.sb > sTail - PIN_LEN);
+    if (!bayInTail && sTail > Lmm * 0.4 && Lmm - sTail > 40 && hLe + hc * 0.5 < Lmm) {
+      const tanD = Math.tan((ELEV_DEFLECT * Math.PI) / 180);
+      let squeezed = false;
+      cavity = (sm, inStab) => {
+        if (!inStab) return [hy, hy];
+        const u = Math.min(Math.max((sm - hLe) / hc, 0), 1);
+        const extra = hasElev && u > eh ? (u - eh) * hc * tanD : 0;
+        const q = fsec(sm);
+        const cl = TAIL_CL * Math.min(1, (sm - hLe) / 2); // ramps in, so the faces stay continuous at the LE
+        const lo0 = hy + tailAf.lower(u) * hc - cl - extra;
+        const up0 = hy + tailAf.upper(u) * hc + cl + extra;
+        const lo = Math.max(lo0, q.yc - q.H / 2 + TAIL_WALL);
+        const up = Math.min(up0, q.yc + q.H / 2 - TAIL_WALL);
+        if (lo > lo0 + 0.3 || up < up0 - 0.3) squeezed = true;
+        return [Math.min(lo, hy), Math.max(up, hy)];
+      };
+      // Fin slot: as deep as FIN_TAB, keeping a wall above the stab cavity
+      const s0 = fLe - TAIL_CL, s1 = fLe + feh * fc + TAIL_CL;
+      let depth = FIN_TAB;
+      for (let k = 0; k <= 20; k++) {
+        const sm = s0 + ((s1 - s0) * k) / 20;
+        const inStab = sm >= hLe && sm <= hLe + hc;
+        depth = Math.min(depth, fy - cavity(sm, inStab)[1] - TAIL_WALL);
+      }
+      if (depth >= 3) finSlot = { s0, s1, hw: (tailAf.thickness * fc) / 2 + TAIL_CL, floor: fy - depth };
+      // Probe the cavity once so a squeezed stab is reported
+      for (let k = 0; k <= 30; k++) cavity(hLe + (hc * k) / 30, true);
+      if (squeezed) warnings.push({ key: 'stl_warn_tail_thin' });
+      tailFit = { sTail, finTab: finSlot ? Math.round(depth * 10) / 10 : 0, elevatorDeflection: ELEV_DEFLECT };
+    }
   }
 
   // ── Fin + rudder ──
@@ -610,7 +686,8 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     const pieces: [number, number, PrintKind][] = [[0, hasRud ? eh - GAP / 2 : 1, 'fin']];
     if (hasRud) pieces.push([eh + GAP / 2, 1, 'rudder']);
     pieces.forEach(([x0, x1, kind]) => {
-      const t0 = kind === 'rudder' ? 0.02 : 0;
+      // The fin root continues down into its slot on top of the tail
+      const t0 = kind === 'rudder' ? 0.02 : -(tailFit?.finTab ?? 0) / H;
       const ts = splits(t0, 1, H, maxLen);
       for (let i = 0; i < ts.length - 1; i++) {
         const holes = kind === 'fin' && finD ? [{ x: 0.3, d: finD + s.clearance }] : [];
@@ -638,53 +715,175 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     }
   }
 
-  // ── Fuselage (printed standing, split along its length), with open-top bays ──
+  // ── Fuselage (printed standing, split along its length), with open-top bays,
+  //    alignment pins across the joints and the two-piece tail ──
+  let pinsOut: PrintPlan['pins'] = null;
   if (L.fuselage) {
     const fz = L.fuselage;
     const Lmm = fz.length * mm;
-    const expo = fz.style === 'trainer' ? 6 : 2.4;
+    const expo = fexpo;
     const bays = pockets.filter(p => p.part === 'fuselage').sort((p, q) => p.sa - q.sa);
-    const NQ = 14, NTOP = 6, NFLOOR = 8;
+    const NTOP = 6, NFLOOR = 8, NLOW = 6, NSIDE = 10, NARC = 16, NCUT = 10;
+    const g = s.slit / 2;
     const se = (th: number, W: number, Hh: number, yc: number): V2 => {
       const c = Math.cos(th), sn = Math.sin(th);
       return [(W / 2) * Math.sign(c) * Math.abs(c) ** (2 / expo), yc + (Hh / 2) * Math.sign(sn) * Math.abs(sn) ** (2 / expo)];
     };
-    /** Cross-section ring: bottom → right side → top (with the bay notch) → left side. */
+    const halfH = (x: number, W: number, Hh: number) => (Hh / 2) * Math.max(0, 1 - Math.abs((2 * x) / W) ** expo) ** (1 / expo);
+    /** Angle of the lower-right / lower-left outline point at |x|. */
+    const thR = (x: number, W: number) => -Math.acos(Math.min(Math.max((2 * x) / W, 0), 0.999) ** (expo / 2));
+    const thL = (x: number, W: number) => Math.PI + Math.acos(Math.min(Math.max((2 * x) / W, 0), 0.999) ** (expo / 2));
+    /** Angle of the right outline point at height y. */
+    const thY = (y: number, Hh: number, yc: number) => {
+      const v = Math.min(Math.max((y - yc) / (Hh / 2), -0.97), 0.97);
+      return Math.sign(v) * Math.asin(Math.abs(v) ** (expo / 2));
+    };
+
+    // Joints: the vase sections up to the tail, then the tail pieces
+    const sEnd = tailFit ? tailFit.sTail : Lmm;
+    const cuts = splits(0, sEnd, sEnd, maxLen);
+    const joints = cuts.slice(1, -1).concat(tailFit ? [tailFit.sTail] : []);
+
+    // ── Alignment pins: two per joint, in the lower corners (outside the bays) ──
+    const Wmin = Math.min(...joints.map(j => fsec(j).W), 1e9);
+    const pinD = Wmin < 45 ? 2 : 3;
+    const pr = (pinD + s.clearance) / 2;
+    const PH = PIN_LEN / 2 + 2;
+    const rC = 0.5; // between pins the channel shrinks to a 1 mm keyhole (a thin internal web in vase mode)
+    type Zone = { s: number; x: number; y: number };
+    const zones: Zone[] = [];
+    joints.forEach(sj => {
+      const st = Array.from({ length: 9 }, (_, k) => sj - PH + (2 * PH * k) / 8);
+      const minW = Math.min(...st.map(v => fsec(v).W));
+      for (let frac = 0.84; frac >= 0.3; frac -= 0.01) {
+        const x = (frac * minW) / 2;
+        const y0 = Math.max(...st.map(v => { const q = fsec(v); return q.yc - halfH(x, q.W, q.H); })) + pr + 1.6;
+        // Round sections: the circle may need to sit a little higher than straight above the skin
+        const fitsAt = (y: number) => st.every(v => {
+          const q = fsec(v);
+          for (let k = 0; k < 12; k++) {
+            const a = (k / 12) * Math.PI * 2, rr = pr + 1.2;
+            const px = x + rr * Math.cos(a), py = y + rr * Math.sin(a);
+            if (Math.abs((2 * px) / q.W) ** expo + Math.abs((2 * (py - q.yc)) / q.H) ** expo > 1) return false;
+          }
+          const bay = bays.find(b => v > b.sa - 1 && v < b.sb + 1);
+          if (bay && x - pr - 1.4 < (bay.halfWidth ?? 0) && y + pr + 1.4 > (bay.floorY ?? -1e9)) return false;
+          if (tailFit && cavity && v > tailFit.sTail - 0.5 && y + pr + 1.2 > cavity(v, false)[0]) return false;
+          return true;
+        });
+        const y = [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6].map(d => y0 + d).find(fitsAt);
+        const ok = y !== undefined;
+        if (ok) { zones.push({ s: sj, x, y: y! }); break; }
+      }
+    });
+    if (zones.length < joints.length) warnings.push({ key: 'stl_warn_fuse_pin' });
+    if (zones.length) {
+      pinsOut = { d: pinD, length: PIN_LEN, joints: zones.map(z => Math.round(z.s)) };
+      spars.push({ id: 'fuse_pin', part: 'spar_fuse_pin', diameter: pinD, length: PIN_LEN, count: zones.length * 2, s: zones.reduce((a, z) => a + z.s, 0) / zones.length, y: zones[0].y });
+      zones.forEach((z, i) => sparLines.push({ id: `pin_${i + 1}`, d: pinD, a: [z.x, z.y, z.s - PIN_LEN / 2], b: [z.x, z.y, z.s + PIN_LEN / 2], mirror: true }));
+    }
+    /** Pin channel at a station: full inside a pin zone, closing over PIN_TAPER, a vanishing hole elsewhere. */
+    const pinAt = (sm: number, W: number, Hh: number, yc: number): { x: number; y: number; r: number } => {
+      const sorted = zones.slice().sort((p, q) => p.s - q.s);
+      let x: number;
+      if (!sorted.length) x = W * 0.25;
+      else if (sm <= sorted[0].s) x = sorted[0].x;
+      else if (sm >= sorted[sorted.length - 1].s) x = sorted[sorted.length - 1].x;
+      else {
+        const k = sorted.findIndex(z => z.s > sm);
+        const p0 = sorted[k - 1], p1 = sorted[k];
+        x = p0.x + ((p1.x - p0.x) * (sm - p0.s)) / (p1.s - p0.s);
+      }
+      const skin = (xx: number) => yc - halfH(xx, W, Hh);
+      const inside = (cx: number, cy: number, rad: number) => {
+        for (let k = 0; k < 12; k++) {
+          const a = (k / 12) * Math.PI * 2;
+          if (Math.abs((2 * (cx + rad * Math.cos(a))) / W) ** expo + Math.abs((2 * (cy + rad * Math.sin(a) - yc)) / Hh) ** expo > 1) return false;
+        }
+        return true;
+      };
+      // Narrow (tail) sections: move the small channel inwards until it sits inside the skin
+      x = Math.min(x, W * 0.42);
+      while (x > W * 0.12 && !inside(x, skin(x) + rC + 0.6, rC + 0.5)) x -= W * 0.02;
+      const z = sorted.find(q => Math.abs(sm - q.s) <= PH + PIN_TAPER + 1e-6);
+      const closed = { x, y: skin(x) + rC + 0.6, r: rC };
+      if (!z) return closed;
+      const d = Math.abs(sm - z.s);
+      if (d <= PH + 1e-6) return { x: z.x, y: z.y, r: pr };
+      const t = (d - PH) / PIN_TAPER;
+      const cx = z.x + (x - z.x) * t;
+      return { x: cx, y: z.y + (skin(cx) + rC + 0.6 - z.y) * t, r: pr + (rC - pr) * t };
+    };
+    /** Clockwise hole with its slit to the bottom skin (outline runs towards +x there). */
+    const keyhole = (cx: number, cy: number, r: number): V2[] => {
+      const al = Math.asin(Math.min(g / r, 0.999));
+      const out: V2[] = [];
+      for (let i = 0; i < NARC; i++) {
+        const th = (3 * Math.PI) / 2 - al - ((2 * Math.PI - 2 * al) * i) / (NARC - 1);
+        out.push([cx + r * Math.cos(th), cy + r * Math.sin(th)]);
+      }
+      return out;
+    };
+    /** Bottom of a ring: right half from the bottom centre up to angle thTop (excl.), with the right pin channel. */
+    const lowerRight = (W: number, Hh: number, yc: number, pin: { x: number; y: number; r: number }, thTop: number): V2[] => {
+      const pts: V2[] = [];
+      const tA = thR(pin.x - g, W), tB = thR(pin.x + g, W);
+      for (let i = 0; i < NLOW; i++) pts.push(se(-Math.PI / 2 + ((tA + Math.PI / 2) * i) / (NLOW - 1), W, Hh, yc));
+      pts.push(...keyhole(pin.x, pin.y, pin.r));
+      for (let i = 0; i < NSIDE; i++) pts.push(se(tB + ((thTop - tB) * i) / NSIDE, W, Hh, yc));
+      return pts;
+    };
+    /** Left half from angle thTop (excl.) down to the bottom centre (excl.), with the left pin channel. */
+    const lowerLeft = (W: number, Hh: number, yc: number, pin: { x: number; y: number; r: number }, thTop: number): V2[] => {
+      const pts: V2[] = [];
+      const t0 = Math.PI - thTop, tC = thL(pin.x + g, W), tD = thL(pin.x - g, W);
+      for (let i = 1; i <= NSIDE; i++) pts.push(se(t0 + ((tC - t0) * i) / NSIDE, W, Hh, yc));
+      pts.push(...keyhole(-pin.x, pin.y, pin.r));
+      for (let i = 0; i < NLOW - 1; i++) pts.push(se(tD + ((1.5 * Math.PI - tD) * i) / (NLOW - 1), W, Hh, yc));
+      return pts;
+    };
+    /** Open-top notch (bay or fin slot) between two top angles; floor === null → no notch here. */
+    const topNotch = (W: number, Hh: number, yc: number, xA: number, floor: number | null): V2[] => {
+      const yTop = (x: number) => yc + halfH(x, W, Hh);
+      const pts: V2[] = [[xA, yTop(xA)]];
+      for (let i = 0; i < NFLOOR; i++) {
+        const x = xA - (2 * xA * i) / (NFLOOR - 1);
+        pts.push([x, floor === null ? yTop(x) : Math.min(floor, yTop(x))]);
+      }
+      pts.push([-xA, yTop(-xA)]);
+      return pts;
+    };
+
+    /** Full cross-section ring of a vase section: bottom with pin channels, top with the bay notch. */
     const ring = (sMm: number, activeBay: Pocket | null): V3[] => {
-      const sec = fz.section(sMm / mm);
-      const W = sec.w * mm, Hh = sec.h * mm, yc = sec.yc * mm;
-      // One notch slot per ring (the widest bay), so the vertex count is constant
+      const { W, H: Hh, yc } = fsec(sMm);
+      const pin = pinAt(sMm, W, Hh, yc);
       const hw = Math.min(activeBay?.halfWidth ?? Math.max(...bays.map(b => b.halfWidth ?? 10), 10), W / 2 - 1.5);
       const ratio = Math.min(Math.max((2 * hw) / W, 0.05), 0.95);
       const thA = Math.acos(ratio ** (expo / 2));
-      const yTop = (x: number) => yc + (Hh / 2) * Math.max(0, 1 - Math.abs((2 * x) / W) ** expo) ** (1 / expo);
-      const pts: V2[] = [];
-      for (let i = 0; i < NQ; i++) pts.push(se(-Math.PI / 2 + ((thA + Math.PI / 2) * i) / NQ, W, Hh, yc));
+      const pts: V2[] = lowerRight(W, Hh, yc, pin, thA);
       if (bays.length) {
         const xA = se(thA, W, Hh, yc)[0];
-        pts.push([xA, yTop(xA)]);
+        const yTopA = yc + halfH(xA, W, Hh);
         // The floor must stay above the bottom skin at the bay edges (round
         // sections rise towards the sides), otherwise the outline self-intersects
-        const bottomAtEdge = yc - (yTop(xA) - yc);
-        const floor = activeBay ? Math.max(Math.min(activeBay.floorY ?? yc, yTop(xA) - 1), bottomAtEdge + 1.2) : null;
-        for (let i = 0; i < NFLOOR; i++) {
-          const x = xA - (2 * xA * i) / (NFLOOR - 1);
-          pts.push([x, floor === null ? yTop(x) : Math.min(floor, yTop(x))]);
-        }
-        pts.push([-xA, yTop(-xA)]);
+        const bottomAtEdge = yc - (yTopA - yc);
+        const floor = activeBay ? Math.max(Math.min(activeBay.floorY ?? yc, yTopA - 1), bottomAtEdge + 1.2) : null;
+        pts.push(...topNotch(W, Hh, yc, xA, floor));
       } else {
-        for (let i = 1; i < NTOP; i++) pts.push(se(thA + ((Math.PI - 2 * thA) * i) / NTOP, W, Hh, yc));
+        for (let i = 0; i <= NTOP; i++) pts.push(se(thA + ((Math.PI - 2 * thA) * i) / NTOP, W, Hh, yc));
       }
-      for (let i = 0; i < NQ; i++) pts.push(se(Math.PI - thA + ((thA + Math.PI / 2) * i) / NQ, W, Hh, yc));
+      pts.push(...lowerLeft(W, Hh, yc, pin, thA));
       return pts.map(([x, y]) => [x, y, -sMm] as V3);
     };
     const bayAt = (sm: number) => bays.find(b => sm > b.sa && sm < b.sb) ?? null;
-    const cuts = splits(0, Lmm, Lmm, maxLen);
+    const pinStations = (a0: number, b0: number) => zones.flatMap(z => [-PH - PIN_TAPER, -PH, PH, PH + PIN_TAPER].map(d => z.s + d)).filter(v => v > a0 + 0.5 && v < b0 - 0.5);
     for (let i = 0; i < cuts.length - 1; i++) {
       const nSt = 12;
       const st: number[] = [];
       for (let k = 0; k <= nSt; k++) st.push(cuts[i] + ((cuts[i + 1] - cuts[i]) * k) / nSt);
       bays.forEach(b => [b.sa, b.sb].forEach(v => { if (v > cuts[i] + 0.5 && v < cuts[i + 1] - 0.5) st.push(v); }));
+      st.push(...pinStations(cuts[i], cuts[i + 1]));
       st.sort((p, q) => p - q);
       const uniq = st.filter((v, k) => k === 0 || v - st[k - 1] > 0.3);
       const rings: V3[][] = [];
@@ -697,12 +896,67 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
       }
       sections.push({ name: `fuselage_${pad(i + 1)}`, kind: 'fuselage', side: 'C', index: i + 1, axis: [0, 0, -1], geometry: loftSolid(rings), length: cuts[i + 1] - cuts[i] });
     }
+
+    // ── Tail pieces: lower (keel, pin channels at the front) and upper (fin slot) ──
+    if (tailFit && cavity && L.hStab) {
+      const hLe = L.hStab.leS * mm, hTe = hLe + L.hStab.rootChord * mm;
+      const lowerRing = (sm: number, inStab: boolean): V3[] => {
+        const { W, H: Hh, yc } = fsec(sm);
+        const pin = pinAt(sm, W, Hh, yc);
+        const c = cavity!(sm, inStab)[0];
+        const thC = thY(c, Hh, yc);
+        const xc = se(thC, W, Hh, yc)[0];
+        const pts = lowerRight(W, Hh, yc, pin, thC);
+        for (let i = 0; i <= NCUT; i++) pts.push([xc - (2 * xc * i) / NCUT, c]);
+        pts.push(...lowerLeft(W, Hh, yc, pin, thC));
+        return pts.map(([x, y]) => [x, y, -sm] as V3);
+      };
+      const upperRing = (sm: number, inStab: boolean, slot: boolean): V3[] => {
+        const { W, H: Hh, yc } = fsec(sm);
+        const c = cavity!(sm, inStab)[1];
+        const thC = thY(c, Hh, yc);
+        const xc = se(thC, W, Hh, yc)[0];
+        const hw = Math.min(finSlot ? finSlot.hw : 3, W / 2 - 1.5);
+        const thF = Math.max(Math.acos(Math.min(Math.max((2 * hw) / W, 0.05), 0.95) ** (expo / 2)), thC + 0.02);
+        const xF = se(thF, W, Hh, yc)[0];
+        const pts: V2[] = [];
+        for (let i = 0; i < NSIDE; i++) pts.push(se(thC + ((thF - thC) * i) / NSIDE, W, Hh, yc));
+        const floor = slot && finSlot ? Math.max(finSlot.floor, c + TAIL_WALL) : null;
+        pts.push(...topNotch(W, Hh, yc, xF, floor));
+        for (let i = 1; i <= NSIDE; i++) pts.push(se(Math.PI - thF + ((thF - thC) * i) / NSIDE, W, Hh, yc));
+        for (let i = 1; i < NCUT; i++) pts.push([-xc + (2 * xc * i) / NCUT, c]);
+        return pts.map(([x, y]) => [x, y, -sm] as V3);
+      };
+      const tcuts = splits(tailFit.sTail, Lmm, Lmm - tailFit.sTail, maxLen);
+      const edges = [hLe, hLe + (1 - L.hStab.hingeFrac) * (hTe - hLe), hTe, ...(finSlot ? [finSlot.s0, finSlot.s1] : [])];
+      for (let i = 0; i < tcuts.length - 1; i++) {
+        const a0 = tcuts[i], b0 = tcuts[i + 1];
+        const st: number[] = [];
+        for (let k = 0; k <= 30; k++) st.push(a0 + ((b0 - a0) * k) / 30);
+        // Walls (TE step, fin slot ends) as two stations 0.1 mm apart: no coincident rings
+        edges.forEach(v => [v - 0.05, v + 0.05].forEach(e => { if (e > a0 + 0.3 && e < b0 - 0.3) st.push(e); }));
+        st.push(...pinStations(a0, b0));
+        st.sort((p, q) => p - q);
+        const uniq = st.filter((v, k) => k === 0 || v - st[k - 1] > 0.02);
+        const lo: V3[][] = [], up: V3[][] = [];
+        uniq.forEach(v => {
+          const inStab = v >= hLe && v <= hTe;
+          const slot = !!finSlot && v > finSlot.s0 && v < finSlot.s1;
+          lo.push(lowerRing(v, inStab));
+          up.push(upperRing(v, inStab, slot));
+        });
+        const suffix = tcuts.length > 2 ? `_${pad(i + 1)}` : '';
+        const idx = cuts.length + i;
+        sections.push({ name: `fuselage_tail_lower${suffix}`, kind: 'fuselage', side: 'C', index: idx, axis: [0, 0, -1], geometry: loftSolid(lo), length: b0 - a0 });
+        sections.push({ name: `fuselage_tail_upper${suffix}`, kind: 'fuselage', side: 'C', index: idx, axis: [0, 0, -1], geometry: loftSolid(up), length: b0 - a0 });
+      }
+    }
     if (fz.width * mm > Math.min(s.bedX, s.bedY) || fz.height * mm > Math.max(s.bedX, s.bedY)) {
       warnings.push({ key: 'stl_warn_fuse_bed' });
     }
   }
 
-  return { sections, spars, sparLines, warnings, settings: s };
+  return { sections, spars, sparLines, warnings, settings: s, tailFit, pins: pinsOut };
 }
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
