@@ -81,8 +81,9 @@ export function computeAssembly(L: Layout, airfoil: AirfoilType, pref: WingMount
 
   const fz = L.fuselage;
   const bandsAvailable = !!fz && fz.style === 'trainer';
-  if (!fz) {
-    return { mount: 'none', bandsAvailable, dowels: [], bands: null, joiner, teGuard: null, sleeve: null };
+  if (!fz || L.isFW) {
+    // Flying wing (with or without a nose pod): no separate wing mount
+    return { mount: 'none', bandsAvailable: false, dowels: [], bands: null, joiner, teGuard: null, sleeve: null };
   }
   if (!bandsAvailable || pref === 'glued') {
     return { mount: 'glued', bandsAvailable, dowels: [], bands: null, joiner, teGuard: null, sleeve: null };
