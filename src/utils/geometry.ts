@@ -187,6 +187,14 @@ export function computeLayout(
       leS: finLe, span: Math.max(dims.vStabSpan, 0.1 * u), rootChord: vc, tipChord: vc, sweep: 0,
       y: secAtFin.yc + secAtFin.h / 2, hingeFrac: c.rudderChord / 100,
     };
+    // The fuselage ends just ahead of the elevator hinge line, like on a real
+    // model: the elevator is free behind it (2 mm so its leading edge clears
+    // the tail when it deflects). The cross-section taper is unchanged.
+    if (hStab.hingeFrac > 0.001) {
+      const hinge = hLe + hc * (1 - hStab.hingeFrac);
+      const end = hinge - 2 * (u / 10); // 2 mm in layout units
+      if (end < fuselage!.length && end > noseLength + rootChord) fuselage!.length = end;
+    }
   } else {
     const vc = Math.max(dims.vStabChord, 0.1 * u);
     winglet = {
