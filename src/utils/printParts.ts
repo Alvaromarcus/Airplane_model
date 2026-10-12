@@ -26,7 +26,9 @@ export interface PrintSettings {
   bedZ: number;       // mm
   slit: number;       // keyhole slit width, mm
   minTe: number;      // minimum trailing-edge thickness, mm
-  clearance: number;  // spar hole clearance on diameter, mm
+  clearance: number;  // spar hole clearance on diameter, mm (the stab / fin seats use 80% of it per side)
+  /** Fit-test kit: only the joints, at real scale (tail seat, fin tab, one fuselage joint, wing root). */
+  kit?: boolean;
 }
 
 export const DEFAULT_PRINT_SETTINGS: PrintSettings = {
@@ -84,7 +86,9 @@ const GAP = 0.012;      // hinge gap (chord fraction) — matches the 3D view
 // Tail fit and fuselage alignment pins
 const PIN_LEN = 40;          // mm, one carbon pin across each fuselage joint (20 mm each side)
 const PIN_TAPER = 8;         // mm over which the pin channel closes beyond the pin
-const TAIL_CL = 0.25;        // mm clearance around the stab / fin in their seats
+const TAIL_CL_FACTOR = 0.8;  // stab / fin seat gap per side = 80% of the hole clearance (0.24 mm by default)
+const KIT_LEN = 30;          // mm of stab / fin / wing root in the fit-test kit
+const KIT_FUSE = 25;         // mm each side of the tested fuselage joint
 const FIN_TAB = 8;           // mm the fin root sinks into its slot
 const TAIL_MARGIN = 8;       // mm of the tail pieces ahead of the stab / fin
 const TAIL_WALL = 2.5;       // mm kept above / below the stab cavity
@@ -394,6 +398,8 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
   const mm = L.toCm * 10; // layout unit → mm
   const s = settings;
   const maxLen = Math.max(s.bedZ - 5, 20);
+  const kit = !!s.kit;
+  const tailCl = s.clearance * TAIL_CL_FACTOR;
   const sections: PrintSection[] = [];
   const spars: SparSpec[] = [];
   const sparLines: PrintPlan['sparLines'] = [];
@@ -467,6 +473,17 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
       wingPieces.splice(i, 1, { ...pc, f1: fc }, { ...pc, f0: fc });
     }
   });
+
+  // Fit-test kit: only the wing root, long enough for the joiner plate and the spar start
+  let kitF = 1;
+  if (kit) {
+    const joiner = pockets.find(p => p.id === 'joiner');
+    kitF = Math.min(0.5, Math.max(KIT_LEN + 10, (joiner ? joiner.xb + 8 : 0), Math.max(mainStart, rearStart) * halfSpan + KIT_LEN) / halfSpan);
+    for (let i = wingPieces.length - 1; i >= 0; i--) {
+      if (wingPieces[i].f0 >= kitF - 1e-6) wingPieces.splice(i, 1);
+      else wingPieces[i] = { ...wingPieces[i], f1: Math.min(wingPieces[i].f1, kitF) };
+    }
+  }
 
   // Longest chord that fits the bed standing up (straight, or diagonally with its thickness)
   const bedMin = Math.min(s.bedX, s.bedY) - 4, bedMax = Math.max(s.bedX, s.bedY) - 4;
@@ -574,7 +591,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
   if (chordSplit) warnings.push({ key: 'stl_info_chord_split', params: { max: Math.round(maxChordFit) } });
 
   // ── Ailerons / elevons ──
-  {
+  if (!kit) {
     const spanGap = Math.min(0.004, (a.f1 - a.f0) * 0.02);
     const fs = splits(a.f0 + spanGap, a.f1 - spanGap, (a.f1 - a.f0) * halfSpan, maxLen);
     for (let i = 0; i < fs.length - 1; i++) {
@@ -605,8 +622,9 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     const pieces: [number, number, PrintKind, string][] = [[0, hasElev ? eh - GAP / 2 : 1, 'hstab', 'hstab']];
     if (hasElev) pieces.push([eh + GAP / 2, 1, 'elevator', 'elevator']);
     pieces.forEach(([x0, x1, kind, label]) => {
+      if (kit && kind === 'elevator') return;
       const f0 = 0; // elevator halves are glued into one piece at the centre
-      const fs = splits(f0, 1, hs, maxLen);
+      const fs = kit ? [0, Math.min(1, KIT_LEN / hs)] : splits(f0, 1, hs, maxLen);
       for (let i = 0; i < fs.length - 1; i++) {
         const rings = [fs[i], fs[i + 1]].map(f => keyholeOutline(tailAf, x0, x1, hc, kind === 'hstab' ? holes : [], s)
           .map(([u, v]) => [f * hs, hy + v, -(hLe + u)] as V3));
@@ -642,7 +660,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
         if (!inStab) return [hy, hy];
         const u = Math.min(Math.max((sm - hLe) / hc, 0), 1);
         const q = fsec(sm);
-        const cl = TAIL_CL * Math.min(1, (sm - hLe) / 2); // ramps in, so the faces stay continuous at the LE
+        const cl = tailCl * Math.min(1, (sm - hLe) / 2); // ramps in, so the faces stay continuous at the LE
         const lo0 = hy + tailAf.lower(u) * hc - cl;
         const up0 = hy + tailAf.upper(u) * hc + cl;
         const lo = Math.max(lo0, q.yc - q.H / 2 + TAIL_WALL);
@@ -651,14 +669,14 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
         return [Math.min(lo, hy), Math.max(up, hy)];
       };
       // Fin slot: as deep as FIN_TAB, keeping a wall above the stab cavity
-      const s0 = fLe - TAIL_CL, s1 = fLe + feh * fc + TAIL_CL;
+      const s0 = fLe - tailCl, s1 = fLe + feh * fc + tailCl;
       let depth = FIN_TAB;
       for (let k = 0; k <= 20; k++) {
         const sm = s0 + ((s1 - s0) * k) / 20;
         const inStab = sm >= hLe && sm <= hLe + hc;
         depth = Math.min(depth, fy - cavity(sm, inStab)[1] - TAIL_WALL);
       }
-      if (depth >= 3) finSlot = { s0, s1, hw: (tailAf.thickness * fc) / 2 + TAIL_CL, floor: fy - depth };
+      if (depth >= 3) finSlot = { s0, s1, hw: (tailAf.thickness * fc) / 2 + tailCl, floor: fy - depth };
       // Probe the cavity once so a squeezed stab is reported
       for (let k = 0; k <= 30; k++) cavity(hLe + (hc * k) / 30, true);
       if (squeezed) warnings.push({ key: 'stl_warn_tail_thin' });
@@ -682,7 +700,8 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     pieces.forEach(([x0, x1, kind]) => {
       // The fin root continues down into its slot on top of the tail
       const t0 = kind === 'rudder' ? 0.02 : -(tailFit?.finTab ?? 0) / H;
-      const ts = splits(t0, 1, H, maxLen);
+      if (kit && kind === 'rudder') return;
+      const ts = kit ? [t0, Math.min(1, KIT_LEN / H)] : splits(t0, 1, H, maxLen);
       for (let i = 0; i < ts.length - 1; i++) {
         const holes = kind === 'fin' && finD ? [{ x: 0.3, d: finD + s.clearance }] : [];
         const rings = [ts[i], ts[i + 1]].map(t => keyholeOutline(tailAf, x0, x1, fc, holes, s)
@@ -693,7 +712,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
   }
 
   // ── Winglets ──
-  if (L.winglet && L.winglet.span > 0) {
+  if (L.winglet && L.winglet.span > 0 && !kit) {
     const g = L.winglet;
     const H = g.span * mm;
     const le = (t: number) => (g.leS + g.sweep * t) * mm;
@@ -872,12 +891,22 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     };
     const bayAt = (sm: number) => bays.find(b => sm > b.sa && sm < b.sb) ?? null;
     const pinStations = (a0: number, b0: number) => zones.flatMap(z => [-PH - PIN_TAPER, -PH, PH, PH + PIN_TAPER].map(d => z.s + d)).filter(v => v > a0 + 0.5 && v < b0 - 0.5);
-    for (let i = 0; i < cuts.length - 1; i++) {
-      const nSt = 12;
+    // Fit-test kit: two short coupons around one pinned joint (or one ahead of the tail)
+    let runs: [number, number, string][] = cuts.slice(0, -1).map((c, i) => [c, cuts[i + 1], `fuselage_${pad(i + 1)}`]);
+    if (kit) {
+      const inner = zones.filter(z => !tailFit || Math.abs(z.s - tailFit.sTail) > 1);
+      const z = inner[0] ?? zones[0];
+      const sj = z ? z.s : (tailFit ? tailFit.sTail : cuts[Math.floor(cuts.length / 2)]);
+      runs = [[sj - KIT_FUSE, sj, 'fuselage_test_a']];
+      if (!(tailFit && Math.abs(sj - tailFit.sTail) < 1)) runs.push([sj, sj + KIT_FUSE, 'fuselage_test_b']);
+    }
+    for (let i = 0; i < runs.length; i++) {
+      const [ca, cb, runName] = runs[i];
+      const nSt = kit ? 6 : 12;
       const st: number[] = [];
-      for (let k = 0; k <= nSt; k++) st.push(cuts[i] + ((cuts[i + 1] - cuts[i]) * k) / nSt);
-      bays.forEach(b => [b.sa, b.sb].forEach(v => { if (v > cuts[i] + 0.5 && v < cuts[i + 1] - 0.5) st.push(v); }));
-      st.push(...pinStations(cuts[i], cuts[i + 1]));
+      for (let k = 0; k <= nSt; k++) st.push(ca + ((cb - ca) * k) / nSt);
+      bays.forEach(b => [b.sa, b.sb].forEach(v => { if (v > ca + 0.5 && v < cb - 0.5) st.push(v); }));
+      st.push(...pinStations(ca, cb));
       st.sort((p, q) => p - q);
       const uniq = st.filter((v, k) => k === 0 || v - st[k - 1] > 0.3);
       const rings: V3[][] = [];
@@ -888,7 +917,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
         rings.push(ring(uniq[k + 1], bay));
         prevBay = bay;
       }
-      sections.push({ name: `fuselage_${pad(i + 1)}`, kind: 'fuselage', side: 'C', index: i + 1, axis: [0, 0, -1], geometry: loftSolid(rings), length: cuts[i + 1] - cuts[i] });
+      sections.push({ name: runName, kind: 'fuselage', side: 'C', index: i + 1, axis: [0, 0, -1], geometry: loftSolid(rings), length: cb - ca });
     }
 
     // ── Tail pieces: lower (keel, pin channels at the front) and upper (fin slot) ──
@@ -950,6 +979,15 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     }
   }
 
+  if (kit) {
+    // Short offcuts are enough to test the fits
+    spars.forEach(sp => {
+      if (sp.id === 'main' || sp.id === 'rear') sp.length = Math.max(20, Math.round((kitF - (sp.id === 'main' ? mainStart : rearStart)) * halfSpan - 5));
+      else if (sp.id === 'tail') { sp.length = Math.round(KIT_LEN * 2 * 0.9); }
+      else if (sp.id === 'fin') { sp.length = Math.round(KIT_LEN * 0.8); }
+      if (sp.id === 'fuse_pin') sp.count = 2;
+    });
+  }
   return { sections, spars, sparLines, warnings, settings: s, tailFit, pins: pinsOut };
 }
 

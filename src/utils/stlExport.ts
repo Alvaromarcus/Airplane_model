@@ -110,7 +110,10 @@ export interface ExportResult {
 export function planAndOrient(L: Layout, airfoil: AirfoilType, settings: PrintSettings, pockets: Pocket[] = [], balance: BalanceResult | null = null) {
   const plan = buildPrintPlan(L, airfoil, settings, pockets);
   // Servo mounts and hatches (normal printing, not vase mode) join the parts list
-  buildExtraParts(L, airfoil, balance, pockets, Math.max(Math.min(settings.bedX, settings.bedY), Math.max(settings.bedX, settings.bedY) * 0.95) - 12).forEach((x, i) => {
+  buildExtraParts(L, airfoil, balance, pockets, Math.max(Math.min(settings.bedX, settings.bedY), Math.max(settings.bedX, settings.bedY) * 0.95) - 12)
+    // Fit-test kit: only the joiner plate and the dowel sleeves (fit parts)
+    .filter(x => !settings.kit || /^joint_(wing_joiner|dowel_sleeve)/.test(x.name))
+    .forEach((x, i) => {
     plan.sections.push({ name: x.name, kind: x.kind, side: x.side, index: i + 1, axis: x.axis, geometry: x.geometry, length: 0 });
   });
   const oriented = plan.sections.map(sec => orientForPrint(sec, settings));
@@ -177,6 +180,11 @@ function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, t: (k: 
   lines.push(r('bed', { x: s.bedX, y: s.bedY, z: s.bedZ }));
   lines.push(r('span_parts', { span: Math.round(L.wing.halfSpan * 2 * L.toCm * 10), n: oriented.length }));
 
+  if (s.kit) {
+    head('kit');
+    lines.push(r('kit_intro'), r('kit_1'), r('kit_2'), r('kit_3'), r('kit_4'), r('kit_adjust', { cl: s.clearance, seat: (s.clearance * 0.8).toFixed(2) }), r('kit_rods'));
+  }
+
   head('slicer');
   lines.push(r('slicer_1'), r('slicer_2'), r('slicer_3'), r('slicer_4'), r('slicer_5', { slit: s.slit }), r('slicer_6'));
 
@@ -233,7 +241,7 @@ function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, t: (k: 
   if (plan.tailFit) {
     const tf = plan.tailFit;
     head('tail');
-    lines.push(r('tail_1'), r('tail_2'), r('tail_3'), r('tail_4'),
+    lines.push(r('tail_1', { cl: (s.clearance * 0.8).toFixed(2) }), r('tail_2'), r('tail_3'), r('tail_4'),
       tf.finTab > 0 ? r('tail_5', { mm: Math.round(tf.finTab) }) : r('tail_5_flat'));
   }
   if (plan.pins) {
