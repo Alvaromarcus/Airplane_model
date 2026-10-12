@@ -157,7 +157,7 @@ export function buildAircraftParts(L: Layout, airfoil: AirfoilType): { right: Pa
     if (h.hingeFrac > 0.001) {
       const hh = 1 - h.hingeFrac;
       right.push({ id: 'hstab', kind: 'hstab', geometry: horizontalPiece(tailAf, hs, hLe, hC, hY, 0, 1, 0, hh - GAP / 2) });
-      right.push({ id: 'elevator', kind: 'elevator', geometry: horizontalPiece(tailAf, hs, hLe, hC, hY, 0.01, 1, hh + GAP / 2, 1) });
+      right.push({ id: 'elevator', kind: 'elevator', geometry: horizontalPiece(tailAf, hs, hLe, hC, hY, 0, 1, hh + GAP / 2, 1) });
     } else {
       right.push({ id: 'hstab', kind: 'hstab', geometry: horizontalPiece(tailAf, hs, hLe, hC, hY, 0, 1, 0, 1) });
     }

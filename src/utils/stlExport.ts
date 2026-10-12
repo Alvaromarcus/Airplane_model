@@ -233,7 +233,7 @@ function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, t: (k: 
   if (plan.tailFit) {
     const tf = plan.tailFit;
     head('tail');
-    lines.push(r('tail_1'), r('tail_2'), r('tail_3', { deg: tf.elevatorDeflection }), r('tail_4'),
+    lines.push(r('tail_1'), r('tail_2'), r('tail_3'), r('tail_4'),
       tf.finTab > 0 ? r('tail_5', { mm: Math.round(tf.finTab) }) : r('tail_5_flat'));
   }
   if (plan.pins) {

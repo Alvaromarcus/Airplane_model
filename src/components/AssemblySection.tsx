@@ -69,8 +69,8 @@ export default function AssemblySection({ balance, settings, onChange, onShow3D 
         {balance.tailFit && (
           <Row color={ASSEMBLY_COLORS.tail} title={t('asm_tail')}>
             {balance.tailFit.finTab > 0
-              ? t('asm_tail_desc', { mm: Math.round(balance.tailFit.finTab), deg: balance.tailFit.elevatorDeflection })
-              : t('asm_tail_desc_flat', { deg: balance.tailFit.elevatorDeflection })}
+              ? t('asm_tail_desc', { mm: Math.round(balance.tailFit.finTab) })
+              : t('asm_tail_desc_flat')}
           </Row>
         )}
         {balance.pins && (

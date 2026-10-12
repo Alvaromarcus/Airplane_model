@@ -63,8 +63,6 @@ export interface TailFit {
   sTail: number;
   /** Fin tab depth into the slot on top of the upper tail piece (0 = glued flat). */
   finTab: number;
-  /** Elevator deflection the cavity behind the hinge allows (degrees). */
-  elevatorDeflection: number;
 }
 
 export interface PrintPlan {
@@ -87,7 +85,6 @@ const GAP = 0.012;      // hinge gap (chord fraction) — matches the 3D view
 const PIN_LEN = 40;          // mm, one carbon pin across each fuselage joint (20 mm each side)
 const PIN_TAPER = 8;         // mm over which the pin channel closes beyond the pin
 const TAIL_CL = 0.25;        // mm clearance around the stab / fin in their seats
-const ELEV_DEFLECT = 22;     // degrees the cavity behind the elevator hinge allows
 const FIN_TAB = 8;           // mm the fin root sinks into its slot
 const TAIL_MARGIN = 8;       // mm of the tail pieces ahead of the stab / fin
 const TAIL_WALL = 2.5;       // mm kept above / below the stab cavity
@@ -635,22 +632,19 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     const h = L.hStab, f = L.fin;
     const Lmm = L.fuselage.length * mm;
     const hLe = h.leS * mm, hc = h.rootChord * mm, hy = h.y * mm;
-    const eh = 1 - h.hingeFrac, hasElev = h.hingeFrac > 0.001;
     const fLe = f.leS * mm, fc = f.rootChord * mm, fy = f.y * mm;
     const feh = f.hingeFrac > 0.001 ? 1 - f.hingeFrac - GAP / 2 : 1;
     const sTail = Math.min(hLe, fLe) - TAIL_MARGIN;
     const bayInTail = pockets.some(p => p.part === 'fuselage' && p.sb > sTail - PIN_LEN);
-    if (!bayInTail && sTail > Lmm * 0.4 && Lmm - sTail > 40 && hLe + hc * 0.5 < Lmm) {
-      const tanD = Math.tan((ELEV_DEFLECT * Math.PI) / 180);
+    if (!bayInTail && sTail > Lmm * 0.4 && Lmm - sTail > 40 && hLe + hc * 0.3 < Lmm) {
       let squeezed = false;
       cavity = (sm, inStab) => {
         if (!inStab) return [hy, hy];
         const u = Math.min(Math.max((sm - hLe) / hc, 0), 1);
-        const extra = hasElev && u > eh ? (u - eh) * hc * tanD : 0;
         const q = fsec(sm);
         const cl = TAIL_CL * Math.min(1, (sm - hLe) / 2); // ramps in, so the faces stay continuous at the LE
-        const lo0 = hy + tailAf.lower(u) * hc - cl - extra;
-        const up0 = hy + tailAf.upper(u) * hc + cl + extra;
+        const lo0 = hy + tailAf.lower(u) * hc - cl;
+        const up0 = hy + tailAf.upper(u) * hc + cl;
         const lo = Math.max(lo0, q.yc - q.H / 2 + TAIL_WALL);
         const up = Math.min(up0, q.yc + q.H / 2 - TAIL_WALL);
         if (lo > lo0 + 0.3 || up < up0 - 0.3) squeezed = true;
@@ -668,7 +662,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
       // Probe the cavity once so a squeezed stab is reported
       for (let k = 0; k <= 30; k++) cavity(hLe + (hc * k) / 30, true);
       if (squeezed) warnings.push({ key: 'stl_warn_tail_thin' });
-      tailFit = { sTail, finTab: finSlot ? Math.round(depth * 10) / 10 : 0, elevatorDeflection: ELEV_DEFLECT };
+      tailFit = { sTail, finTab: finSlot ? Math.round(depth * 10) / 10 : 0 };
     }
   }
 
