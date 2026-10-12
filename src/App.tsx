@@ -28,6 +28,7 @@ import { DEFAULT_PRINT_SETTINGS, type PrintSettings } from './utils/printParts';
 import StlExportDialog from './components/StlExportDialog';
 import { computeBalance, cutoutsFromBalance, DEFAULT_COMPONENTS, type ComponentSettings } from './utils/components';
 import { exportToPDF } from './utils/pdfExport';
+import { autoFwNose, type AutoNoseResult } from './utils/pod';
 import { useVersionCheck } from './hooks/useVersionCheck';
 import './App.css';
 
@@ -196,6 +197,25 @@ function App() {
     setDimensions(prev => ({ ...prev, [key]: value }));
   };
 
+  // Flying wing nose pod: length with the least ballast (runs a few dozen balance checks)
+  const [autoNose, setAutoNose] = useState<AutoNoseResult | null>(null);
+  const [autoNoseBusy, setAutoNoseBusy] = useState(false);
+  const handleAutoNose = () => {
+    setAutoNoseBusy(true);
+    // Let the spinner paint before the (short) blocking computation
+    setTimeout(() => {
+      try {
+        const r = autoFwNose(dimensions, aircraftType, controls, unit, fuselageStyle, propeller, propCutout, airfoil, components);
+        setAutoNose(r);
+        setDimensions(prev => ({ ...prev, fwNose: r.nose }));
+        track('pod_auto', { ballast: r.ballast });
+      } catch (e) {
+        console.error('Auto nose failed', e);
+      }
+      setAutoNoseBusy(false);
+    }, 30);
+  };
+
   const handleControlChange = (key: keyof ControlSurfaces, value: number) => {
     setControls(prev => ({ ...prev, [key]: value }));
   };
@@ -309,6 +329,9 @@ function App() {
             propCutout={propCutout}
             onPropCutoutChange={setPropCutout}
             teCutNeedsElevonStart={layout.teCutNeedsElevonStart}
+            onAutoNose={handleAutoNose}
+            autoNose={dimensions.fwNose > 0 ? autoNose : null}
+            autoNoseBusy={autoNoseBusy}
             powerSection={
               <PowerSection
                 balance={balance}

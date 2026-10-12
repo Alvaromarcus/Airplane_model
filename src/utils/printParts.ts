@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import type { AirfoilType } from './calculations';
 import type { Layout } from './geometry';
 import { getAirfoil, chordSamples, type AirfoilSurface } from './airfoils';
+import { computeAssembly } from './assembly';
 
 type V3 = [number, number, number];
 type V2 = [number, number];
@@ -76,6 +77,8 @@ export interface PrintPlan {
   settings: PrintSettings;
   /** Null when the tail is simply glued on (no fuselage, flying wing, or no room). */
   tailFit: TailFit | null;
+  /** Flying-wing nose pod: split station where the pod becomes the two halves around the wing. */
+  podFit: { sSplit: number } | null;
   /** Alignment pins across the fuselage joints (count per joint = 2). */
   pins: { d: number; length: number; joints: number[] } | null;
 }
@@ -646,7 +649,42 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
   let tailFit: TailFit | null = null;
   let cavity: ((sm: number, inStab: boolean) => [number, number]) | null = null;
   let finSlot: { s0: number; s1: number; hw: number; floor: number } | null = null;
-  if (L.fuselage && L.hStab && L.fin) {
+  /** The body splits into a lower and an upper piece around a surface (the stab, or the wing in a pod). */
+  let saddle: { sTail: number; le: number; te: number } | null = null;
+  let podJoiner: [number, number] | null = null;
+  if (L.fuselage?.pod) {
+    // Flying-wing nose pod: the two halves follow the root airfoil of the wing
+    const Lmm = L.fuselage.length * mm;
+    const le = leAt(0), c0 = chordAt(0), y0 = yAt(0);
+    const sTail = le - 3;
+    const bayInSplit = pockets.some(p => p.part === 'fuselage' && p.sb > sTail - 1);
+    // The joiner plate is glued under the root: the lower half leaves room for it.
+    // Wing bays under the pod keep their flush hatches: the top half (a removable
+    // canopy) leaves room for them too.
+    const jn = computeAssembly(L, airfoil, 'glued', 500).joiner;
+    const jGap = jn.recessed ? 0 : jn.t + tailCl;
+    const hatchGap = pockets.some(p => p.part === 'wing' && p.side === 'upper' && p.xa <= 1) ? 1.2 : 0;
+    podJoiner = jGap ? [jn.sa, jn.sb] : null;
+    if (!bayInSplit && Lmm - sTail > 20) {
+      let squeezed = false;
+      cavity = (sm, inWing) => {
+        if (!inWing) return [y0, y0];
+        const u = Math.min(Math.max((sm - le) / c0, 0), 1);
+        const q = fsec(sm);
+        const cl = tailCl * Math.min(1, (sm - le) / 2);
+        const ramp = Math.min(1, (sm - le) / 2);
+        const lo0 = y0 + wingAf.lower(u) * c0 - cl - (sm > jn.sa && sm < jn.sb ? jGap : 0);
+        const up0 = y0 + wingAf.upper(u) * c0 + cl + hatchGap * ramp;
+        const lo = Math.max(lo0, q.yc - q.H / 2 + TAIL_WALL);
+        const up = Math.min(up0, q.yc + q.H / 2 - TAIL_WALL);
+        if (lo > lo0 + 0.3 || up < up0 - 0.3) squeezed = true;
+        return [Math.min(lo, y0), Math.max(up, y0)];
+      };
+      for (let k = 0; k <= 30; k++) cavity(le + ((Lmm - le) * k) / 30, true);
+      if (squeezed) warnings.push({ key: 'stl_warn_pod_thin' });
+      saddle = { sTail, le, te: le + c0 };
+    }
+  } else if (L.fuselage && L.hStab && L.fin) {
     const h = L.hStab, f = L.fin;
     const Lmm = L.fuselage.length * mm;
     const hLe = h.leS * mm, hc = h.rootChord * mm, hy = h.y * mm;
@@ -681,6 +719,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
       for (let k = 0; k <= 30; k++) cavity(hLe + (hc * k) / 30, true);
       if (squeezed) warnings.push({ key: 'stl_warn_tail_thin' });
       tailFit = { sTail, finTab: finSlot ? Math.round(depth * 10) / 10 : 0 };
+      saddle = { sTail, le: hLe, te: hLe + hc };
     }
   }
 
@@ -753,9 +792,10 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     };
 
     // Joints: the vase sections up to the tail, then the tail pieces
-    const sEnd = tailFit ? tailFit.sTail : Lmm;
+    const sEnd = saddle ? saddle.sTail : Lmm;
+    const pre = fz.pod ? 'pod' : 'fuselage';
     const cuts = splits(0, sEnd, sEnd, maxLen);
-    const joints = cuts.slice(1, -1).concat(tailFit ? [tailFit.sTail] : []);
+    const joints = cuts.slice(1, -1).concat(saddle ? [saddle.sTail] : []);
 
     // ── Alignment pins: two per joint, in the lower corners (outside the bays) ──
     const Wmin = Math.min(...joints.map(j => fsec(j).W), 1e9);
@@ -781,7 +821,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
           }
           const bay = bays.find(b => v > b.sa - 1 && v < b.sb + 1);
           if (bay && x - pr - 1.4 < (bay.halfWidth ?? 0) && y + pr + 1.4 > (bay.floorY ?? -1e9)) return false;
-          if (tailFit && cavity && v > tailFit.sTail - 0.5 && y + pr + 1.2 > cavity(v, false)[0]) return false;
+          if (saddle && cavity && v > saddle.sTail - 0.5 && y + pr + 1.2 > cavity(v, false)[0]) return false;
           return true;
         });
         const y = [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6].map(d => y0 + d).find(fitsAt);
@@ -818,6 +858,12 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
       // Narrow (tail) sections: move the small channel inwards until it sits inside the skin
       x = Math.min(x, W * 0.42);
       while (x > W * 0.12 && !inside(x, skin(x) + rC + 0.6, rC + 0.5)) x -= W * 0.02;
+      // Under an open bay the floor follows the skin: keep the small channel outside the bay wall
+      const bayHere = bays.find(b => sm > b.sa - 0.5 && sm < b.sb + 0.5);
+      if (bayHere && x < (bayHere.halfWidth ?? 0) + rC + 1) {
+        const xo = Math.min((bayHere.halfWidth ?? 0) + rC + 1, W / 2 - 1.5);
+        if (inside(xo, skin(xo) + rC + 0.6, rC + 0.5)) x = xo;
+      }
       const z = sorted.find(q => Math.abs(sm - q.s) <= PH + PIN_TAPER + 1e-6);
       const closed = { x, y: skin(x) + rC + 0.6, r: rC };
       if (!z) return closed;
@@ -856,12 +902,13 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
       return pts;
     };
     /** Open-top notch (bay or fin slot) between two top angles; floor === null → no notch here. */
-    const topNotch = (W: number, Hh: number, yc: number, xA: number, floor: number | null): V2[] => {
+    const topNotch = (W: number, Hh: number, yc: number, xA: number, floor: number | ((x: number) => number) | null): V2[] => {
       const yTop = (x: number) => yc + halfH(x, W, Hh);
       const pts: V2[] = [[xA, yTop(xA)]];
       for (let i = 0; i < NFLOOR; i++) {
         const x = xA - (2 * xA * i) / (NFLOOR - 1);
-        pts.push([x, floor === null ? yTop(x) : Math.min(floor, yTop(x))]);
+        const f = floor === null ? null : typeof floor === 'number' ? floor : floor(x);
+        pts.push([x, f === null ? yTop(x) : Math.min(f, yTop(x))]);
       }
       pts.push([-xA, yTop(-xA)]);
       return pts;
@@ -878,10 +925,12 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
       if (bays.length) {
         const xA = se(thA, W, Hh, yc)[0];
         const yTopA = yc + halfH(xA, W, Hh);
-        // The floor must stay above the bottom skin at the bay edges (round
-        // sections rise towards the sides), otherwise the outline self-intersects
-        const bottomAtEdge = yc - (yTopA - yc);
-        const floor = activeBay ? Math.max(Math.min(activeBay.floorY ?? yc, yTopA - 1), bottomAtEdge + 1.2) : null;
+        // The floor follows the bottom skin where that rises (round sections get
+        // shallower towards the sides): deep in the middle, never through the skin
+        const floorY = activeBay ? Math.min(activeBay.floorY ?? yc, yTopA - 1) : 0;
+        // …and stays above the small pin channel when that runs under the bay
+        const overPin = pin.x < xA ? pin.y + pin.r + 0.6 : -Infinity;
+        const floor = activeBay ? (x: number) => Math.max(floorY, yc - halfH(x, W, Hh) + 1.2, overPin) : null;
         pts.push(...topNotch(W, Hh, yc, xA, floor));
       } else {
         for (let i = 0; i <= NTOP; i++) pts.push(se(thA + ((Math.PI - 2 * thA) * i) / NTOP, W, Hh, yc));
@@ -892,13 +941,13 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     const bayAt = (sm: number) => bays.find(b => sm > b.sa && sm < b.sb) ?? null;
     const pinStations = (a0: number, b0: number) => zones.flatMap(z => [-PH - PIN_TAPER, -PH, PH, PH + PIN_TAPER].map(d => z.s + d)).filter(v => v > a0 + 0.5 && v < b0 - 0.5);
     // Fit-test kit: two short coupons around one pinned joint (or one ahead of the tail)
-    let runs: [number, number, string][] = cuts.slice(0, -1).map((c, i) => [c, cuts[i + 1], `fuselage_${pad(i + 1)}`]);
+    let runs: [number, number, string][] = cuts.slice(0, -1).map((c, i) => [c, cuts[i + 1], `${pre}_${pad(i + 1)}`]);
     if (kit) {
-      const inner = zones.filter(z => !tailFit || Math.abs(z.s - tailFit.sTail) > 1);
+      const inner = zones.filter(z => !saddle || Math.abs(z.s - saddle.sTail) > 1);
       const z = inner[0] ?? zones[0];
-      const sj = z ? z.s : (tailFit ? tailFit.sTail : cuts[Math.floor(cuts.length / 2)]);
-      runs = [[sj - KIT_FUSE, sj, 'fuselage_test_a']];
-      if (!(tailFit && Math.abs(sj - tailFit.sTail) < 1)) runs.push([sj, sj + KIT_FUSE, 'fuselage_test_b']);
+      const sj = z ? z.s : (saddle ? saddle.sTail : cuts[Math.floor(cuts.length / 2)]);
+      runs = [[sj - KIT_FUSE, sj, `${pre}_test_a`]];
+      if (!(saddle && Math.abs(sj - saddle.sTail) < 1)) runs.push([sj, sj + KIT_FUSE, `${pre}_test_b`]);
     }
     for (let i = 0; i < runs.length; i++) {
       const [ca, cb, runName] = runs[i];
@@ -921,8 +970,8 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     }
 
     // ── Tail pieces: lower (keel, pin channels at the front) and upper (fin slot) ──
-    if (tailFit && cavity && L.hStab) {
-      const hLe = L.hStab.leS * mm, hTe = hLe + L.hStab.rootChord * mm;
+    if (saddle && cavity) {
+      const hLe = saddle.le, hTe = saddle.te;
       const lowerRing = (sm: number, inStab: boolean): V3[] => {
         const { W, H: Hh, yc } = fsec(sm);
         const pin = pinAt(sm, W, Hh, yc);
@@ -950,8 +999,8 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
         for (let i = 1; i < NCUT; i++) pts.push([-xc + (2 * xc * i) / NCUT, c]);
         return pts.map(([x, y]) => [x, y, -sm] as V3);
       };
-      const tcuts = splits(tailFit.sTail, Lmm, Lmm - tailFit.sTail, maxLen);
-      const edges = [hLe, hLe + (1 - L.hStab.hingeFrac) * (hTe - hLe), hTe, ...(finSlot ? [finSlot.s0, finSlot.s1] : [])];
+      const tcuts = splits(saddle.sTail, Lmm, Lmm - saddle.sTail, maxLen);
+      const edges = [hLe, ...(L.hStab && !fz.pod ? [hLe + (1 - L.hStab.hingeFrac) * (hTe - hLe)] : []), hTe, ...(finSlot ? [finSlot.s0, finSlot.s1] : []), ...(podJoiner ?? [])];
       for (let i = 0; i < tcuts.length - 1; i++) {
         const a0 = tcuts[i], b0 = tcuts[i + 1];
         const st: number[] = [];
@@ -970,8 +1019,8 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
         });
         const suffix = tcuts.length > 2 ? `_${pad(i + 1)}` : '';
         const idx = cuts.length + i;
-        sections.push({ name: `fuselage_tail_lower${suffix}`, kind: 'fuselage', side: 'C', index: idx, axis: [0, 0, -1], geometry: loftSolid(lo), length: b0 - a0 });
-        sections.push({ name: `fuselage_tail_upper${suffix}`, kind: 'fuselage', side: 'C', index: idx, axis: [0, 0, -1], geometry: loftSolid(up), length: b0 - a0 });
+        sections.push({ name: fz.pod ? `pod_lower${suffix}` : `fuselage_tail_lower${suffix}`, kind: 'fuselage', side: 'C', index: idx, axis: [0, 0, -1], geometry: loftSolid(lo), length: b0 - a0 });
+        sections.push({ name: fz.pod ? `pod_upper${suffix}` : `fuselage_tail_upper${suffix}`, kind: 'fuselage', side: 'C', index: idx, axis: [0, 0, -1], geometry: loftSolid(up), length: b0 - a0 });
       }
     }
     if (fz.width * mm > Math.min(s.bedX, s.bedY) || fz.height * mm > Math.max(s.bedX, s.bedY)) {
@@ -988,7 +1037,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
       if (sp.id === 'fuse_pin') sp.count = 2;
     });
   }
-  return { sections, spars, sparLines, warnings, settings: s, tailFit, pins: pinsOut };
+  return { sections, spars, sparLines, warnings, settings: s, tailFit, podFit: saddle && L.fuselage?.pod ? { sSplit: saddle.sTail } : null, pins: pinsOut };
 }
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
