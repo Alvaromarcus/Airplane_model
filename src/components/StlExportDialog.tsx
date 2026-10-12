@@ -38,6 +38,9 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
   const { t, i18n } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ plan: PrintPlan; oriented: OrientedSection[] } | null>(null);
+  // Fit-test kit is a one-off choice in this dialog (not saved with the project)
+  const [kit, setKit] = useState(false);
+  const eff = useMemo(() => ({ ...settings, kit }), [settings, kit]);
 
   // Compute the plan (lazy-loaded exporter) whenever the dialog is open and inputs change
   useEffect(() => {
@@ -45,11 +48,11 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
     let cancelled = false;
     import('../utils/stlExport').then(m => {
       if (cancelled) return;
-      const r = m.planAndOrient(layout, airfoil, settings, pockets, balance);
+      const r = m.planAndOrient(layout, airfoil, eff, pockets, balance);
       setResult(r);
     });
     return () => { cancelled = true; };
-  }, [open, layout, airfoil, settings, pockets, balance]);
+  }, [open, layout, airfoil, eff, pockets, balance]);
 
   // Free the geometries built for the summary
   useEffect(() => () => {
@@ -78,13 +81,13 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
     setBusy(true);
     try {
       const m = await import('../utils/stlExport');
-      const r = m.exportSTLZip(layout, airfoil, settings, i18n.language, (k, o) => t(k, o), pockets, balance);
+      const r = m.exportSTLZip(layout, airfoil, eff, i18n.language, (k, o) => t(k, o), pockets, balance);
       const url = URL.createObjectURL(r.blob);
       const a = document.createElement('a');
       a.href = url;
       const pt = i18n.language.startsWith('pt');
-      a.download = `aerobuilder-${layout.isFW ? (pt ? 'asa-voadora' : 'flying-wing') : (pt ? 'convencional' : 'conventional')}-stl.zip`;
-      track('export_stl', { aircraft_type: layout.isFW ? 'flying_wing' : 'conventional', parts: r.oriented.length });
+      a.download = `aerobuilder-${layout.isFW ? (pt ? 'asa-voadora' : 'flying-wing') : (pt ? 'convencional' : 'conventional')}-${kit ? (pt ? 'kit-teste' : 'fit-test-kit') : 'stl'}.zip`;
+      track('export_stl', { aircraft_type: layout.isFW ? 'flying_wing' : 'conventional', parts: r.oriented.length, kit });
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -123,6 +126,28 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
         <div className="p-4 space-y-4 text-sm">
           <p className="text-slate-600 dark:text-slate-300 leading-relaxed">{t('stl_intro')}</p>
 
+          {/* What to export: the whole aircraft or the fit-test kit */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">{t('stl_mode')}</label>
+            <div role="radiogroup" aria-label={t('stl_mode')} className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-700/60">
+              {([false, true] as const).map(k => (
+                <button
+                  key={String(k)}
+                  type="button"
+                  role="radio"
+                  aria-checked={kit === k}
+                  onClick={() => setKit(k)}
+                  className={`py-1.5 rounded-md text-sm font-medium transition-colors ${kit === k
+                    ? 'bg-white dark:bg-slate-600 text-sky-700 dark:text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}
+                >
+                  {t(k ? 'stl_mode_kit' : 'stl_mode_full')}
+                </button>
+              ))}
+            </div>
+            {kit && <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-snug">{t('stl_kit_hint')}</p>}
+          </div>
+
           {/* Bed */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">{t('stl_bed')}</label>
@@ -141,6 +166,27 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
               <div><span className="text-xs text-slate-500">X (mm)</span>{num('bedX')}</div>
               <div><span className="text-xs text-slate-500">Y (mm)</span>{num('bedY')}</div>
               <div><span className="text-xs text-slate-500">Z (mm)</span>{num('bedZ')}</div>
+            </div>
+          </div>
+
+          {/* Fit clearance: tune it after printing the test kit */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1" htmlFor="stl-clearance">{t('stl_clearance')}</label>
+            <div className="flex items-center gap-2">
+              <input
+                id="stl-clearance"
+                type="number"
+                min={0.1}
+                max={0.8}
+                step={0.05}
+                value={settings.clearance}
+                onChange={e => {
+                  const v = parseFloat(e.target.value);
+                  if (Number.isFinite(v) && v >= 0.1 && v <= 0.8) onSettingsChange({ ...settings, clearance: Math.round(v * 100) / 100 });
+                }}
+                className="w-24 px-2 py-1.5 border border-slate-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+              />
+              <span className="text-xs text-slate-500 dark:text-slate-400 leading-snug">{t('stl_clearance_hint', { seat: (settings.clearance * 0.8).toFixed(2) })}</span>
             </div>
           </div>
 
