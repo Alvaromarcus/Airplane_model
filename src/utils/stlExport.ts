@@ -230,6 +230,18 @@ function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, t: (k: 
     }
   }
 
+  if (plan.tailFit) {
+    const tf = plan.tailFit;
+    head('tail');
+    lines.push(r('tail_1'), r('tail_2'), r('tail_3', { deg: tf.elevatorDeflection }), r('tail_4'),
+      tf.finTab > 0 ? r('tail_5', { mm: Math.round(tf.finTab) }) : r('tail_5_flat'));
+  }
+  if (plan.pins) {
+    const p = plan.pins;
+    head('pins');
+    lines.push(r('pins_1', { n: p.joints.length * 2, d: p.d, len: p.length, joints: p.joints.join(', ') }), r('pins_2'));
+  }
+
   const exits = balance?.linkExits ?? [];
   if (exits.length && L.fuselage) {
     const fz = L.fuselage, mmU = L.toCm * 10;
