@@ -63,8 +63,6 @@ export interface Layout {
     height: number;
     style: FuselageType;
     section: (s: number) => FuselageSection;
-    /** Flying wing: central nose pod the wing passes through (not a conventional fuselage). */
-    pod?: boolean;
   } | null;
   motor: {
     pusher: boolean;
@@ -116,8 +114,7 @@ export function computeLayout(
 
   // ── Fuselage (conventional only) ──
   let fuselage: Layout['fuselage'] = null;
-  // Flying wing with a nose pod: the wing moves back by the nose length (stations stay ≥ 0)
-  const noseLength = isFW ? Math.max(dims.fwNose || 0, 0) : Math.max(dims.noseLength, 0);
+  const noseLength = isFW ? 0 : Math.max(dims.noseLength, 0);
   if (!isFW) {
     const L = Math.max(dims.fuselageLength, 1 * u);
     const W = Math.max(dims.fuselageWidth || 7 * u, 1 * u);
@@ -223,7 +220,7 @@ export function computeLayout(
     const hw = propD / 2 + 1 * u;
     const depth = motorL + 2.5 * u;
     const maxHw = c.aileronStart / 100 * halfSpan - 0.5 * u;
-    let mountS = noseLength + rootChord;
+    let mountS = rootChord;
     if (propCutout) {
       if (hw <= maxHw && depth < rootChord * 0.35) {
         const sCut = noseLength + rootChord - depth;
@@ -239,24 +236,6 @@ export function computeLayout(
     const fy = fuselage!.section(0).yc;
     motor = { pusher: false, diameter: motorD, length: motorL, mountS: 0, dir: -1 };
     prop = { diameter: propD, pitchIn, label: spec?.label ?? '', s: -(motorL + 0.6 * u), y: fy };
-  }
-
-  // ── Flying-wing nose pod: a short round body from the nose to ~70 % of the
-  //    root chord (or the pusher notch), the wing passing through its middle ──
-  if (isFW && noseLength > 0) {
-    const H = Math.max(4.5 * u, 0.22 * rootChord);
-    const W = Math.max(4.2 * u, 0.18 * rootChord);
-    const le = noseLength;
-    const end = Math.min(le + rootChord * 0.7, teCut ? teCut.sCut - 0.4 * u : Infinity, motor.mountS - 0.4 * u);
-    const tipLen = Math.min(noseLength * 0.4, 5 * u);
-    const yc = 0.02 * rootChord; // around the root chord line (cambered root sections sit a little above it)
-    const section = (sAt: number): FuselageSection => {
-      let k = 1;
-      if (sAt < tipLen) k = 0.35 + 0.65 * smooth(sAt / tipLen);
-      else if (sAt > le + rootChord * 0.3) k = 1 - 0.45 * smooth((sAt - (le + rootChord * 0.3)) / Math.max(end - (le + rootChord * 0.3), 1e-6));
-      return { w: W * k, h: H * (0.55 + 0.45 * k), yc };
-    };
-    fuselage = { length: end, width: W, height: H, style: 'sport', section, pod: true };
   }
 
   const cgS = noseLength + metrics.cgPosition;

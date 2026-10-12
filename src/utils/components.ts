@@ -133,8 +133,6 @@ export interface BalanceResult {
   tailFit: PrintPlan['tailFit'];
   /** Carbon alignment pins across the fuselage joints. */
   pins: PrintPlan['pins'];
-  /** Flying-wing nose pod split (two halves around the wing). */
-  podFit: PrintPlan['podFit'];
   /** Flying wing: the pack lies across the wing (length along the span). */
   batteryAcross: boolean;
   /** Wing servo pocket depth from the lower skin (mm). */
@@ -199,17 +197,7 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
   // ── Where things physically fit: floor / ceiling (mm) inside the part that holds them ──
   const WALL = 1.2;
   const ceilings: { s0: number; s1: number; y: number }[] = []; // obstacles from above (wing dowels)
-  const pod = L.isFW && L.fuselage?.pod ? L.fuselage : null;
-  const podFront = 8;                                 // mm: nose wall
-  const podBack = pod ? w.leAt(0) * mm - 8 : 0;       // electronics stay ahead of the wing (and of the pod split)
   const envelope = (s: number, x: number): [number, number] | null => {
-    if (pod && s < w.leAt(0) * mm) {
-      if (s < podFront || s > podBack) return null;
-      const sec = pod.section(s / mm);
-      if (Math.abs(x) > (sec.w * mm) / 2 - WALL) return null;
-      const hh = sectionHalfHeightAt(sec, Math.abs(x) / mm, pod.style) * mm;
-      return [sec.yc * mm - hh + WALL, sec.yc * mm + hh];
-    }
     if (L.isFW || !L.fuselage) {
       const f = Math.min(1, Math.abs(x) / (w.halfSpan * mm));
       const c = w.chordAt(f) * mm, u = (s - w.leAt(f) * mm) / c;
@@ -424,18 +412,13 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
       return w.mountY * mm + (af.upper(fr) + af.lower(fr)) / 2 * w.rootChord * mm;
     };
     const rootLe = w.leAt(0) * mm, rootTe = w.teAt(0) * mm;
-    // With a nose pod the light electronics go in the tip of the nose (receiver,
-    // then the ESC); the battery sits behind them and slides towards the wing to
-    // put the CG on target
-    const podR = pod ? nearestFit(podFront + RX.l / 2, podFront + RX.l / 2, podBack - RX.l / 2, RX.w, RX.h, RX.l) : null;
-    const podE = podR ? nearestFit(podR.s + RX.l / 2 + 4 + esc.l / 2, podR.s + RX.l / 2 + 4 + esc.l / 2, podBack - esc.l / 2, esc.w, esc.h, esc.l) : null;
     const sE = L.cgS * mm;
-    const e = podE ?? nearestFit(sE, rootLe, rootTe, esc.w, esc.h, esc.l);
+    const e = nearestFit(sE, rootLe, rootTe, esc.w, esc.h, esc.l);
     if (!e) partsNoFit.push('ESC');
     escPos = e ? [0, e.y, e.s] : [0, mid(sE), sE];
     const behind = escPos[2] + esc.l / 2 + RX.l / 2 + 4;
     const ahead = escPos[2] - esc.l / 2 - RX.l / 2 - 4;
-    const r = (podE ? podR : null) ?? nearestFit(behind, behind, rootTe, RX.w, RX.h, RX.l) ?? nearestFit(ahead, rootLe, ahead, RX.w, RX.h, RX.l);
+    const r = nearestFit(behind, behind, rootTe, RX.w, RX.h, RX.l) ?? nearestFit(ahead, rootLe, ahead, RX.w, RX.h, RX.l);
     if (!r) partsNoFit.push('RX');
     rxPos = r ? [0, r.y, r.s] : [0, mid(behind), behind];
   }
@@ -489,13 +472,11 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
   const bay = (bt: BatterySpec): BayOption[] => {
     const hit = bayCache.get(bt.key);
     if (hit) return hit;
-    // Flying wing with a nose pod: the pack may go in the nose or in the root of the wing
-    const wheres: ('pod' | 'wing')[] = pod && escPos[2] < w.leAt(0) * mm ? ['pod', 'wing'] : ['wing'];
-    const opts = (L.isFW ? [false, true] : [false]).flatMap(across => wheres.map(where => bayOne(bt, across, where)));
+    const opts = (L.isFW ? [false, true] : [false]).map(across => bayOne(bt, across));
     bayCache.set(bt.key, opts);
     return opts;
   };
-  const bayOne = (bt: BatterySpec, across: boolean, where: 'pod' | 'wing' = 'wing'): BayOption => {
+  const bayOne = (bt: BatterySpec, across: boolean): BayOption => {
     const along = across ? bt.w : bt.l;   // footprint along the chord
     const wide = across ? bt.l : bt.w;    // footprint across
     let lo: number, hi: number, yFallback: number;
@@ -507,21 +488,10 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
       const hb = sectionHalfHeightAt(secMid, (wide / 2) / mm, fz.style) * mm;
       yFallback = secMid.yc * mm - hb + bt.h / 2 + 2;
     } else {
-      const elecInPod = !!pod && escPos[2] < w.leAt(0) * mm;
-      if (elecInPod && where === 'pod') {
-        // behind the ESC / receiver in the nose, up to the back of the nose bay
-        lo = Math.max(escPos[2] + esc.l / 2, rxPos[2] + RX.l / 2) + 5 + along / 2;
-        hi = podBack - along / 2;
-      } else if (elecInPod) {
-        // root of the wing, under the removable top half of the pod
-        lo = w.leAt(0) * mm + 8 + along / 2;
-        hi = (L.teCut ? L.teCut.sCut * mm : w.teAt(0) * mm) - 10 - along / 2;
-      } else {
-        lo = (pod ? podFront + 2 : w.leAt(0) * mm + 8) + along / 2;
-        // ahead of the ESC — and of the receiver when it had to go in front of the ESC
-        const front = Math.min(escPos[2] - esc.l / 2, rxPos[2] < escPos[2] ? rxPos[2] - RX.l / 2 : Infinity);
-        hi = front - 5 - along / 2;
-      }
+      lo = w.leAt(0) * mm + 8 + along / 2;
+      // ahead of the ESC — and of the receiver when it had to go in front of the ESC
+      const front = Math.min(escPos[2] - esc.l / 2, rxPos[2] < escPos[2] ? rxPos[2] - RX.l / 2 : Infinity);
+      hi = front - 5 - along / 2;
       const frac = Math.min(0.5, Math.max(0.1, (lo - w.leAt(0) * mm) / (w.rootChord * mm)));
       yFallback = w.mountY * mm + (af.upper(frac) + af.lower(frac)) / 2 * w.rootChord * mm;
     }
@@ -573,7 +543,7 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
       const r = solve(b);
       const Mt = M0 + b.mass;
       const S = S0 + b.mass * r.pos;
-      const sN = L.isFW ? (pod ? podFront + 4 : w.leAt(0) * mm + 10) : 5;
+      const sN = L.isFW ? w.leAt(0) * mm + 10 : 5;
       const need = r.ideal < r.range[0] - 1 ? Math.max(0, (S - T * Mt) / (T - sN)) : 0;
       // Any ballast is dead weight: prefer a pack that balances without it
       return need * 3 + (need > 0.5 ? 15 : 0) + Math.abs(b.mass - want) + (b.mass > want * 1.8 ? 1000 : 0);
@@ -592,7 +562,7 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
   const Mt = M0 + mb;
   if (ideal < range[0] - 1) {
     // Tail heavy even with the battery all the way forward → nose ballast
-    const sN = L.isFW ? (pod ? podFront + 4 : w.leAt(0) * mm + 10) : 5;
+    const sN = L.isFW ? w.leAt(0) * mm + 10 : 5;
     const mBal = (S0 + mb * bS - T * Mt) / (T - sN);
     if (mBal > 0.5) {
       ballast = { mass: mBal, s: sN };
@@ -675,7 +645,6 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
     assembly,
     tailFit: P.tailFit,
     pins: P.pins,
-    podFit: P.podFit,
     batteryAcross: !!sol.across,
     linkExits,
     wingServoDepth: servo.w + 3 + servoLift,
@@ -709,28 +678,23 @@ export function cutoutsFromBalance(b: BalanceResult, L: Layout): Pocket[] {
     const halfChord = Math.max(ss / 2, plate ? Math.max(...plate.outline.map(p => Math.abs(p[0]))) : 0) + 1;
     out.push({ id: 'servo_wing', part: 'wing', side: 'lower', xa: sv.x - sx / 2 - 1, xb: sv.x + sx / 2 + 1, sa: sv.s - halfChord, sb: sv.s + halfChord, depth: Math.max(sy + 3, b.wingServoDepth) });
   }
-  const bay = (id: string, ids: string[]) => {
-    const cs = ids.map(it).filter((c): c is MassItem => !!c?.size);
-    if (!cs.length) return;
-    const sa = Math.min(...cs.map(c => c.s - c.size![2] / 2)) - 3;
-    const sb = Math.max(...cs.map(c => c.s + c.size![2] / 2)) + 3;
-    const halfWidth = Math.max(...cs.map(c => Math.abs(c.x) + c.size![0] / 2)) + 2;
-    const floorY = Math.min(...cs.map(c => c.y - c.size![1] / 2)) - 1;
-    out.push({ id, part: 'fuselage', side: 'top', xa: -halfWidth, xb: halfWidth, sa, sb, depth: 0, halfWidth, floorY });
-  };
   if (L.isFW) {
-    // Parts in the nose pod share one open-top bay there; the rest sit in root bays of the wing
-    const mm = L.toCm * 10;
-    const inPod = (c: MassItem) => !!L.fuselage?.pod && c.s + c.size![2] / 2 < L.wing.leAt(0) * mm;
-    const podIds = ['battery', 'esc', 'rx'].filter(id => { const c = it(id); return c?.size && inPod(c); });
-    if (podIds.length) bay('bay_pod', podIds);
     ['battery', 'esc', 'rx'].forEach(id => {
       const c = it(id);
-      if (!c?.size || inPod(c)) return;
+      if (!c?.size) return;
       const [sx, sy, ss] = c.size;
       out.push({ id: `bay_${id}`, part: 'wing', side: 'upper', xa: 0, xb: Math.abs(c.x) + sx / 2 + 2, sa: c.s - ss / 2 - 2, sb: c.s + ss / 2 + 2, depth: sy + 1.5 });
     });
   } else if (L.fuselage) {
+    const bay = (id: string, ids: string[]) => {
+      const cs = ids.map(it).filter((c): c is MassItem => !!c?.size);
+      if (!cs.length) return;
+      const sa = Math.min(...cs.map(c => c.s - c.size![2] / 2)) - 3;
+      const sb = Math.max(...cs.map(c => c.s + c.size![2] / 2)) + 3;
+      const halfWidth = Math.max(...cs.map(c => Math.abs(c.x) + c.size![0] / 2)) + 2;
+      const floorY = Math.min(...cs.map(c => c.y - c.size![1] / 2)) - 1;
+      out.push({ id, part: 'fuselage', side: 'top', xa: -halfWidth, xb: halfWidth, sa, sb, depth: 0, halfWidth, floorY });
+    };
     bay('bay_front', ['esc', 'battery']);
     bay('bay_mid', ['rx', 'servo_elev', 'servo_rudder']);
   }

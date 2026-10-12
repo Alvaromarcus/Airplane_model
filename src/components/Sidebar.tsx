@@ -2,9 +2,8 @@ import { useState, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AircraftDimensions, AircraftMetrics, AircraftType, AirfoilType, ControlSurfaces, FuselageType, PropellerType } from '../utils/calculations';
 import { TRACTOR_PROPS, PUSHER_PROPS, propNote, type PropSpec } from '../utils/electricSystem';
-import { Plane, Fan, Wind, SlidersHorizontal, Box, Wand2, Loader2 } from 'lucide-react';
+import { Plane, Fan, Wind, SlidersHorizontal, Box } from 'lucide-react';
 import Section from './ui/Section';
-import type { AutoNoseResult } from '../utils/pod';
 
 interface SidebarProps {
   dimensions: AircraftDimensions;
@@ -27,10 +26,6 @@ interface SidebarProps {
   powerSection?: ReactNode;
   /** Section rendered last (assembly & wing mount). */
   assemblySection?: ReactNode;
-  /** Flying wing: compute the nose pod length (least ballast). */
-  onAutoNose?: () => void;
-  autoNose?: AutoNoseResult | null;
-  autoNoseBusy?: boolean;
 }
 
 // Map PropellerType keys to prop specs for the selector
@@ -131,7 +126,6 @@ export default function Sidebar({
   fuselageStyle, onFuselageStyleChange,
   propeller, onPropellerChange,
   propCutout, onPropCutoutChange, teCutNeedsElevonStart, powerSection, assemblySection,
-  onAutoNose, autoNose, autoNoseBusy,
 }: SidebarProps) {
   const { t } = useTranslation();
 
@@ -385,43 +379,9 @@ export default function Sidebar({
         )}
 
         {aircraftType === 'flying_wing' && (
-          <Section title={t('pod_title')} icon={<Box size={16} />}>
-            <label className="flex items-start gap-2 mb-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
-              <input
-                type="checkbox"
-                className="mt-0.5 accent-sky-600"
-                checked={dimensions.fwNose > 0}
-                onChange={e => {
-                  // Show the pod right away with a provisional length; the automatic length follows
-                  if (e.target.checked) { onChange('fwNose', Math.round(dimensions.rootChord * 0.4 * 10) / 10); onAutoNose?.(); } else onChange('fwNose', 0);
-                }}
-              />
-              <span>{t('pod_enable')}</span>
-            </label>
-            <p className="mb-3 text-[11px] leading-snug text-slate-500 dark:text-slate-400">{t('pod_hint')}</p>
-            {dimensions.fwNose > 0 && (
-              <>
-                {renderInput('pod_length', 'fwNose')}
-                <button
-                  type="button"
-                  onClick={onAutoNose}
-                  disabled={autoNoseBusy}
-                  className="-mt-1 mb-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 dark:hover:bg-sky-900/40 disabled:opacity-60"
-                >
-                  {autoNoseBusy ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} {t('pod_auto')}
-                </button>
-                {autoNose && (
-                  <p className={`mb-1 text-[11px] leading-snug ${autoNose.ballast === 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>
-                    {autoNose.ballast === 0
-                      ? t('pod_auto_ok', { len: autoNose.nose, unit })
-                      : t(autoNose.ballastAt === 'tail' ? 'pod_auto_tail' : 'pod_auto_nose', { len: autoNose.nose, unit, g: autoNose.ballast })}
-                    {autoNose.ballastWithout === 0 && autoNose.ballast > 0 && <> {t('pod_auto_not_needed')}</>}
-                    {autoNose.ballastWithout > 0 && <> {t('pod_auto_without', { g: autoNose.ballastWithout })}</>}
-                  </p>
-                )}
-              </>
-            )}
-          </Section>
+          <div className="m-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300">
+            {t('flying_wing_fuselage_note')}
+          </div>
         )}
 
         {assemblySection}
