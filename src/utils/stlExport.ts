@@ -244,10 +244,6 @@ function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, t: (k: 
     lines.push(r('tail_1', { cl: (s.clearance * 0.8).toFixed(2) }), r('tail_2'), r('tail_3'), r('tail_4'),
       tf.finTab > 0 ? r('tail_5', { mm: Math.round(tf.finTab) }) : r('tail_5_flat'));
   }
-  if (plan.podFit) {
-    head('pod');
-    lines.push(r('pod_1'), r('pod_2', { cl: (s.clearance * 0.8).toFixed(2) }), r('pod_3'), r('pod_4'));
-  }
   if (plan.pins) {
     const p = plan.pins;
     head('pins');

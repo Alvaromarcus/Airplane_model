@@ -124,7 +124,6 @@ export const AIRCRAFT_PRESETS: AircraftPreset[] = [
       wingToTailDistance: 32,
       fuselageWidth: 7,
       fuselageHeight: 8,
-      fwNose: 0,
     },
   },
   {
@@ -147,7 +146,6 @@ export const AIRCRAFT_PRESETS: AircraftPreset[] = [
       wingToTailDistance: 0,
       fuselageWidth: 0,
       fuselageHeight: 0,
-      fwNose: 0,
     },
   },
 ];
@@ -171,9 +169,6 @@ export interface AircraftDimensions {
 
   fuselageWidth: number;   // max cross-section width
   fuselageHeight: number;  // max cross-section height
-
-  /** Flying wing: central nose pod length ahead of the root leading edge (0 = no pod). */
-  fwNose: number;
 }
 
 /** Keys of AircraftDimensions that are lengths (converted on cm/mm toggle). */
@@ -181,7 +176,7 @@ export const LENGTH_KEYS: (keyof AircraftDimensions)[] = [
   'wingspan', 'rootChord', 'tipChord', 'sweepOffset',
   'hStabSpan', 'hStabChord', 'vStabSpan', 'vStabChord',
   'fuselageLength', 'noseLength', 'wingToTailDistance',
-  'fuselageWidth', 'fuselageHeight', 'fwNose',
+  'fuselageWidth', 'fuselageHeight',
 ];
 
 /** Converts a preset/default (always authored in cm) to the given unit. */

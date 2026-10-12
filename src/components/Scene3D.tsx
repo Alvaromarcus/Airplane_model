@@ -42,7 +42,7 @@ function explodeOffsets(L: Layout, e: number) {
     switch (s.kind) {
       case 'wing': case 'winglet': return [sg * (gap + i * secGap), lift, 0];
       case 'aileron': return [sg * (gap + i * secGap), lift, -secGap];
-      case 'fuselage': return [0, s.name.includes('_upper') ? secGap * 2.5 : s.name.includes('_lower') ? -secGap * 1.5 : 0, -i * secGap * 1.5];
+      case 'fuselage': return [0, s.name.includes('tail_upper') ? secGap * 2.5 : s.name.includes('tail_lower') ? -secGap * 1.5 : 0, -i * secGap * 1.5];
       case 'hstab': return [sg * i * secGap, 0, 0];
       case 'elevator': return [sg * i * secGap, 0, -secGap];
       case 'fin': return [0, i * secGap + (L.isFW ? 0 : secGap * 4), 0];

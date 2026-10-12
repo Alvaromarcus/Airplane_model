@@ -73,9 +73,6 @@ export default function AssemblySection({ balance, settings, onChange, onShow3D 
               : t('asm_tail_desc_flat')}
           </Row>
         )}
-        {balance.podFit && (
-          <Row color={ASSEMBLY_COLORS.tail} title={t('asm_pod')}>{t('asm_pod_desc')}</Row>
-        )}
         {balance.pins && (
           <Row color={ASSEMBLY_COLORS.pin} title={t('asm_pins')}>
             {t('asm_pins_desc', { n: balance.pins.joints.length * 2, d: balance.pins.d, len: balance.pins.length, j: balance.pins.joints.length })}
