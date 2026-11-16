@@ -68,8 +68,6 @@ export default function StlPartPicker({ oriented, excluded, onChange, kindLabel 
     return GROUP_ORDER.filter(k => m.has(k)).map(k => ({ key: k, names: m.get(k)! }));
   }, [oriented]);
 
-  const total = oriented.length;
-  const selected = oriented.filter(o => !excluded.has(o.section.name)).length;
   const toggle = (name: string) => {
     const next = new Set(excluded);
     if (next.has(name)) next.delete(name); else next.add(name);
@@ -81,19 +79,16 @@ export default function StlPartPicker({ oriented, excluded, onChange, kindLabel 
     onChange(next);
   };
   const groupLabel = (key: string) => (key === 'wing_R' ? t('stl_group_wing_r') : key === 'wing_L' ? t('stl_group_wing_l') : kindLabel(key));
-  const quick = 'px-2 py-0.5 rounded-md border border-slate-300 dark:border-slate-600 text-xs hover:bg-slate-50 dark:hover:bg-slate-700';
+  const link = 'underline-offset-2 hover:underline text-sky-700 dark:text-sky-300';
+
+  const chip = (state: 'on' | 'part' | 'off') => (state === 'on'
+    ? 'bg-sky-600 border-sky-600 text-white'
+    : state === 'part'
+      ? 'bg-sky-50 border-sky-400 text-sky-800 dark:bg-sky-900/30 dark:border-sky-600 dark:text-sky-200'
+      : 'bg-transparent border-slate-300 text-slate-500 dark:border-slate-600 dark:text-slate-400');
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('stl_pick')}</span>
-        <span className="flex gap-1">
-          <button type="button" className={quick} onClick={() => onChange(new Set())}>{t('stl_pick_all')}</button>
-          <button type="button" className={quick} onClick={() => onChange(new Set(oriented.map(o => o.section.name)))}>{t('stl_pick_none')}</button>
-        </span>
-      </div>
-      <p className="text-xs text-slate-500 dark:text-slate-400 leading-snug mb-2">{t('stl_pick_hint')}</p>
-
       <svg viewBox={view.box} className="w-full max-h-64 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700" role="img" aria-label={t('stl_pick')}>
         {view.shapes.map(sh => {
           const on = !excluded.has(sh.name);
@@ -115,23 +110,40 @@ export default function StlPartPicker({ oriented, excluded, onChange, kindLabel 
           );
         })}
       </svg>
+      <div className="flex items-center justify-between mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+        <span>{t('stl_pick_hint')}</span>
+        <span className="flex gap-2 shrink-0">
+          <button type="button" className={link} onClick={() => onChange(new Set())}>{t('stl_pick_all')}</button>
+          <button type="button" className={link} onClick={() => onChange(new Set(oriented.map(o => o.section.name)))}>{t('stl_pick_none')}</button>
+        </span>
+      </div>
 
-      <div className="mt-2 space-y-1.5">
+      {/* One chip per group: click to take the whole group in or out */}
+      <div className="flex flex-wrap gap-1.5 mt-2">
         {groups.map(g => {
           const on = g.names.filter(n => !excluded.has(n)).length;
+          const state = on === g.names.length ? 'on' : on > 0 ? 'part' : 'off';
           return (
-            <div key={g.key} className="flex flex-wrap items-center gap-1.5">
-              <label className="flex items-center gap-1.5 w-40 shrink-0 text-xs font-medium cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={on === g.names.length}
-                  ref={el => { if (el) el.indeterminate = on > 0 && on < g.names.length; }}
-                  onChange={e => setGroup(g.names, e.target.checked)}
-                  className="accent-sky-600"
-                />
-                <span>{groupLabel(g.key)}</span>
-                <span className="text-slate-400">{on}/{g.names.length}</span>
-              </label>
+            <button
+              key={g.key}
+              type="button"
+              role="checkbox"
+              aria-checked={state === 'on' ? true : state === 'part' ? 'mixed' : false}
+              onClick={() => setGroup(g.names, state !== 'on')}
+              className={`px-2 py-0.5 rounded-full border text-xs font-medium transition-colors ${chip(state)}`}
+            >
+              {groupLabel(g.key)}{state === 'part' ? ` ${on}/${g.names.length}` : ''}
+            </button>
+          );
+        })}
+      </div>
+
+      <details className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+        <summary className="cursor-pointer font-semibold">{t('stl_pick_each')}</summary>
+        <div className="mt-2 space-y-1.5">
+          {groups.map(g => (
+            <div key={g.key} className="flex flex-wrap items-center gap-1">
+              <span className="w-28 shrink-0 text-slate-500 dark:text-slate-400">{groupLabel(g.key)}</span>
               {g.names.map(n => {
                 const sel = !excluded.has(n);
                 return (
@@ -154,10 +166,9 @@ export default function StlPartPicker({ oriented, excluded, onChange, kindLabel 
                 );
               })}
             </div>
-          );
-        })}
-      </div>
-      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{t('stl_pick_count', { n: selected, total })}</p>
+          ))}
+        </div>
+      </details>
     </div>
   );
 }

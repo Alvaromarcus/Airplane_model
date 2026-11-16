@@ -152,6 +152,10 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
       className="w-full px-2 py-1.5 border border-slate-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
     />
   );
+  const field = 'px-2 py-1.5 border border-slate-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white';
+  const hint = 'mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-snug';
+  const fold = 'py-2 text-slate-600 dark:text-slate-300';
+  const foldTitle = 'cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-200';
   const presetIdx = BED_PRESETS.findIndex(p => p.x === settings.bedX && p.y === settings.bedY && p.z === settings.bedZ);
 
   return (
@@ -163,11 +167,8 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
         </div>
 
         <div className="p-4 space-y-4 text-sm">
-          <p className="text-slate-600 dark:text-slate-300 leading-relaxed">{t('stl_intro')}</p>
-
           {/* What to export: real-size parts, the fit-test kit or a miniature */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">{t('stl_mode')}</label>
             <div role="radiogroup" aria-label={t('stl_mode')} className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-700/60">
               {MODES.map(({ mode: k, key }) => (
                 <button
@@ -184,166 +185,179 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
                 </button>
               ))}
             </div>
-            {kit && <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-snug">{t('stl_kit_hint')}</p>}
-            {mini && <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-snug">{t('stl_mini_hint')}</p>}
+            {kit && <p className={hint}>{t('stl_kit_hint')}</p>}
+            {mini && <p className={hint}>{t('stl_mini_hint')}</p>}
           </div>
 
           {/* Real size: which parts go into the ZIP */}
-          {mode === 'full' && result && (
-            <StlPartPicker oriented={result.oriented} excluded={excluded} onChange={setExcluded} kindLabel={k => t(KIND_KEYS[k] ?? k)} />
-          )}
+          {mode === 'full' && (result
+            ? <StlPartPicker oriented={result.oriented} excluded={excluded} onChange={setExcluded} kindLabel={k => t(KIND_KEYS[k] ?? k)} />
+            : <p className="text-slate-500">{t('stl_computing')}</p>)}
 
           {/* Miniature: size */}
           {mini && (
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1" htmlFor="stl-mini-span">{t('stl_mini_span')}</label>
-              <div className="flex items-center gap-2">
-                <input
-                  id="stl-mini-span"
-                  type="number"
-                  min={40}
-                  max={miniMax ?? undefined}
-                  step={5}
-                  value={miniSpanEff ?? ''}
-                  onChange={e => {
-                    const v = parseFloat(e.target.value);
-                    if (Number.isFinite(v) && v >= 40) setMiniSpan(Math.round(v));
-                  }}
-                  className="w-24 px-2 py-1.5 border border-slate-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                />
-                {miniSpanEff && miniMax && (
-                  <span className="text-xs text-slate-500 dark:text-slate-400 leading-snug">{t('stl_mini_scale', { ratio: (fullSpan / miniSpanEff).toLocaleString(i18n.language, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), max: miniMax })}</span>
-                )}
-              </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm" htmlFor="stl-mini-span">{t('stl_mini_span')}</label>
+              <input
+                id="stl-mini-span"
+                type="number"
+                min={40}
+                max={miniMax ?? undefined}
+                step={5}
+                value={miniSpanEff ?? ''}
+                onChange={e => {
+                  const v = parseFloat(e.target.value);
+                  if (Number.isFinite(v) && v >= 40) setMiniSpan(Math.round(v));
+                }}
+                className={`w-24 ${field}`}
+              />
+              {miniSpanEff && miniMax && (
+                <span className="text-xs text-slate-500 dark:text-slate-400">{t('stl_mini_scale', { ratio: (fullSpan / miniSpanEff).toLocaleString(i18n.language, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), max: miniMax })}</span>
+              )}
             </div>
           )}
 
-          {/* Bed */}
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">{t('stl_bed')}</label>
+          {/* Printer */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm shrink-0" htmlFor="stl-bed">{t('stl_bed')}</label>
             <select
+              id="stl-bed"
               value={presetIdx}
               onChange={e => {
                 const p = BED_PRESETS[Number(e.target.value)];
                 if (p) onSettingsChange({ ...settings, bedX: p.x, bedY: p.y, bedZ: p.z });
               }}
-              className="w-full mb-2 px-2 py-1.5 border border-slate-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800"
+              className={`w-full min-w-0 ${field}`}
             >
-              {presetIdx < 0 && <option value={-1}>{t('stl_bed_custom')}</option>}
+              {presetIdx < 0 && <option value={-1}>{t('stl_bed_custom')} — {settings.bedX}×{settings.bedY}×{settings.bedZ}</option>}
               {BED_PRESETS.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}
             </select>
-            <div className="grid grid-cols-3 gap-2 items-center">
-              <div><span className="text-xs text-slate-500">X (mm)</span>{num('bedX')}</div>
-              <div><span className="text-xs text-slate-500">Y (mm)</span>{num('bedY')}</div>
-              <div><span className="text-xs text-slate-500">Z (mm)</span>{num('bedZ')}</div>
-            </div>
           </div>
 
-          {/* Fit clearance: tune it after printing the test kit */}
-          {!mini && <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1" htmlFor="stl-clearance">{t('stl_clearance')}</label>
-            <div className="flex items-center gap-2">
-              <input
-                id="stl-clearance"
-                type="number"
-                min={0.1}
-                max={0.8}
-                step={0.05}
-                value={settings.clearance}
-                onChange={e => {
-                  const v = parseFloat(e.target.value);
-                  if (Number.isFinite(v) && v >= 0.1 && v <= 0.8) onSettingsChange({ ...settings, clearance: Math.round(v * 100) / 100 });
-                }}
-                className="w-24 px-2 py-1.5 border border-slate-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-              />
-              <span className="text-xs text-slate-500 dark:text-slate-400 leading-snug">{t('stl_clearance_hint', { seat: (settings.clearance * 0.8).toFixed(2) })}</span>
-            </div>
-          </div>}
-
-          {/* Summary */}
-          {!mini && <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
-            {!result ? (
-              <p className="text-slate-500">{t('stl_computing')}</p>
-            ) : (
-              <>
-                <div className="flex items-baseline justify-between mb-2">
-                  <span className="font-semibold">{t('stl_parts_total', { count: chosen.length })}</span>
-                  <span className="text-xs text-slate-500">{t('stl_tallest', { h: Math.round(tallest) })}</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  {Object.entries(byKind).map(([k, n]) => (
-                    <span key={k} className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-xs">{t(KIND_KEYS[k] ?? k)}: {n}</span>
-                  ))}
-                </div>
-                {pockets.length > 0 && (
-                  <>
-                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">{t('stl_cutouts')}</div>
-                    <div className="flex flex-wrap gap-1.5 mb-3">
-                      {pockets.map(p => (
-                        <span key={p.id} className="px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-900/30 text-violet-800 dark:text-violet-300 text-xs">{t('cut_' + p.id)}</span>
-                      ))}
-                    </div>
-                  </>
-                )}
-                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">{t('stl_spars')}</div>
-                {result.plan.spars.length === 0 ? (
-                  <p className="text-xs text-slate-500">—</p>
-                ) : (
-                  <ul className="text-xs space-y-0.5">
-                    {result.plan.spars.map(sp => (
-                      <li key={sp.id}>{t(sp.part)}: <b>{sp.count} × Ø{sp.diameter} mm × {sp.length} mm</b></li>
-                    ))}
-                  </ul>
-                )}
-                {balance?.assembly.bands && balance.assembly.sleeve && (
-                  <>
-                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 mt-3">{t('stl_hardware')}</div>
-                    <ul className="text-xs space-y-0.5">
-                      <li>{t('asm_dowels')}: <b>2 × Ø{balance.assembly.dowels[0].d} mm × {Math.round(balance.assembly.dowels[0].len)} mm</b> ({t('stl_drill', { d: balance.assembly.sleeve.od.toFixed(1) })})</li>
-                      <li>{t('asm_bands')}: <b>{balance.assembly.bands.count} × ~{balance.assembly.bands.flatLen} mm</b></li>
-                    </ul>
-                  </>
-                )}
-              </>
-            )}
-          </div>}
-
-          {!mini && result && (result.plan.warnings.length > 0 || notFit.length > 0) && (
-            <div className="space-y-2">
-              {result.plan.warnings.map(w => (
-                <div key={w.key} className="flex gap-2 p-2 rounded-md bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-xs">
-                  <Info size={14} className="shrink-0 mt-0.5" /> {t(w.key, w.params)}
-                </div>
-              ))}
-              {notFit.length > 0 && (
-                <div className="flex gap-2 p-2 rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 text-xs">
-                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-                  {t('stl_not_fit', { parts: notFit.map(o => o.section.name).join(', ') })}
-                </div>
-              )}
+          {result && !mini && notFit.length > 0 && (
+            <div className="flex gap-2 p-2 rounded-md bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 text-xs">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              {t('stl_not_fit', { parts: notFit.map(o => o.section.name).join(', ') })}
             </div>
           )}
 
-          {!mini && <details className="text-xs text-slate-600 dark:text-slate-300">
-            <summary className="cursor-pointer font-semibold">{t('stl_how_title')}</summary>
-            <ul className="list-disc pl-5 mt-2 space-y-1">
-              <li>{t('stl_how_1')}</li>
-              <li>{t('stl_how_2')}</li>
-              <li>{t('stl_how_3')}</li>
-              <li>{t('stl_how_4')}</li>
-            </ul>
-          </details>}
+          {/* Everything else stays folded away */}
+          <div className="divide-y divide-slate-200 dark:divide-slate-700 border-y border-slate-200 dark:border-slate-700">
+            <details className={fold}>
+              <summary className={foldTitle}>{t('stl_advanced')}</summary>
+              <div className="mt-2 space-y-3">
+                <div className="grid grid-cols-3 gap-2 items-center">
+                  <div><span className="text-xs text-slate-500">X (mm)</span>{num('bedX')}</div>
+                  <div><span className="text-xs text-slate-500">Y (mm)</span>{num('bedY')}</div>
+                  <div><span className="text-xs text-slate-500">Z (mm)</span>{num('bedZ')}</div>
+                </div>
+                {!mini && (
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-0.5" htmlFor="stl-clearance">{t('stl_clearance')}</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="stl-clearance"
+                        type="number"
+                        min={0.1}
+                        max={0.8}
+                        step={0.05}
+                        value={settings.clearance}
+                        onChange={e => {
+                          const v = parseFloat(e.target.value);
+                          if (Number.isFinite(v) && v >= 0.1 && v <= 0.8) onSettingsChange({ ...settings, clearance: Math.round(v * 100) / 100 });
+                        }}
+                        className={`w-24 ${field}`}
+                      />
+                      <span className="text-xs text-slate-500 dark:text-slate-400 leading-snug">{t('stl_clearance_hint', { seat: (settings.clearance * 0.8).toFixed(2) })}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </details>
+
+            {!mini && result && (
+              <details className={fold}>
+                <summary className={foldTitle}>{t('stl_details')}</summary>
+                <div className="mt-2">
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {Object.entries(byKind).map(([k, n]) => (
+                      <span key={k} className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-xs">{t(KIND_KEYS[k] ?? k)}: {n}</span>
+                    ))}
+                  </div>
+                  {pockets.length > 0 && (
+                    <>
+                      <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">{t('stl_cutouts')}</div>
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {pockets.map(p => (
+                          <span key={p.id} className="px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-900/30 text-violet-800 dark:text-violet-300 text-xs">{t('cut_' + p.id)}</span>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">{t('stl_spars')}</div>
+                  {result.plan.spars.length === 0 ? (
+                    <p className="text-xs text-slate-500">—</p>
+                  ) : (
+                    <ul className="text-xs space-y-0.5">
+                      {result.plan.spars.map(sp => (
+                        <li key={sp.id}>{t(sp.part)}: <b>{sp.count} × Ø{sp.diameter} mm × {sp.length} mm</b></li>
+                      ))}
+                    </ul>
+                  )}
+                  {balance?.assembly.bands && balance.assembly.sleeve && (
+                    <>
+                      <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 mt-3">{t('stl_hardware')}</div>
+                      <ul className="text-xs space-y-0.5">
+                        <li>{t('asm_dowels')}: <b>2 × Ø{balance.assembly.dowels[0].d} mm × {Math.round(balance.assembly.dowels[0].len)} mm</b> ({t('stl_drill', { d: balance.assembly.sleeve.od.toFixed(1) })})</li>
+                        <li>{t('asm_bands')}: <b>{balance.assembly.bands.count} × ~{balance.assembly.bands.flatLen} mm</b></li>
+                      </ul>
+                    </>
+                  )}
+                  {result.plan.warnings.length > 0 && (
+                    <ul className="mt-3 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                      {result.plan.warnings.map(w => (
+                        <li key={w.key} className="flex gap-1.5"><Info size={13} className="shrink-0 mt-0.5 text-blue-500" /> {t(w.key, w.params)}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </details>
+            )}
+
+            {!mini && (
+              <details className={fold}>
+                <summary className={foldTitle}>{t('stl_how_title')}</summary>
+                <p className="mt-2 text-xs leading-relaxed">{t('stl_intro')}</p>
+                <ul className="list-disc pl-5 mt-2 space-y-1 text-xs">
+                  <li>{t('stl_how_1')}</li>
+                  <li>{t('stl_how_2')}</li>
+                  <li>{t('stl_how_3')}</li>
+                  <li>{t('stl_how_4')}</li>
+                </ul>
+              </details>
+            )}
+          </div>
         </div>
 
-        <div className="flex justify-end gap-2 p-4 border-t border-slate-200 dark:border-slate-700">
-          <button onClick={onClose} className="px-3 py-1.5 rounded-md text-sm border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">{t('close')}</button>
-          <button
-            onClick={download}
-            disabled={busy || !result || (mini ? !miniSpanEff : chosen.length === 0)}
-            className="px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white flex items-center gap-1.5"
-          >
-            <Download size={16} /> {busy ? t('stl_generating') : t('stl_download')}
-          </button>
+        <div className="flex items-center justify-between gap-2 p-4 border-t border-slate-200 dark:border-slate-700">
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            {!mini && result && (
+              <>
+                {kit ? t('stl_parts_total', { count: chosen.length }) : t('stl_pick_count', { n: chosen.length, total: result.oriented.length })}
+                {chosen.length > 0 && <> · {t('stl_tallest', { h: Math.round(tallest) })}</>}
+              </>
+            )}
+          </span>
+          <span className="flex gap-2 shrink-0">
+            <button onClick={onClose} className="px-3 py-1.5 rounded-md text-sm border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">{t('close')}</button>
+            <button
+              onClick={download}
+              disabled={busy || !result || (mini ? !miniSpanEff : chosen.length === 0)}
+              className="px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white flex items-center gap-1.5"
+            >
+              <Download size={16} /> {busy ? t('stl_generating') : t('stl_download_short')}
+            </button>
+          </span>
         </div>
       </div>
     </div>
