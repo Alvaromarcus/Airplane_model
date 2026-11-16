@@ -563,6 +563,12 @@ const fr: Dict = {
   "stl_details": "Matériel et détails",
   "stl_pick_each": "Choisir pièce par pièce",
   "stl_download_short": "Télécharger le ZIP",
+  "spar_center": "Jonc central unique (traverse l'emplanture)",
+  "stl_info_center_cross": "Les longerons en flèche commencent à {{mm}} mm de l'axe, après avoir croisé le jonc central ; au centre, c'est le jonc unique qui travaille.",
+  "stl_info_center_bay": "Le jonc central traverse un compartiment de l'électronique au centre de l'aile : le composant se loge dessous.",
+  "stl_warn_no_center": "Pas de place pour un jonc central droit à travers l'emplanture (profil mince ou dièdre élevé) : les demi-ailes ne sont tenues que par la plaque de jonction.",
+  "rd_center": "  Jonc central : UNE seule pièce, droite et horizontale, traversant l'emplanture à {{s}} mm du bord d'attaque ; il entre de {{half}} mm dans chaque demi-aile. Il ne suit ni le dièdre ni la flèche : c'est le canal qui se déplace dans l'aile.",
+  "rd_center_glue": "  Montage : mettez de la colle dans le canal, enfoncez le jonc à mi-longueur dans une demi-aile puis emboîtez l'autre ; collez ensuite seulement les faces d'emplanture. Carbone ou fibre de verre conviennent.",
 };
 
 export default fr;

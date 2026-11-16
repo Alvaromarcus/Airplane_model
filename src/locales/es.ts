@@ -563,6 +563,12 @@ const es: Dict = {
   "stl_details": "Materiales y detalles",
   "stl_pick_each": "Elegir pieza por pieza",
   "stl_download_short": "Descargar ZIP",
+  "spar_center": "Varilla central única (atraviesa la raíz)",
+  "stl_info_center_cross": "Los largueros en flecha empiezan a {{mm}} mm del eje, después de cruzar la varilla central; en el centro trabaja la varilla única.",
+  "stl_info_center_bay": "La varilla central atraviesa un compartimento de la electrónica en el centro del ala: el componente queda debajo de ella.",
+  "stl_warn_no_center": "No hay espacio para una varilla central recta que atraviese la raíz (perfil fino o diedro alto): la unión de las semialas queda solo con la placa de unión.",
+  "rd_center": "  Varilla central: UNA sola pieza, recta y nivelada, que atraviesa la raíz a {{s}} mm del borde de ataque; entra {{half}} mm en cada semiala. No sigue el diedro ni la flecha: es el canal el que cambia de posición dentro del ala.",
+  "rd_center_glue": "  Montaje: pon pegamento en el canal, mete la varilla hasta la mitad en una semiala y luego encaja la otra; solo entonces pega las caras de la raíz. Sirve carbono o fibra de vidrio.",
 };
 
 export default es;
