@@ -9,6 +9,7 @@ import type { AirfoilType } from './calculations';
 import type { Layout } from './geometry';
 import { buildPrintPlan, type PrintPlan, type PrintSection, type PrintSettings, type Pocket } from './printParts';
 import { buildExtraParts } from './printables';
+import { buildMiniature, MINI_MIN_WALL } from './miniature';
 import type { BalanceResult } from './components';
 
 export interface OrientedSection {
@@ -41,13 +42,16 @@ export function orientForPrint(sec: PrintSection, s: PrintSettings): OrientedSec
   if (faceSpan(p => p > pMax - tol) > faceSpan(p => p < pMin + tol) * 1.05) axis = axis.negate();
 
   g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(axis, new THREE.Vector3(0, 0, 1)));
+  const { size, fits } = fitOnBed(g, s);
+  return { section: sec, geometry: g, size, fits };
+}
 
-  // Rotate about Z to fit the bed (try 0–178°, keep the smallest footprint that fits)
+/** Footprint of a Z-up geometry for every rotation about Z (2° steps). */
+function footprints(g: THREE.BufferGeometry): { ang: number; w: number; h: number }[] {
   const p2 = g.attributes.position as THREE.BufferAttribute;
   const xs: number[] = [], ys: number[] = [];
   for (let i = 0; i < p2.count; i++) { xs.push(p2.getX(i)); ys.push(p2.getY(i)); }
-  const W = s.bedX - 2 * MARGIN, H = s.bedY - 2 * MARGIN;
-  let best = { ang: 0, w: Infinity, h: Infinity, fits: false, score: Infinity };
+  const out: { ang: number; w: number; h: number }[] = [];
   for (let deg = 0; deg < 180; deg += 2) {
     const a = (deg * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -55,19 +59,48 @@ export function orientForPrint(sec: PrintSection, s: PrintSettings): OrientedSec
       const x = xs[i] * c - ys[i] * sn, y = xs[i] * sn + ys[i] * c;
       if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
-    const w = x1 - x0, h = y1 - y0;
+    out.push({ ang: a, w: x1 - x0, h: y1 - y0 });
+  }
+  return out;
+}
+
+/** Rotates a Z-up geometry about Z to fit the bed (smallest footprint that fits) and centres it, in place. */
+export function fitOnBed(g: THREE.BufferGeometry, s: PrintSettings): { size: [number, number, number]; fits: boolean } {
+  const W = s.bedX - 2 * MARGIN, H = s.bedY - 2 * MARGIN;
+  let best = { ang: 0, fits: false, score: Infinity };
+  footprints(g).forEach(({ ang, w, h }) => {
     const fits = w <= W && h <= H;
     // Prefer fitting; then the smallest area; prefer the long side along X
     const score = (fits ? 0 : 1e12) + w * h + (w < h ? 1 : 0);
-    if (score < best.score) best = { ang: a, w, h, fits, score };
-  }
+    if (score < best.score) best = { ang, fits, score };
+  });
   g.rotateZ(best.ang);
   g.computeBoundingBox();
   const bb = g.boundingBox!;
   g.translate(s.bedX / 2 - (bb.min.x + bb.max.x) / 2, s.bedY / 2 - (bb.min.y + bb.max.y) / 2, -bb.min.z);
   g.computeBoundingBox();
   const size = g.boundingBox!.getSize(new THREE.Vector3());
-  return { section: sec, geometry: g, size: [size.x, size.y, size.z], fits: best.fits && size.z <= s.bedZ };
+  return { size: [size.x, size.y, size.z], fits: best.fits && size.z <= s.bedZ };
+}
+
+/** Concatenates geometries into one non-indexed triangle soup. */
+function mergeGeometries(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  let total = 0;
+  geos.forEach(g => { total += g.getIndex() ? g.getIndex()!.count : g.attributes.position.count; });
+  const pos = new Float32Array(total * 3);
+  let o = 0;
+  geos.forEach(g => {
+    const p = g.attributes.position as THREE.BufferAttribute;
+    const idx = g.getIndex();
+    const n = idx ? idx.count : p.count;
+    for (let i = 0; i < n; i++) {
+      const v = idx ? idx.getX(i) : i;
+      pos[o++] = p.getX(v); pos[o++] = p.getY(v); pos[o++] = p.getZ(v);
+    }
+  });
+  const merged = new THREE.BufferGeometry();
+  merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return merged;
 }
 
 /** Binary STL (little endian), units = mm. */
@@ -130,8 +163,13 @@ export function exportSTLZip(
   t: (k: string, o?: Record<string, unknown>) => string,
   pockets: Pocket[] = [],
   balance: BalanceResult | null = null,
+  /** Names of the sections to include; omitted = every part. */
+  only?: ReadonlySet<string>,
 ): ExportResult {
-  const { plan, oriented } = planAndOrient(L, airfoil, settings, pockets, balance);
+  const { plan, oriented: all } = planAndOrient(L, airfoil, settings, pockets, balance);
+  const oriented = only ? all.filter(o => only.has(o.section.name)) : all;
+  // Geometries of the parts left out are not needed any more
+  if (only) all.forEach(o => { if (!only.has(o.section.name)) o.geometry.dispose(); });
   const pt = lang.startsWith('pt');
   const readmeName = ({ pt: 'LEIA-ME.txt', es: 'LEAME.txt', fr: 'LISEZMOI.txt' } as Record<string, string>)[lang.slice(0, 2)] ?? 'README.txt';
   const files: Record<string, Uint8Array> = {};
@@ -143,34 +181,19 @@ export function exportSTLZip(
 
   // Assembled model (for preview/checking in any STL viewer — not for printing)
   {
-    const geos = plan.sections.map(s => s.geometry);
-    let total = 0;
-    geos.forEach(g => { total += g.getIndex() ? g.getIndex()!.count : g.attributes.position.count; });
-    const pos = new Float32Array(total * 3);
-    let o = 0;
-    geos.forEach(g => {
-      const p = g.attributes.position as THREE.BufferAttribute;
-      const idx = g.getIndex();
-      const n = idx ? idx.count : p.count;
-      for (let i = 0; i < n; i++) {
-        const v = idx ? idx.getX(i) : i;
-        pos[o++] = p.getX(v); pos[o++] = p.getY(v); pos[o++] = p.getZ(v);
-      }
-    });
-    const merged = new THREE.BufferGeometry();
-    merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const merged = mergeGeometries(plan.sections.map(s => s.geometry));
     // Rotate so the model sits "upright" in Z-up viewers (Y-up → Z-up)
     merged.rotateX(Math.PI / 2);
     files[pt ? '00_montado_preview/aviao_montado.stl' : '00_assembled_preview/aircraft_assembled.stl'] = toBinarySTL(merged, 'assembled');
   }
 
   // UTF-8 BOM so Windows Notepad shows accents and Chinese correctly
-  files[readmeName] = strToU8('\uFEFF' + readme(plan, oriented, L, t, pockets, balance));
+  files[readmeName] = strToU8('\uFEFF' + readme(plan, oriented, all.length, L, t, pockets, balance));
   const zip = zipSync(files, { level: 6 });
   return { blob: new Blob([zip as BlobPart], { type: 'application/zip' }), plan, oriented };
 }
 
-function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, t: (k: string, o?: Record<string, unknown>) => string, pockets: Pocket[], balance: BalanceResult | null): string {
+function readme(plan: PrintPlan, oriented: OrientedSection[], total: number, L: Layout, t: (k: string, o?: Record<string, unknown>) => string, pockets: Pocket[], balance: BalanceResult | null): string {
   const s = plan.settings;
   const r = (k: string, o?: Record<string, unknown>) => t('rd_' + k, o);
   const lines: string[] = [];
@@ -179,6 +202,7 @@ function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, t: (k: 
   lines.push(bar, r('title'), bar, '');
   lines.push(r('bed', { x: s.bedX, y: s.bedY, z: s.bedZ }));
   lines.push(r('span_parts', { span: Math.round(L.wing.halfSpan * 2 * L.toCm * 10), n: oriented.length }));
+  if (oriented.length < total) lines.push(r('partial', { n: oriented.length, total }));
 
   if (s.kit) {
     head('kit');
@@ -287,4 +311,72 @@ function readme(plan: PrintPlan, oriented: OrientedSection[], L: Layout, t: (k: 
   }
   lines.push('', 'https://aerobuilder-calc.netlify.app');
   return lines.join('\r\n');
+}
+
+// ───────────────────────── Miniature ─────────────────────────
+
+/** Wingspan of the full-size model, mm. */
+export function fullSpanMm(L: Layout): number {
+  return L.wing.halfSpan * 2 * L.toCm * 10;
+}
+
+/** The whole aircraft as one upright (Z-up) solid model at the given scale, mm. */
+function miniUpright(L: Layout, airfoil: AirfoilType, scale: number): THREE.BufferGeometry {
+  const parts = buildMiniature(L, airfoil, scale);
+  const g = mergeGeometries(parts);
+  parts.forEach(p => p.dispose());
+  g.rotateX(Math.PI / 2); // Y-up → Z-up
+  g.scale(scale, scale, scale);
+  return g;
+}
+
+/** Largest miniature wingspan (mm) that fits the bed in one piece. */
+export function miniMaxSpan(L: Layout, airfoil: AirfoilType, s: PrintSettings): number {
+  const g = miniUpright(L, airfoil, 1);
+  g.computeBoundingBox();
+  const height = g.boundingBox!.max.z - g.boundingBox!.min.z;
+  const W = s.bedX - 2 * MARGIN, H = s.bedY - 2 * MARGIN;
+  let k = 0;
+  footprints(g).forEach(({ w, h }) => { k = Math.max(k, Math.min(W / w, H / h, s.bedZ / height)); });
+  g.dispose();
+  return Math.min(Math.floor(k * fullSpanMm(L)), Math.round(fullSpanMm(L)));
+}
+
+export interface MiniResult { blob: Blob; scale: number; size: [number, number, number]; fits: boolean }
+
+/** ZIP with the miniature (one STL, placed on the bed) and a short README. */
+export function exportMiniZip(
+  L: Layout,
+  airfoil: AirfoilType,
+  settings: PrintSettings,
+  lang: string,
+  t: (k: string, o?: Record<string, unknown>) => string,
+  spanMm: number,
+): MiniResult {
+  const scale = spanMm / fullSpanMm(L);
+  const g = miniUpright(L, airfoil, scale);
+  const { size, fits } = fitOnBed(g, settings);
+  const pt = lang.startsWith('pt');
+  const readmeName = ({ pt: 'LEIA-ME.txt', es: 'LEAME.txt', fr: 'LISEZMOI.txt' } as Record<string, string>)[lang.slice(0, 2)] ?? 'README.txt';
+  const r = (k: string, o?: Record<string, unknown>) => t('rd_' + k, o);
+  const bar = '='.repeat(64);
+  const loc = (v: number, digits: number) => v.toLocaleString(lang, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const ratio = loc(1 / scale, 1);
+  const lines = [
+    bar, r('mini_title'), bar, '',
+    r('mini_scale', { ratio, span: Math.round(spanMm), full: Math.round(fullSpanMm(L)) }),
+    r('mini_size', { x: size[0].toFixed(0), y: size[1].toFixed(0), z: size[2].toFixed(0) }),
+    r('bed', { x: settings.bedX, y: settings.bedY, z: settings.bedZ }),
+    '', r('mini_print'), '-'.repeat(40),
+    r('mini_1'), r('mini_2'), r('mini_3'), r('mini_4', { wall: loc(MINI_MIN_WALL, 1) }), r('mini_5'),
+    '', 'https://aerobuilder-calc.netlify.app',
+  ];
+  const name = `${pt ? 'miniatura' : 'miniature'}_${Math.round(spanMm)}mm`;
+  const files: Record<string, Uint8Array> = {
+    [`${name}.stl`]: toBinarySTL(g, name),
+    [readmeName]: strToU8('\uFEFF' + lines.join('\r\n')),
+  };
+  g.dispose();
+  const zip = zipSync(files, { level: 6 });
+  return { blob: new Blob([zip as BlobPart], { type: 'application/zip' }), scale, size, fits };
 }

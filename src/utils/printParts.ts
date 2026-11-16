@@ -376,7 +376,7 @@ function sectionOutline(
   return out;
 }
 
-function keyholeOutline(af: AirfoilSurface, x0: number, x1: number, chord: number, holes: Hole[], s: PrintSettings): V2[] {
+export function keyholeOutline(af: AirfoilSurface, x0: number, x1: number, chord: number, holes: Hole[], s: PrintSettings): V2[] {
   return sectionOutline(af, x0, x1, chord, holes, [], [], s);
 }
 

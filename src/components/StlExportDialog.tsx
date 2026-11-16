@@ -8,6 +8,14 @@ import type { PrintSettings, Pocket } from '../utils/printParts';
 import type { BalanceResult } from '../utils/components';
 import type { OrientedSection } from '../utils/stlExport';
 import type { PrintPlan } from '../utils/printParts';
+import StlPartPicker from './StlPartPicker';
+
+type Mode = 'full' | 'kit' | 'mini';
+const MODES: { mode: Mode; key: string }[] = [
+  { mode: 'full', key: 'stl_mode_full' },
+  { mode: 'kit', key: 'stl_mode_kit' },
+  { mode: 'mini', key: 'stl_mode_mini' },
+];
 
 interface Props {
   open: boolean;
@@ -38,9 +46,16 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
   const { t, i18n } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ plan: PrintPlan; oriented: OrientedSection[] } | null>(null);
-  // Fit-test kit is a one-off choice in this dialog (not saved with the project)
-  const [kit, setKit] = useState(false);
+  // What to export is a one-off choice in this dialog (not saved with the project)
+  const [mode, setMode] = useState<Mode>('full');
+  const kit = mode === 'kit';
+  const mini = mode === 'mini';
   const eff = useMemo(() => ({ ...settings, kit }), [settings, kit]);
+  // Real size: parts left out of the ZIP (empty = whole aircraft)
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  // Miniature: wingspan asked for (null = the largest that fits the bed) and that maximum
+  const [miniSpan, setMiniSpan] = useState<number | null>(null);
+  const [miniMax, setMiniMax] = useState<number | null>(null);
 
   // Compute the plan (lazy-loaded exporter) whenever the dialog is open and inputs change
   useEffect(() => {
@@ -50,6 +65,7 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
       if (cancelled) return;
       const r = m.planAndOrient(layout, airfoil, eff, pockets, balance);
       setResult(r);
+      setMiniMax(m.miniMaxSpan(layout, airfoil, eff));
     });
     return () => { cancelled = true; };
   }, [open, layout, airfoil, eff, pockets, balance]);
@@ -67,13 +83,21 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  // Parts that go into the ZIP: the picked ones at real size, everything in the kit
+  const chosen = useMemo(
+    () => (result ? (kit ? result.oriented : result.oriented.filter(o => !excluded.has(o.section.name))) : []),
+    [result, kit, excluded],
+  );
   const byKind = useMemo(() => {
     const m: Record<string, number> = {};
-    result?.oriented.forEach(o => { m[o.section.kind] = (m[o.section.kind] ?? 0) + 1; });
+    chosen.forEach(o => { m[o.section.kind] = (m[o.section.kind] ?? 0) + 1; });
     return m;
-  }, [result]);
-  const notFit = result?.oriented.filter(o => !o.fits) ?? [];
-  const tallest = result ? Math.max(...result.oriented.map(o => o.size[2])) : 0;
+  }, [chosen]);
+  const notFit = chosen.filter(o => !o.fits);
+  const tallest = chosen.length ? Math.max(...chosen.map(o => o.size[2])) : 0;
+  const partial = !kit && !!result && chosen.length < result.oriented.length;
+  const fullSpan = layout.wing.halfSpan * 2 * layout.toCm * 10;
+  const miniSpanEff = miniMax ? Math.min(miniSpan ?? miniMax, miniMax) : null;
 
   if (!open) return null;
 
@@ -81,19 +105,34 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
     setBusy(true);
     try {
       const m = await import('../utils/stlExport');
-      const r = m.exportSTLZip(layout, airfoil, eff, i18n.language, (k, o) => t(k, o), pockets, balance);
-      const url = URL.createObjectURL(r.blob);
+      const pt = i18n.language.startsWith('pt');
+      const type = layout.isFW ? (pt ? 'asa-voadora' : 'flying-wing') : (pt ? 'convencional' : 'conventional');
+      const aircraft_type = layout.isFW ? 'flying_wing' : 'conventional';
+      let blob: Blob;
+      let suffix: string;
+      if (mini) {
+        if (!miniSpanEff) return;
+        const r = m.exportMiniZip(layout, airfoil, eff, i18n.language, (k, o) => t(k, o), miniSpanEff);
+        blob = r.blob;
+        suffix = pt ? 'miniatura' : 'miniature';
+        track('export_stl', { aircraft_type, parts: 1, kit: false, mini: true });
+      } else {
+        const only = partial ? new Set(chosen.map(o => o.section.name)) : undefined;
+        const r = m.exportSTLZip(layout, airfoil, eff, i18n.language, (k, o) => t(k, o), pockets, balance, only);
+        blob = r.blob;
+        suffix = kit ? (pt ? 'kit-teste' : 'fit-test-kit') : partial ? (pt ? 'stl-parcial' : 'stl-partial') : 'stl';
+        track('export_stl', { aircraft_type, parts: r.oriented.length, kit, mini: false });
+        r.oriented.forEach(o => o.geometry.dispose());
+        r.plan.sections.forEach(s => s.geometry.dispose());
+      }
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const pt = i18n.language.startsWith('pt');
-      a.download = `aerobuilder-${layout.isFW ? (pt ? 'asa-voadora' : 'flying-wing') : (pt ? 'convencional' : 'conventional')}-${kit ? (pt ? 'kit-teste' : 'fit-test-kit') : 'stl'}.zip`;
-      track('export_stl', { aircraft_type: layout.isFW ? 'flying_wing' : 'conventional', parts: r.oriented.length, kit });
+      a.download = `aerobuilder-${type}-${suffix}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      r.oriented.forEach(o => o.geometry.dispose());
-      r.plan.sections.forEach(s => s.geometry.dispose());
     } catch (e) {
       console.error('STL export failed', e);
     }
@@ -126,27 +165,58 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
         <div className="p-4 space-y-4 text-sm">
           <p className="text-slate-600 dark:text-slate-300 leading-relaxed">{t('stl_intro')}</p>
 
-          {/* What to export: the whole aircraft or the fit-test kit */}
+          {/* What to export: real-size parts, the fit-test kit or a miniature */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">{t('stl_mode')}</label>
-            <div role="radiogroup" aria-label={t('stl_mode')} className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-700/60">
-              {([false, true] as const).map(k => (
+            <div role="radiogroup" aria-label={t('stl_mode')} className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-700/60">
+              {MODES.map(({ mode: k, key }) => (
                 <button
-                  key={String(k)}
+                  key={k}
                   type="button"
                   role="radio"
-                  aria-checked={kit === k}
-                  onClick={() => setKit(k)}
-                  className={`py-1.5 rounded-md text-sm font-medium transition-colors ${kit === k
+                  aria-checked={mode === k}
+                  onClick={() => setMode(k)}
+                  className={`py-1.5 rounded-md text-sm font-medium transition-colors ${mode === k
                     ? 'bg-white dark:bg-slate-600 text-sky-700 dark:text-white shadow-sm'
                     : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}
                 >
-                  {t(k ? 'stl_mode_kit' : 'stl_mode_full')}
+                  {t(key)}
                 </button>
               ))}
             </div>
             {kit && <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-snug">{t('stl_kit_hint')}</p>}
+            {mini && <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-snug">{t('stl_mini_hint')}</p>}
           </div>
+
+          {/* Real size: which parts go into the ZIP */}
+          {mode === 'full' && result && (
+            <StlPartPicker oriented={result.oriented} excluded={excluded} onChange={setExcluded} kindLabel={k => t(KIND_KEYS[k] ?? k)} />
+          )}
+
+          {/* Miniature: size */}
+          {mini && (
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1" htmlFor="stl-mini-span">{t('stl_mini_span')}</label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="stl-mini-span"
+                  type="number"
+                  min={40}
+                  max={miniMax ?? undefined}
+                  step={5}
+                  value={miniSpanEff ?? ''}
+                  onChange={e => {
+                    const v = parseFloat(e.target.value);
+                    if (Number.isFinite(v) && v >= 40) setMiniSpan(Math.round(v));
+                  }}
+                  className="w-24 px-2 py-1.5 border border-slate-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                />
+                {miniSpanEff && miniMax && (
+                  <span className="text-xs text-slate-500 dark:text-slate-400 leading-snug">{t('stl_mini_scale', { ratio: (fullSpan / miniSpanEff).toLocaleString(i18n.language, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), max: miniMax })}</span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Bed */}
           <div>
@@ -170,7 +240,7 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
           </div>
 
           {/* Fit clearance: tune it after printing the test kit */}
-          <div>
+          {!mini && <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1" htmlFor="stl-clearance">{t('stl_clearance')}</label>
             <div className="flex items-center gap-2">
               <input
@@ -188,16 +258,16 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
               />
               <span className="text-xs text-slate-500 dark:text-slate-400 leading-snug">{t('stl_clearance_hint', { seat: (settings.clearance * 0.8).toFixed(2) })}</span>
             </div>
-          </div>
+          </div>}
 
           {/* Summary */}
-          <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+          {!mini && <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
             {!result ? (
               <p className="text-slate-500">{t('stl_computing')}</p>
             ) : (
               <>
                 <div className="flex items-baseline justify-between mb-2">
-                  <span className="font-semibold">{t('stl_parts_total', { count: result.oriented.length })}</span>
+                  <span className="font-semibold">{t('stl_parts_total', { count: chosen.length })}</span>
                   <span className="text-xs text-slate-500">{t('stl_tallest', { h: Math.round(tallest) })}</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5 mb-3">
@@ -236,9 +306,9 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
                 )}
               </>
             )}
-          </div>
+          </div>}
 
-          {result && (result.plan.warnings.length > 0 || notFit.length > 0) && (
+          {!mini && result && (result.plan.warnings.length > 0 || notFit.length > 0) && (
             <div className="space-y-2">
               {result.plan.warnings.map(w => (
                 <div key={w.key} className="flex gap-2 p-2 rounded-md bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-xs">
@@ -254,7 +324,7 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
             </div>
           )}
 
-          <details className="text-xs text-slate-600 dark:text-slate-300">
+          {!mini && <details className="text-xs text-slate-600 dark:text-slate-300">
             <summary className="cursor-pointer font-semibold">{t('stl_how_title')}</summary>
             <ul className="list-disc pl-5 mt-2 space-y-1">
               <li>{t('stl_how_1')}</li>
@@ -262,14 +332,14 @@ export default function StlExportDialog({ open, onClose, layout, airfoil, settin
               <li>{t('stl_how_3')}</li>
               <li>{t('stl_how_4')}</li>
             </ul>
-          </details>
+          </details>}
         </div>
 
         <div className="flex justify-end gap-2 p-4 border-t border-slate-200 dark:border-slate-700">
           <button onClick={onClose} className="px-3 py-1.5 rounded-md text-sm border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">{t('close')}</button>
           <button
             onClick={download}
-            disabled={busy || !result}
+            disabled={busy || !result || (mini ? !miniSpanEff : chosen.length === 0)}
             className="px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white flex items-center gap-1.5"
           >
             <Download size={16} /> {busy ? t('stl_generating') : t('stl_download')}
