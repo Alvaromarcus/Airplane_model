@@ -478,6 +478,9 @@ export function wingSparSizes(L: Layout, airfoil: AirfoilType): { mainX: number;
  * channel then starts at that bay's wall.
  */
 export function planCenterRod(L: Layout, airfoil: AirfoilType, settings: PrintSettings, pockets: Pocket[]): CenterRod | null {
+  // Flying wings keep the two swept spars only: a cross rod has to thread through
+  // the electronics bay and cut the swept spars short, which was judged worse.
+  if (L.isFW) return null;
   const mm = L.toCm * 10;
   const w = L.wing;
   const af = getAirfoil(airfoil);
@@ -666,7 +669,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
   if (crossFrom > 0) warnings.push({ key: 'stl_info_center_cross', params: { mm: Math.round(crossFrom) } });
   else if (bayStart > 0) warnings.push({ key: 'stl_info_spar_bays', params: { mm: Math.round(bayStart * halfSpan) } });
   if (centerRod?.through) warnings.push({ key: 'stl_info_center_bay' });
-  if (!centerRod) warnings.push({ key: 'stl_warn_no_center' });
+  if (!centerRod && !L.isFW) warnings.push({ key: 'stl_warn_no_center' });
 
   // ── Wing halves ──
   type X1 = number | ((f: number) => number);
