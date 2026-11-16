@@ -565,6 +565,12 @@ const zh: Dict = {
   "stl_details": "材料与详情",
   "stl_pick_each": "逐个选择零件",
   "stl_download_short": "下载 ZIP",
+  "spar_center": "单根中央杆（贯穿翼根）",
+  "stl_info_center_cross": "后掠翼梁在与中央杆交叉之后、距中心线 {{mm}} mm 处才开始；中间部分由这根中央杆承力。",
+  "stl_info_center_bay": "中央杆穿过机翼中部的一个电子设备舱：该部件位于杆的下方。",
+  "stl_warn_no_center": "翼根处没有空间放置一根笔直的中央杆（翼型太薄或上反角太大）：两个半翼仅靠连接板固定。",
+  "rd_center": "  中央杆：一整根，笔直且水平，在距前缘 {{s}} mm 处贯穿翼根，伸入每个半翼 {{half}} mm。它不随上反角和后掠角变化：变化的是孔道在机翼内的位置。",
+  "rd_center_glue": "  装配：在孔道内涂胶，把杆插入一个半翼至一半长度，再套上另一个半翼，然后才粘合翼根端面。碳纤维或玻璃纤维杆均可。",
 };
 
 export default zh;

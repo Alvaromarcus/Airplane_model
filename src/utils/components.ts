@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import type { AirfoilType } from './calculations';
 import { sectionHalfHeightAt, FUSE_EXPO, type Layout } from './geometry';
 import { getAirfoil } from './airfoils';
-import { buildPrintPlan, DEFAULT_PRINT_SETTINGS, trimSparLines, type PrintPlan, type Pocket } from './printParts';
+import { buildPrintPlan, DEFAULT_PRINT_SETTINGS, planWingSpars, type PrintPlan, type Pocket, type SparSpec } from './printParts';
 import { computeAssembly, type AssemblySpec, type WingMount } from './assembly';
 
 export type ServoKey = 'micro5' | 'sg90' | 'mg90s' | 'mid17' | 'standard';
@@ -253,14 +253,15 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
     items.push({ id: `airframe_${kind}`, kind: 'airframe', labelKey: `mb_part_${kind}`, mass: g.mass, s: g.ms / g.mass, x: 0, y: g.my / g.mass });
   });
   // Spars (centred on the wing/tail they belong to)
-  P.spars.forEach(sp => {
+  const sparItem = (sp: SparSpec): MassItem => {
     const m = sparMass(sp.diameter, sp.length) * sp.count;
     let s = w.leAt(0.5) * mm + w.chordAt(0.5) * mm * (sp.id === 'rear' ? 0.6 : 0.28);
     if (sp.id === 'tail' && L.hStab) s = (L.hStab.leS + L.hStab.rootChord * 0.3) * mm;
     if (sp.id === 'fin' && L.fin) s = (L.fin.leS + L.fin.rootChord * 0.3) * mm;
     if (sp.s !== undefined) s = sp.s;
-    items.push({ id: `spar_${sp.id}`, kind: 'spar', labelKey: sp.part, detail: `Ø${sp.diameter} × ${sp.length} mm × ${sp.count}`, mass: m, s, x: 0, y: sp.y ?? w.mountY * mm });
-  });
+    return { id: `spar_${sp.id}`, kind: 'spar', labelKey: sp.part, detail: `Ø${sp.diameter} × ${sp.length} mm × ${sp.count}`, mass: m, s, x: 0, y: sp.y ?? w.mountY * mm };
+  };
+  P.spars.forEach(sp => items.push(sparItem(sp)));
   if (ownPlan) P.sections.forEach(s => s.geometry.dispose());
   const airframe = items.reduce((a, i) => a + i.mass, 0);
 
@@ -649,8 +650,21 @@ export function computeBalance(L: Layout, airfoil: AirfoilType, settings: Compon
     linkExits,
     wingServoDepth: servo.w + 3 + servoLift,
   };
-  // Spars stop at the wall of any centre bay they would cross (same rule as the STL)
-  result.sparLines = trimSparLines(P.sparLines, cutoutsFromBalance(result, L), w.halfSpan * mm);
+  // The wing rods depend on the bays (spars stop at a bay wall, the carry-through
+  // rod threads between or through them): redo them with the final cut-outs so
+  // the views and the mass table show exactly what the STL export builds.
+  const wingIds = ['main', 'rear', 'center'];
+  const ws = planWingSpars(L, airfoil, P.settings, cutoutsFromBalance(result, L));
+  result.sparLines = [...ws.sparLines, ...P.sparLines.filter(l => !wingIds.includes(l.id))];
+  const at = items.findIndex(i => i.kind === 'spar');
+  const kept = items.filter(i => !wingIds.some(id => i.id === `spar_${id}`));
+  kept.splice(Math.max(0, Math.min(at, kept.length)), 0, ...ws.spars.map(sparItem));
+  const before = result.auw;
+  result.items = kept;
+  result.auw = kept.reduce((a, i) => a + i.mass, 0);
+  result.airframe += result.auw - before;
+  result.cgAchieved = kept.reduce((a, i) => a + i.mass * i.s, 0) / result.auw;
+  result.wingLoading = result.auw / wingAreaDm2;
   return result;
 }
 

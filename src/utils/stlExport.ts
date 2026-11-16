@@ -222,6 +222,11 @@ function readme(plan: PrintPlan, oriented: OrientedSection[], total: number, L: 
   plan.spars.forEach(sp => {
     lines.push(`- ${t(sp.part)}: ${sp.count} × Ø${sp.diameter} mm × ${sp.length} mm  (${r('hole')} Ø${(sp.diameter + s.clearance).toFixed(1)} mm)`);
   });
+  if (plan.centerRod) {
+    const c = plan.centerRod;
+    lines.push(r('center', { s: Math.round(c.s - L.wing.leS * L.toCm * 10), half: Math.round(c.half) }), r('center_glue'));
+    if (c.through) lines.push('  ' + t('stl_info_center_bay'));
+  }
   if (L.wing.dihedralRad !== 0 && plan.spars.some(sp => sp.id === 'main')) {
     lines.push(r('dihedral', { deg: (L.wing.dihedralRad * 180 / Math.PI).toFixed(1) }));
   }

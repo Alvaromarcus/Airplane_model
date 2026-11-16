@@ -563,6 +563,12 @@ const it: Dict = {
   "stl_details": "Materiali e dettagli",
   "stl_pick_each": "Scegli pezzo per pezzo",
   "stl_download_short": "Scarica ZIP",
+  "spar_center": "Tondino centrale unico (attraversa la radice)",
+  "stl_info_center_cross": "I longheroni a freccia iniziano a {{mm}} mm dall'asse, dopo aver incrociato il tondino centrale; al centro lavora il tondino unico.",
+  "stl_info_center_bay": "Il tondino centrale attraversa un vano dell'elettronica al centro dell'ala: il componente resta sotto di esso.",
+  "stl_warn_no_center": "Non c'è spazio per un tondino centrale dritto attraverso la radice (profilo sottile o diedro elevato): le semiali sono tenute solo dalla piastra di giunzione.",
+  "rd_center": "  Tondino centrale: UN solo pezzo, dritto e orizzontale, che attraversa la radice a {{s}} mm dal bordo d'attacco; entra per {{half}} mm in ogni semiala. Non segue il diedro né la freccia: è il canale che si sposta dentro l'ala.",
+  "rd_center_glue": "  Montaggio: metti colla nel canale, infila il tondino fino a metà in una semiala e poi innesta l'altra; solo allora incolla le facce della radice. Vanno bene carbonio o fibra di vetro.",
 };
 
 export default it;

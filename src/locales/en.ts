@@ -564,6 +564,12 @@ const en = {
   "stl_details": "Materials and details",
   "stl_pick_each": "Pick part by part",
   "stl_download_short": "Download ZIP",
+  "spar_center": "Single centre rod (through the root)",
+  "stl_info_center_cross": "The swept spars start {{mm}} mm from the centreline, after crossing the centre rod; in the middle the single rod carries the load.",
+  "stl_info_center_bay": "The centre rod runs through an electronics bay in the middle of the wing: the component sits under it.",
+  "stl_warn_no_center": "There is no room for a straight centre rod through the root (thin airfoil or high dihedral): the wing halves are held by the joiner plate alone.",
+  "rd_center": "  Centre rod: ONE piece, straight and level, through the root {{s}} mm behind the leading edge; it reaches {{half}} mm into each wing half. It does not follow the dihedral or the sweep: the channel is what moves inside the wing.",
+  "rd_center_glue": "  Assembly: put glue in the channel, push the rod halfway into one wing half, then slide the other half on; only then glue the root faces. Carbon or glass fibre both work.",
 };
 
 export type Dict = Record<keyof typeof en, string>;

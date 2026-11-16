@@ -49,7 +49,7 @@ export interface PrintSection {
 }
 
 export interface SparSpec {
-  id: 'main' | 'rear' | 'tail' | 'fin' | 'fuse_pin';
+  id: 'main' | 'rear' | 'center' | 'tail' | 'fin' | 'fuse_pin';
   part: string;               // human description key
   diameter: number;           // rod diameter (mm), hole is diameter + clearance
   length: number;             // one piece, mm
@@ -67,6 +67,27 @@ export interface TailFit {
   finTab: number;
 }
 
+/**
+ * Carry-through rod: ONE straight rod across the wing root, at right angles to
+ * the centreline and level (it does not follow the dihedral or the sweep), so
+ * the two wing halves hang on a continuous spar instead of a glued butt joint.
+ * All values in mm.
+ */
+export interface CenterRod {
+  d: number;       // rod diameter
+  s: number;       // station of the rod axis
+  y: number;       // height of the rod axis
+  half: number;    // the rod reaches this far on each side of the centreline
+  start: number;   // the printed channel starts here (0, or the wall of the centre bay it crosses)
+  through: string | null; // id of the centre bay the rod runs through (flying wings)
+  /**
+   * Where the swept spars start (mm from the centreline) when the rod crosses
+   * their line: inboard of it the rod alone is the spar. 0 = no crossing.
+   */
+  mainFrom: number;
+  rearFrom: number;
+}
+
 export interface PrintPlan {
   sections: PrintSection[];
   spars: SparSpec[];
@@ -78,6 +99,7 @@ export interface PrintPlan {
   tailFit: TailFit | null;
   /** Alignment pins across the fuselage joints (count per joint = 2). */
   pins: { d: number; length: number; joints: number[] } | null;
+  centerRod: CenterRod | null;
 }
 
 const ROD_SIZES = [2, 3, 4, 5, 6, 8, 10, 12];
@@ -113,8 +135,47 @@ function centroid(r: V3[]): THREE.Vector3 {
   return c.multiplyScalar(1 / r.length);
 }
 
+/**
+ * Ear-clipping silently drops near-collinear runs of boundary points (pocket
+ * floors that collapse onto the skin), leaving zero-area slivers of the cap
+ * uncovered. They do not change the shape but leave open edges in the STL, so
+ * close them: every boundary edge must be used once and every inner edge twice.
+ */
+function fillCapGaps(tris: number[][], nr: number): number[][] {
+  const dir = new Map<string, number>();
+  tris.forEach(t => t.forEach((u, k) => { const v = t[(k + 1) % 3]; dir.set(`${u}>${v}`, (dir.get(`${u}>${v}`) ?? 0) + 1); }));
+  const isRing = (u: number, v: number) => (u + 1) % nr === v || (v + 1) % nr === u;
+  // Which way the triangles run along the boundary
+  let fwd = 0;
+  for (let i = 0; i < nr; i++) { const j = (i + 1) % nr; fwd += (dir.get(`${i}>${j}`) ?? 0) - (dir.get(`${j}>${i}`) ?? 0); }
+  const need = new Map<number, number>();
+  for (let i = 0; i < nr; i++) {
+    const j = (i + 1) % nr;
+    if (!dir.has(`${i}>${j}`) && !dir.has(`${j}>${i}`)) { if (fwd >= 0) need.set(i, j); else need.set(j, i); }
+  }
+  dir.forEach((_, key) => {
+    const [u, v] = key.split('>').map(Number);
+    if (!isRing(u, v) && !dir.has(`${v}>${u}`)) need.set(v, u);
+  });
+  if (!need.size) return tris;
+  const out = tris.slice();
+  let guard = 0;
+  while (need.size && guard++ < nr) {
+    const start = need.keys().next().value as number;
+    const loop = [start];
+    for (let cur = need.get(start); cur !== undefined && cur !== start && loop.length <= nr; cur = need.get(cur)) loop.push(cur);
+    loop.forEach(v => need.delete(v));
+    for (let k = 1; k < loop.length - 1; k++) out.push([loop[0], loop[k], loop[k + 1]]);
+  }
+  return out;
+}
+
 /** Triangulate a (possibly concave, keyholed) planar ring with ear-clipping. */
 export function capTriangles(r: V3[]): number[][] {
+  return fillCapGaps(capTrianglesRaw(r), r.length);
+}
+
+function capTrianglesRaw(r: V3[]): number[][] {
   const n = ringNormal(r);
   const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
   const pick = (p: V3): THREE.Vector2 =>
@@ -265,7 +326,7 @@ export function mirrorX(geo: THREE.BufferGeometry): THREE.BufferGeometry {
 
 // ───────────────────────── Keyholed airfoil outline ─────────────────────────
 
-interface Hole { x: number; d: number } // chord fraction, hole diameter (mm)
+interface Hole { x: number; d: number; y?: number } // chord fraction, hole diameter (mm), height above the chord line (mm; default: mid-thickness)
 /** Pocket cut into one skin: chord fractions a..b, depth in mm (0 = inactive at this station). */
 interface Notch { a: number; b: number; d: number }
 
@@ -336,7 +397,7 @@ function sectionOutline(
     hi: h.x + g, lo: h.x - g,
     emit: () => {
       const hx = h.x * chord;
-      const hy = (af.upper(h.x) + af.lower(h.x)) / 2 * chord;
+      const hy = h.y ?? (af.upper(h.x) + af.lower(h.x)) / 2 * chord;
       const r = h.d / 2;
       const gAbs = Math.min(s.slit / 2, r * 0.9);
       const th0 = -Math.PI / 2 + Math.asin(gAbs / r);
@@ -386,6 +447,164 @@ function pickRod(t: number, max = 12): number {
   return fits.length ? fits[fits.length - 1] : 0;
 }
 
+// ───────────────────────── Wing spars ─────────────────────────
+
+const MAIN_X = 0.28;         // main spar, chord fraction
+const ROD_SKIN = 1.5;        // mm kept between the carry-through channel and either skin
+const ROD_MAX_LEN = 1000;    // mm, usual stock length of carbon / glass-fibre rods
+
+/** Chord positions and rod sizes of the two swept wing spars (sized by the tip). */
+export function wingSparSizes(L: Layout, airfoil: AirfoilType): { mainX: number; rearX: number; mainD: number; rearD: number } {
+  const mm = L.toCm * 10;
+  const af = getAirfoil(airfoil);
+  const tipChord = L.wing.chordAt(1) * mm;
+  const span = L.wing.halfSpan * 2 * mm;
+  const thick = (x: number) => (af.upper(x) - af.lower(x)) * tipChord;
+  const rearX = Math.min(0.62, 1 - L.aileron.chordFrac - 0.1);
+  // Cap by size class: ~6 mm up to 1 m span, 8 mm up to 1.5 m, 10 mm above
+  const mainCap = span <= 1000 ? 6 : span <= 1500 ? 8 : 10;
+  const mainD = pickRod(thick(MAIN_X), mainCap);
+  const rearD = rearX > MAIN_X + 0.15 ? Math.min(pickRod(thick(rearX), 4), Math.max(mainD - 2, 0)) : 0;
+  return { mainX: MAIN_X, rearX, mainD, rearD };
+}
+
+/**
+ * Finds the longest straight, level rod that crosses the wing root at right
+ * angles to the centreline and stays inside both wing halves: clear of the
+ * skins (the wing climbs with the dihedral and moves aft with the sweep while
+ * the rod does neither), of the swept spars, the control surfaces, the
+ * propeller cut-out and the pockets. On a flying wing it may run through the
+ * ESC / receiver bay at the root (the component sits under it); the printed
+ * channel then starts at that bay's wall.
+ */
+export function planCenterRod(L: Layout, airfoil: AirfoilType, settings: PrintSettings, pockets: Pocket[]): CenterRod | null {
+  const mm = L.toCm * 10;
+  const w = L.wing;
+  const af = getAirfoil(airfoil);
+  const H = w.halfSpan * mm;
+  const chordAt = (f: number) => w.chordAt(f) * mm;
+  const leAt = (f: number) => w.leAt(f) * mm;
+  const yAt = (f: number) => w.yAt(f) * mm;
+  const { mainX, rearX, mainD, rearD } = wingSparSizes(L, airfoil);
+  const hinge = 1 - L.aileron.chordFrac;
+  const wingPockets = pockets.filter(p => p.part === 'wing');
+  const centre = wingPockets.filter(p => p.xa <= 1);
+  const minHalf = Math.max(50, 0.12 * H);
+  const sizes = ROD_SIZES.filter(d => d >= 3 && d <= Math.max(mainD, 4)).reverse();
+
+  const sRef = L.cgS * mm; // best near the CG: the lift acts there, and extra rod length stops paying off past ~60 % of the half span
+  const sparLines = ([[mainX, mainD], [rearX, rearD]] as const).map(([X, D]) => ({ D, at: (f: number) => leAt(f) + X * chordAt(f) }));
+
+  /** Best rod of diameter d; `cross` lets it cross the swept spar lines (those spars then start outboard of it). */
+  const search = (d: number, cross: boolean): { rod: CenterRod; score: number } | null => {
+    const r = (d + settings.clearance) / 2;
+    const near = (D: number) => r + (D + settings.clearance) / 2 + 2;
+    let best: { rod: CenterRod; score: number } | null = null;
+    for (let sC = leAt(0) + 0.1 * chordAt(0); sC <= leAt(0) + 0.85 * chordAt(0); sC += 2) {
+      // At the centreline: clear of every pocket, or right through one electronics bay
+      let bay: Pocket | null = null;
+      let blocked = false;
+      centre.forEach(p => {
+        if (sC + r + 2 <= p.sa || sC - r - 2 >= p.sb) return;
+        if (p.side === 'upper' && p.id !== 'bay_battery' && !bay && sC - r - 1 >= p.sa && sC + r + 1 <= p.sb) bay = p;
+        else blocked = true;
+      });
+      if (blocked) continue;
+      const through = bay as Pocket | null;
+      const start = through ? through.xb + 4 : 0;
+      // March outboard while a level rod still fits
+      let lo = -Infinity, hi = Infinity, half = 0;
+      for (let x = 0; x <= Math.min(H - 5, ROD_MAX_LEN / 2); x += 2) {
+        const f = x / H, c = chordAt(f), u = (sC - leAt(f)) / c;
+        const x1 = f > L.aileron.f0 && f < L.aileron.f1 ? hinge - GAP / 2
+          : L.teCut && x < L.teCut.halfWidth * mm ? (L.teCut.sCut * mm - leAt(f)) / c : 1;
+        if (u < 0.06 || u > x1 - 0.06) break;
+        const up = yAt(f) + af.upper(u) * c, low = yAt(f) + af.lower(u) * c;
+        // Inside the bay it crosses, the rod only has to clear the floor and the hatch
+        const floor = through && x <= through.xb ? Math.max(low + 1.2, up - through.depth) : low + ROD_SKIN;
+        if (x >= start && wingPockets.some(p => x > p.xa - 3 && x < p.xb + 3 && sC + r + 2 > p.sa && sC - r - 2 < p.sb)) break;
+        if (!cross && sparLines.some(sp => sp.D > 0 && Math.abs(sp.at(f) - sC) < near(sp.D))) break;
+        const nlo = Math.max(lo, floor + r), nhi = Math.min(hi, up - ROD_SKIN - r);
+        if (nlo > nhi) break;
+        lo = nlo; hi = nhi; half = x;
+      }
+      half = Math.floor(half / 5) * 5;
+      // Swept spars start outboard of the last point where they are too close to the rod
+      const [mainFrom, rearFrom] = sparLines.map(sp => {
+        let from = 0;
+        if (sp.D > 0) for (let x = 0; x <= half; x += 2) if (Math.abs(sp.at(x / H) - sC) < near(sp.D)) from = x + 4;
+        return from;
+      });
+      if (half < minHalf || half <= start + 30) continue;
+      // A crossed main spar must overlap the rod, or the load has no path to it
+      if (mainFrom > 0 && half < mainFrom + 25) continue;
+      const score = Math.min(half, 0.6 * H) - 1.5 * Math.abs(sC - sRef);
+      if (!best || score > best.score) {
+        best = { rod: { d, s: sC, y: (lo + hi) / 2, half, start, through: through ? through.id : null, mainFrom, rearFrom }, score };
+      }
+    }
+    return best;
+  };
+
+  for (const d of sizes) {
+    const plain = search(d, false);
+    const crossing = search(d, true);
+    // Crossing shortens the swept spars: only worth it for a clearly longer rod
+    if (crossing && (!plain || crossing.score >= plain.score + Math.max(40, 0.4 * plain.rod.half))) return crossing.rod;
+    if (plain) return plain.rod;
+  }
+  return null;
+}
+
+export interface WingSparPlan {
+  mainX: number; rearX: number; mainD: number; rearD: number;
+  /** Span fractions where the swept spars start (bay wall or carry-through crossing). */
+  mainStart: number; rearStart: number;
+  /** Start fraction forced by the centre bays alone (0 = none). */
+  bayStart: number;
+  centerRod: CenterRod | null;
+  spars: SparSpec[];
+  sparLines: PrintPlan['sparLines'];
+}
+
+/** Every rod in the wing: the two swept spars per side and the carry-through rod. */
+export function planWingSpars(L: Layout, airfoil: AirfoilType, settings: PrintSettings, pockets: Pocket[]): WingSparPlan {
+  const mm = L.toCm * 10;
+  const w = L.wing;
+  const af = getAirfoil(airfoil);
+  const H = w.halfSpan * mm;
+  const { mainX, rearX, mainD, rearD } = wingSparSizes(L, airfoil);
+  const centerRod = planCenterRod(L, airfoil, settings, pockets);
+  const sparPt = (x: number, f: number): [number, number, number] =>
+    [f * H, w.yAt(f) * mm + (af.upper(x) + af.lower(x)) / 2 * w.chordAt(f) * mm, w.leAt(f) * mm + x * w.chordAt(f) * mm];
+  // Spars stop at the wall of a centre bay they would otherwise cross…
+  const startOf = (x: number, d: number) => (d ? sparStartFraction({ d: d + settings.clearance, a: sparPt(x, 0), b: sparPt(x, 1) }, pockets, H) : 0);
+  const bayStart = Math.max(startOf(mainX, mainD), startOf(rearX, rearD));
+  // …or outboard of the carry-through rod, where it crosses their line
+  const mainStart = Math.max(startOf(mainX, mainD), (centerRod?.mainFrom ?? 0) / H);
+  const rearStart = Math.max(startOf(rearX, rearD), (centerRod?.rearFrom ?? 0) / H);
+  const sparLen = (x: number, f0: number) => {
+    const [a0, b0] = [sparPt(x, f0), sparPt(x, 1)];
+    return Math.round(Math.hypot(b0[0] - a0[0], b0[1] - a0[1], b0[2] - a0[2]));
+  };
+  const spars: SparSpec[] = [];
+  const sparLines: PrintPlan['sparLines'] = [];
+  if (mainD) {
+    sparLines.push({ id: 'main', d: mainD, a: sparPt(mainX, mainStart), b: sparPt(mainX, 1), mirror: true });
+    spars.push({ id: 'main', part: 'spar_main', diameter: mainD, length: sparLen(mainX, mainStart), count: 2 });
+  }
+  if (rearD) {
+    sparLines.push({ id: 'rear', d: rearD, a: sparPt(rearX, rearStart), b: sparPt(rearX, 1), mirror: true });
+    spars.push({ id: 'rear', part: 'spar_rear', diameter: rearD, length: sparLen(rearX, rearStart), count: 2 });
+  }
+  if (centerRod) {
+    const { d, s: sc, y, half } = centerRod;
+    sparLines.push({ id: 'center', d, a: [-half, y, sc], b: [half, y, sc], mirror: false });
+    spars.push({ id: 'center', part: 'spar_center', diameter: d, length: 2 * half, count: 1, s: sc, y });
+  }
+  return { mainX, rearX, mainD, rearD, mainStart, rearStart, bayStart, centerRod, spars, sparLines };
+}
+
 // ───────────────────────── Plan builder ─────────────────────────
 
 /** Evenly splits [a,b] into pieces no longer than maxLen (given the length of [a,b]). */
@@ -417,37 +636,37 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
 
   // ── Spars: size from the thinnest station they pass through (the tip) ──
   const hinge = 1 - a.chordFrac;
-  const mainX = 0.28;
-  const rearX = Math.min(0.62, hinge - 0.1);
   const thick = (af: AirfoilSurface, x: number, chord: number) => (af.upper(x) - af.lower(x)) * chord;
-  // Cap by size class: ~6 mm up to 1 m span, 8 mm up to 1.5 m, 10 mm above
-  const mainCap = halfSpan * 2 <= 1000 ? 6 : halfSpan * 2 <= 1500 ? 8 : 10;
-  const mainD = pickRod(thick(wingAf, mainX, chordAt(1)), mainCap);
-  const rearD = rearX > mainX + 0.15 ? Math.min(pickRod(thick(wingAf, rearX, chordAt(1)), 4), Math.max(mainD - 2, 0)) : 0;
-  let mainStart = 0, rearStart = 0; // set below, once the spar lines are known
-  /** Spar holes of a section between chord fractions x0..x1 that starts at span fraction fa. */
-  const wingHoles = (x0: number, x1: number, fa = 1): Hole[] => {
+  // Swept spars plus the carry-through rod across the root (level and square to the centreline)
+  const ws = planWingSpars(L, airfoil, s, pockets);
+  const { mainX, rearX, mainD, rearD, mainStart, rearStart, bayStart, centerRod } = ws;
+  const fC0 = centerRod ? centerRod.start / halfSpan : 0;
+  const fC1 = centerRod ? centerRod.half / halfSpan : 0;
+  /** Chord fraction of the carry-through channel at span fraction f. */
+  const centerU = (f: number) => (centerRod!.s - leAt(f)) / chordAt(f);
+  /**
+   * Spar holes of a section fa..fb between chord fractions x0..x1, as a function
+   * of the span fraction: the swept spars keep their chord fraction, the
+   * carry-through channel moves through the section.
+   */
+  const wingHoles = (x0: number, x1: number, fa = 1, fb = fa, x1a = x1, x1b = x1): ((f: number) => Hole[]) => {
     const hs: Hole[] = [];
     if (mainD && fa >= mainStart - 1e-6 && mainX > x0 + 0.05 && mainX < x1 - 0.05) hs.push({ x: mainX, d: mainD + s.clearance });
     if (rearD && fa >= rearStart - 1e-6 && rearX > x0 + 0.05 && rearX < x1 - 0.05) hs.push({ x: rearX, d: rearD + s.clearance });
-    return hs;
+    // The trailing edge of a section may move (propeller cut-out): check each end against its own
+    const inside = (f: number, te: number) => centerU(f) > x0 + 0.05 && centerU(f) < te - 0.05;
+    if (!centerRod || fa < fC0 - 1e-6 || fb > fC1 + 1e-6 || !inside(fa, x1a) || !inside(fb, x1b)) return () => hs;
+    return f => [...hs, { x: centerU(f), d: centerRod.d + s.clearance, y: centerRod.y - yAt(f) }];
   };
-  const sparPt = (x: number, f: number): [number, number, number] =>
-    [f * halfSpan, yAt(f) + (wingAf.upper(x) + wingAf.lower(x)) / 2 * chordAt(f), leAt(f) + x * chordAt(f)];
-  // Spars stop at the wall of a centre bay they would otherwise cross
-  const startOf = (x: number, d: number) => (d ? sparStartFraction({ d: d + s.clearance, a: sparPt(x, 0), b: sparPt(x, 1) }, pockets, halfSpan) : 0);
-  mainStart = startOf(mainX, mainD);
-  rearStart = startOf(rearX, rearD);
-  const sparLen = (x: number, f0: number) => {
-    const [a0, b0] = [sparPt(x, f0), sparPt(x, 1)];
-    return Math.round(Math.hypot(b0[0] - a0[0], b0[1] - a0[1], b0[2] - a0[2]));
-  };
-  if (mainD) sparLines.push({ id: 'main', d: mainD, a: sparPt(mainX, mainStart), b: sparPt(mainX, 1), mirror: true });
-  if (rearD) sparLines.push({ id: 'rear', d: rearD, a: sparPt(rearX, rearStart), b: sparPt(rearX, 1), mirror: true });
-  if (mainD) spars.push({ id: 'main', part: 'spar_main', diameter: mainD, length: sparLen(mainX, mainStart), count: 2 });
-  else warnings.push({ key: 'stl_warn_no_spar' });
-  if (rearD) spars.push({ id: 'rear', part: 'spar_rear', diameter: rearD, length: sparLen(rearX, rearStart), count: 2 });
-  if (mainStart > 0 || rearStart > 0) warnings.push({ key: 'stl_info_spar_bays', params: { mm: Math.round(Math.max(mainStart, rearStart) * halfSpan) } });
+  spars.push(...ws.spars);
+  sparLines.push(...ws.sparLines);
+  if (!mainD) warnings.push({ key: 'stl_warn_no_spar' });
+  // One note on where the swept spars start: the carry-through crossing, or else the bay wall
+  const crossFrom = centerRod ? Math.max(centerRod.mainFrom, centerRod.rearFrom) : 0;
+  if (crossFrom > 0) warnings.push({ key: 'stl_info_center_cross', params: { mm: Math.round(crossFrom) } });
+  else if (bayStart > 0) warnings.push({ key: 'stl_info_spar_bays', params: { mm: Math.round(bayStart * halfSpan) } });
+  if (centerRod?.through) warnings.push({ key: 'stl_info_center_bay' });
+  if (!centerRod) warnings.push({ key: 'stl_warn_no_center' });
 
   // ── Wing halves ──
   type X1 = number | ((f: number) => number);
@@ -465,8 +684,9 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
   }
   wingPieces.push({ f0: a.f0, f1: a.f1, x0: 0, x1: hinge - GAP / 2, kind: 'wing', label: 'wing' });
   if (a.f1 < 0.999) wingPieces.push({ f0: a.f1, f1: 1, x0: 0, x1: 1, kind: 'wing', label: 'wing' });
-  // A section boundary where each spar starts, so the sections inboard of it have no spar hole
-  [mainStart, rearStart].filter(f => f > 0).sort((p, q) => p - q).forEach(fc => {
+  // A section boundary where each spar starts (and where the carry-through rod
+  // ends), so the sections beyond it do not have that hole
+  [mainStart, rearStart, fC0, fC1].filter(f => f > 0 && f < 1).sort((p, q) => p - q).forEach(fc => {
     const i = wingPieces.findIndex(pc => fc > pc.f0 + 1e-4 && fc < pc.f1 - 1e-4);
     if (i >= 0) {
       const pc = wingPieces[i];
@@ -478,7 +698,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
   let kitF = 1;
   if (kit) {
     const joiner = pockets.find(p => p.id === 'joiner');
-    kitF = Math.min(0.5, Math.max(KIT_LEN + 10, (joiner ? joiner.xb + 8 : 0), Math.max(mainStart, rearStart) * halfSpan + KIT_LEN) / halfSpan);
+    kitF = Math.min(0.5, Math.max(KIT_LEN + 10, (joiner ? joiner.xb + 8 : 0), Math.max(bayStart, fC0) * halfSpan + KIT_LEN) / halfSpan);
     for (let i = wingPieces.length - 1; i >= 0; i--) {
       if (wingPieces[i].f0 >= kitF - 1e-6) wingPieces.splice(i, 1);
       else wingPieces[i] = { ...wingPieces[i], f1: Math.min(wingPieces[i].f1, kitF) };
@@ -507,7 +727,7 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     return { a: na, b: nb, d: active ? p.depth : 0 };
   };
   /** Rings for a wing section fa..fb / chord x0..x1, stepping in and out of pockets. */
-  const wingRings = (fa: number, fb: number, x0: number, x1f: X1, holes: Hole[]): V3[][] => {
+  const wingRings = (fa: number, fb: number, x0: number, x1f: X1, holesAt: (f: number) => Hole[]): V3[][] => {
     const H = halfSpan;
     const X1 = (f: number) => (typeof x1f === 'function' ? x1f(f) : x1f);
     const x1 = Math.min(X1(fa), X1(fb));
@@ -524,12 +744,12 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     bps.sort((p, q) => p - q);
     const uniq = bps.filter((f, i) => i === 0 || f - bps[i - 1] > 1e-6);
     const activeAt = (p: Pocket, fm: number) => fm * H > p.xa && fm * H < p.xb;
-    const ring = (f: number, fm: number) => sectionOutline(
+    const ring = (f: number, fm: number) => { const holes = holesAt(f); return sectionOutline(
       wingAf, x0, X1(f), chordAt(f), holes,
       ups.map(p => toNotch(p, f, x0, X1(f), holes, activeAt(p, fm))),
       los.map(p => toNotch(p, f, x0, X1(f), holes, activeAt(p, fm))),
       s,
-    ).map(([u, v]) => [f * H, yAt(f) + v, -(leAt(f) + u)] as V3);
+    ).map(([u, v]) => [f * H, yAt(f) + v, -(leAt(f) + u)] as V3); };
     // Duplicate a station only where the set of active pockets changes (pocket end walls)
     const key = (fm: number) => mine.map(p => (activeAt(p, fm) ? 1 : 0)).join('');
     const rings: V3[][] = [];
@@ -569,17 +789,23 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
         chordSplit = true;
         // Keep cuts at least 6% chord away from the spar holes
         const holeXs = [mainD ? mainX : -1, rearD ? rearX : -1].filter(x => x > 0);
+        // …and off the carry-through channel, which sweeps a chord range inside this section
+        const cu = centerRod && fs[i] >= fC0 - 1e-6 && fs[i + 1] <= fC1 + 1e-6 ? [centerU(fs[i]), centerU(fs[i + 1])].sort((p, q) => p - q) : null;
         xs = xs.map((x, k) => {
           if (k === 0 || k === xs.length - 1) return x;
-          const near = holeXs.find(h => Math.abs(h - x) < 0.06);
-          return near === undefined ? x : (x < near ? near - 0.06 : near + 0.06);
+          let v = x;
+          if (cu && v > cu[0] - 0.06 && v < cu[1] + 0.06) v = v - cu[0] < cu[1] - v ? cu[0] - 0.06 : cu[1] + 0.06;
+          const near = holeXs.find(h => Math.abs(h - v) < 0.06);
+          return near === undefined ? v : (v < near ? near - 0.06 : near + 0.06);
         });
       }
       const len = (fs[i + 1] - fs[i]) * halfSpan;
       for (let k = 0; k < xs.length - 1; k++) {
         const last = k === xs.length - 2;
         const hiX: X1 = last ? pc.x1 : xs[k + 1];
-        const holes = wingHoles(xs[k], last ? Math.min(x1Of(fs[i]), x1Of(fs[i + 1])) : xs[k + 1], fs[i]);
+        const holes = last
+          ? wingHoles(xs[k], Math.min(x1Of(fs[i]), x1Of(fs[i + 1])), fs[i], fs[i + 1], x1Of(fs[i]), x1Of(fs[i + 1]))
+          : wingHoles(xs[k], xs[k + 1], fs[i], fs[i + 1]);
         const rings = wingRings(fs[i], fs[i + 1], xs[k], hiX, holes);
         const geo = loftSolid(rings);
         const suffix = xs.length > 2 ? String.fromCharCode(97 + k) : '';
@@ -983,12 +1209,13 @@ export function buildPrintPlan(L: Layout, airfoil: AirfoilType, settings: PrintS
     // Short offcuts are enough to test the fits
     spars.forEach(sp => {
       if (sp.id === 'main' || sp.id === 'rear') sp.length = Math.max(20, Math.round((kitF - (sp.id === 'main' ? mainStart : rearStart)) * halfSpan - 5));
+      else if (sp.id === 'center') sp.length = Math.min(sp.length, Math.max(40, Math.round(2 * kitF * halfSpan - 10)));
       else if (sp.id === 'tail') { sp.length = Math.round(KIT_LEN * 2 * 0.9); }
       else if (sp.id === 'fin') { sp.length = Math.round(KIT_LEN * 0.8); }
       if (sp.id === 'fuse_pin') sp.count = 2;
     });
   }
-  return { sections, spars, sparLines, warnings, settings: s, tailFit, pins: pinsOut };
+  return { sections, spars, sparLines, warnings, settings: s, tailFit, pins: pinsOut, centerRod };
 }
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
@@ -1012,16 +1239,4 @@ export function sparStartFraction(line: { d: number; a: [number, number, number]
     }
   });
   return f0;
-}
-
-/** Spar lines trimmed so they start at the wall of any centre bay they would cross. */
-export function trimSparLines<T extends { id: string; d: number; a: [number, number, number]; b: [number, number, number] }>(lines: T[], pockets: Pocket[], halfSpanMm: number): T[] {
-  return lines.map(l => {
-    if (l.id !== 'main' && l.id !== 'rear') return l;
-    const f0 = sparStartFraction(l, pockets, halfSpanMm);
-    if (f0 <= 0) return l;
-    const t = (f0 * halfSpanMm - l.a[0]) / Math.max(l.b[0] - l.a[0], 1e-6);
-    const a = [0, 1, 2].map(k => l.a[k] + (l.b[k] - l.a[k]) * t) as [number, number, number];
-    return { ...l, a };
-  });
 }

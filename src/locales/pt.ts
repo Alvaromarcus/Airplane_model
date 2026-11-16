@@ -563,6 +563,12 @@ const pt: Dict = {
   "stl_details": "Materiais e detalhes",
   "stl_pick_each": "Escolher peça por peça",
   "stl_download_short": "Baixar ZIP",
+  "spar_center": "Vareta central única (atravessa a raiz)",
+  "stl_info_center_cross": "As longarinas enflechadas começam a {{mm}} mm do eixo, depois de cruzarem a vareta central; no centro quem trabalha é a vareta única.",
+  "stl_info_center_bay": "A vareta central atravessa um compartimento da eletrônica no centro da asa: o componente fica por baixo dela.",
+  "stl_warn_no_center": "Não há espaço para uma vareta central reta atravessando a raiz (perfil fino ou diedro alto): a emenda das semi-asas fica só com a placa de junção.",
+  "rd_center": "  Vareta central: UMA peça só, reta e nivelada, atravessando a raiz a {{s}} mm do bordo de ataque; entra {{half}} mm em cada semi-asa. Ela não acompanha o diedro nem o enflechamento: é o canal que muda de posição dentro da asa.",
+  "rd_center_glue": "  Montagem: passe cola no canal, enfie a vareta até a metade em uma semi-asa e depois encaixe a outra; só então cole as faces da raiz. Serve carbono ou fibra de vidro.",
 };
 
 export default pt;
